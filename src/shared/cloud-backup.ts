@@ -1,4 +1,5 @@
 import type { DamagedReviewCycle } from './damaged-review-cycle'
+import type { Failure } from './failure'
 
 export interface CloudBackupProjectSessionContext {
   projectId: string
@@ -82,6 +83,7 @@ export interface CloudBackupFailure {
   success: false
   state: 'cancelled' | 'failed'
   errorCode: CloudBackupErrorCode
+  failure: Failure
   operationId?: string
   damagedReviewCycle?: DamagedReviewCycle
 }

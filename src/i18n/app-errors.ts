@@ -7,11 +7,57 @@ import {
 } from '../shared/failure'
 
 /**
+ * 同一个码在导出和恢复里指的是不同的文件：导出时是作品里的资料，恢复时是所选的存档。
+ * 码也登记进 ERROR_KEYS（导出那句优先），过 handle() 时才不被换成通用码；界面仍按操作选这里的文案。
+ */
+const ARCHIVE_FAILURE_KEYS = {
+  export: {
+    PORTABLE_ARCHIVE_SOURCE_UNSAFE: 'error.portableAssetUnsafe',
+    PORTABLE_PATH_UNSAFE: 'error.portablePathUnsafe',
+    PORTABLE_KNOWLEDGE_INVALID: 'error.portableKnowledgeInvalid',
+    PORTABLE_TARGET_INSIDE_SOURCE: 'error.portableTargetInsideSource',
+    PORTABLE_ASSET_MISSING: 'error.portableAssetMissing',
+    PORTABLE_ARCHIVE_PUBLISH_UNSUPPORTED: 'error.portablePublishUnsupported',
+    PORTABLE_ARCHIVE_TARGET_UNWRITABLE: 'error.portableTargetUnwritable',
+    PORTABLE_EXPORT_SOURCE_UNREADABLE: 'error.portableSourceUnreadable',
+    PORTABLE_EXPORT_FAILED: 'error.portableExportFailed',
+  },
+  restore: {
+    PORTABLE_ARCHIVE_SOURCE_CHANGED: 'error.restoreArchiveChanged',
+    PORTABLE_ARCHIVE_SOURCE_UNSAFE: 'error.restoreArchiveChanged',
+    PORTABLE_ARCHIVE_INVALID: 'error.restoreArchiveInvalid',
+    PORTABLE_RESTORE_INVALID: 'error.restoreArchiveInvalid',
+    PORTABLE_SCHEMA_UNSUPPORTED: 'error.restoreArchiveNewer',
+    PORTABLE_ARCHIVE_TARGET_UNWRITABLE: 'error.restoreTargetUnwritable',
+    PORTABLE_RESTORE_UNSAFE_TARGET: 'error.restoreTargetUnsafe',
+    PORTABLE_GRANT_INVALID: 'error.restoreSelectionInvalid',
+    PORTABLE_RESTORE_ARCHIVE_MISSING: 'error.restoreArchiveMissing',
+    PORTABLE_RESTORE_ARCHIVE_UNREADABLE: 'error.restoreArchiveUnreadable',
+    PORTABLE_RESTORE_FAILED: 'error.restoreFailed',
+  },
+} as const satisfies Record<'export' | 'restore', Record<string, MessageKey>>
+
+/**
  * 稳定错误码 → 界面文案键。新增可读错误码只在这里登记一行，并在两份语言资源里补文案。
  * 代码里出现的每个 GENERATION_* 码（以及该测试 COVERED_PREFIXES 列出的其他前缀的码）要么登记在这里，
  * 要么在 generation-error-codes.test.ts 里写明不登记的理由。
  */
 const ERROR_KEYS = {
+  ...ARCHIVE_FAILURE_KEYS.restore,
+  ...ARCHIVE_FAILURE_KEYS.export,
+  // master 上没登记、显示「说不清原因」的码；迁到 handle() 后照旧说这一句，不换成 IPC_HANDLER_FAILED 那句。
+  PROJECT_OPERATION_FAILED: 'error.unregisteredCode',
+  PORTABLE_ARCHIVE_LIMIT_EXCEEDED: 'error.unregisteredCode',
+  PORTABLE_ARCHIVE_TARGET_EXISTS: 'error.unregisteredCode',
+  PORTABLE_RESTORE_CANCELLED: 'error.unregisteredCode',
+  PORTABLE_RESTORE_TARGET_EXISTS: 'error.unregisteredCode',
+  CLOUD_BACKUP_INPUT_INVALID: 'error.unregisteredCode',
+  CLOUD_BACKUP_DISCLOSURE_CONFIRMATION_REQUIRED: 'error.unregisteredCode',
+  CLOUD_BACKUP_BINDING_READ_ONLY: 'error.unregisteredCode',
+  CLOUD_BACKUP_OPERATION_CONFLICT: 'error.unregisteredCode',
+  PROJECT_DELETE_BINDING_NOT_CLEARED: 'error.projectDeleteBindingNotCleared',
+  PROJECT_DELETE_RECENT_LIST_FAILED: 'error.projectDeleteRecentListFailed',
+  PROJECT_DELETE_BINDING_AND_RECENT_LIST_FAILED: 'error.projectDeleteBindingAndRecentListFailed',
   IPC_HANDLER_FAILED: 'error.ipcHandlerFailed',
   KNOWLEDGE_BASE_NATIVE_UNAVAILABLE: 'error.knowledgeBaseNativeUnavailable',
   LEGACY_VECTOR_MIGRATION_BLOCKED: 'error.legacyVectorMigrationBlocked',
@@ -558,38 +604,6 @@ export function damagedReviewCycleMessage(locale: ErrorDisplayLocale, damaged: D
     ? translate(locale, 'error.damagedReviewCycle', { chapter: chapterPhrase(locale, damaged) })
     : translate(locale, 'error.portableUnsafeProjection')
 }
-
-/**
- * 同一个码在导出和恢复里指的是不同的文件：导出时是作品里的资料，恢复时是所选的存档。
- * MIGRATION_VERIFICATION_FAILED 打开作品时也会报，只在导出这里按「有一项数据无法安全打包」说明。
- */
-const ARCHIVE_FAILURE_KEYS = {
-  export: {
-    PORTABLE_ARCHIVE_SOURCE_UNSAFE: 'error.portableAssetUnsafe',
-    MIGRATION_VERIFICATION_FAILED: 'error.portableUnsafeProjection',
-    PORTABLE_PATH_UNSAFE: 'error.portablePathUnsafe',
-    PORTABLE_KNOWLEDGE_INVALID: 'error.portableKnowledgeInvalid',
-    PORTABLE_TARGET_INSIDE_SOURCE: 'error.portableTargetInsideSource',
-    PORTABLE_ASSET_MISSING: 'error.portableAssetMissing',
-    PORTABLE_ARCHIVE_PUBLISH_UNSUPPORTED: 'error.portablePublishUnsupported',
-    PORTABLE_ARCHIVE_TARGET_UNWRITABLE: 'error.portableTargetUnwritable',
-    PORTABLE_EXPORT_SOURCE_UNREADABLE: 'error.portableSourceUnreadable',
-    PORTABLE_EXPORT_FAILED: 'error.portableExportFailed',
-  },
-  restore: {
-    PORTABLE_ARCHIVE_SOURCE_CHANGED: 'error.restoreArchiveChanged',
-    PORTABLE_ARCHIVE_SOURCE_UNSAFE: 'error.restoreArchiveChanged',
-    PORTABLE_ARCHIVE_INVALID: 'error.restoreArchiveInvalid',
-    PORTABLE_RESTORE_INVALID: 'error.restoreArchiveInvalid',
-    PORTABLE_SCHEMA_UNSUPPORTED: 'error.restoreArchiveNewer',
-    PORTABLE_ARCHIVE_TARGET_UNWRITABLE: 'error.restoreTargetUnwritable',
-    PORTABLE_RESTORE_UNSAFE_TARGET: 'error.restoreTargetUnsafe',
-    PORTABLE_GRANT_INVALID: 'error.restoreSelectionInvalid',
-    PORTABLE_RESTORE_ARCHIVE_MISSING: 'error.restoreArchiveMissing',
-    PORTABLE_RESTORE_ARCHIVE_UNREADABLE: 'error.restoreArchiveUnreadable',
-    PORTABLE_RESTORE_FAILED: 'error.restoreFailed',
-  },
-} as const satisfies Record<'export' | 'restore', Record<string, MessageKey>>
 
 export function archiveFailureMessage(
   locale: ErrorDisplayLocale, operation: keyof typeof ARCHIVE_FAILURE_KEYS, code: string, damaged?: DamagedReviewCycle,

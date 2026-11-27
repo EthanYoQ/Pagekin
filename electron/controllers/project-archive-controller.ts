@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
-import { app, ipcMain } from 'electron'
+import { app } from 'electron'
 import { showOpenDialogInLastDirectory, showSaveDialogInLastDirectory } from '../utils/remembered-dialog'
 
 import type {
@@ -24,6 +24,7 @@ import { restorePortableProject } from '../services/project-restore-service'
 import { registerRecentProject } from './project-controller'
 import { mainText } from '../i18n'
 import { SchemaMigrationError } from '../migrations/registry'
+import { handle } from '../ipc/handle'
 
 const require = createRequire(import.meta.url)
 
@@ -91,6 +92,8 @@ function failure(operation: 'export' | 'restore', error: unknown, source?: strin
       : UNWRITABLE_ERRNO.has(code as string) ? 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE'
         : operation === 'export' ? 'PORTABLE_EXPORT_FAILED' : 'PORTABLE_RESTORE_FAILED'
   }
+  // 导出时校验失败按「有一项数据无法安全打包」说明；打开作品也报 MIGRATION_VERIFICATION_FAILED，那里说的是别的事。
+  if (operation === 'export' && message === 'MIGRATION_VERIFICATION_FAILED') message = 'PORTABLE_UNSAFE_PROJECTION'
   const candidate = message === raw ? code ?? raw : message
   const errorCode = PORTABLE_ERROR_CODES.has(candidate as PortableProjectOperationErrorCode)
     ? candidate as PortableProjectOperationErrorCode
@@ -98,6 +101,7 @@ function failure(operation: 'export' | 'restore', error: unknown, source?: strin
   return {
     success: false as const,
     error: message,
+    failure: { code: message },
     ...(errorCode ? { errorCode } : {}),
     ...(error instanceof SchemaMigrationError && error.damagedReviewCycle ? { damagedReviewCycle: error.damagedReviewCycle } : {}),
   }
@@ -187,7 +191,7 @@ export function registerProjectArchiveController(
     event.preventDefault()
     void stopPortableExports().finally(() => app.quit())
   })
-  ipcMain.handle('dialog:select-project-archive-export', async (event: ArchiveGrantEvent, suggestedName: string) => {
+  handle('dialog:select-project-archive-export', async (event: ArchiveGrantEvent, suggestedName: string) => {
     const result = await showSaveDialogInLastDirectory('project-archive', {
       title: text('导出项目存档', 'Export project archive'),
       defaultPath: `${safeSuggestedName(suggestedName, 'project-backup')}.${ARCHIVE_EXTENSION}`,
@@ -208,7 +212,7 @@ export function registerProjectArchiveController(
     return issueSelectedGrant(grants, event, issued, result.filePath)
   })
 
-  ipcMain.handle('dialog:select-project-archive', async (event: ArchiveGrantEvent) => {
+  handle('dialog:select-project-archive', async (event: ArchiveGrantEvent) => {
     const result = await showOpenDialogInLastDirectory('project-archive', {
       title: text('选择项目存档', 'Choose a project archive'),
       filters: [{ name: 'AI Novel Archive', extensions: [ARCHIVE_EXTENSION] }],
@@ -226,7 +230,7 @@ export function registerProjectArchiveController(
     return issueSelectedGrant(grants, event, issued, archivePath)
   })
 
-  ipcMain.handle('dialog:select-project-restore-target', async (event: ArchiveGrantEvent, suggestedName: string) => {
+  handle('dialog:select-project-restore-target', async (event: ArchiveGrantEvent, suggestedName: string) => {
     const result = await showOpenDialogInLastDirectory('project-restore-target', { title: text('选择恢复副本所在文件夹', 'Choose the folder for the restored copy'), properties: ['openDirectory', 'createDirectory'] })
     const parent = result.canceled ? undefined : result.filePaths[0]
     if (!parent) return null
@@ -241,7 +245,7 @@ export function registerProjectArchiveController(
     return issueSelectedGrant(grants, event, issued, targetPath)
   })
 
-  ipcMain.handle('project:archive-export', async (event: ArchiveGrantEvent, request: PortableProjectExportRequest) => {
+  handle('project:archive-export', async (event: ArchiveGrantEvent, request: PortableProjectExportRequest) => {
     let sourceRoot: string | undefined
     try {
       const active = projectAccess.assertCurrentProjectContext(
@@ -269,7 +273,7 @@ export function registerProjectArchiveController(
     }
   })
 
-  ipcMain.handle('project:archive-restore', async (event: ArchiveGrantEvent, request: PortableProjectRestoreRequest) => {
+  handle('project:archive-restore', async (event: ArchiveGrantEvent, request: PortableProjectRestoreRequest) => {
     let archivePath: string | undefined
     try {
       archivePath = resolveGrantedPath(grants, event, request.archiveGrantId, 'read')

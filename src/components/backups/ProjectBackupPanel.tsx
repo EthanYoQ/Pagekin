@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useState } from 'react'
 import { Archive, Cloud, Download, Loader2, Upload } from 'lucide-react'
 
-import { archiveFailureMessage, caughtFailure, failureText, omittedReviewCyclesMessage } from '../../i18n/app-errors'
+import { archiveFailureMessage, authorError, caughtFailure, failureText, IPC_HANDLER_FAILED, omittedReviewCyclesMessage, resultFailure } from '../../i18n/app-errors'
 import { localize } from '../../i18n/core'
 import { ipc } from '../../services/ipc-client'
 import type {
@@ -10,6 +10,7 @@ import type {
   CloudBackupGenerationView,
 } from '../../shared/cloud-backup'
 import type { DamagedReviewCycle } from '../../shared/damaged-review-cycle'
+import { codeOf, type Failure } from '../../shared/failure'
 import type { PortableExportPhase } from '../../shared/ipc-channels'
 import { projectSessionContextFromProject } from '../../shared/project-session-context'
 import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
@@ -26,8 +27,12 @@ type ExportProgress = { phase: PortableExportPhase; round: number }
 const progressStep = ({ phase, round }: ExportProgress) => round * EXPORT_PHASES.length + EXPORT_PHASES.indexOf(phase)
 
 const errorText = (error: unknown) => failureText(currentInterfaceLocale(), caughtFailure(error))
-const failureReason = (operation: 'export' | 'restore', code: string, damaged?: DamagedReviewCycle) =>
-  archiveFailureMessage(currentInterfaceLocale(), operation, code, damaged)
+type ResultWithFailure = { failure?: Failure; errorCode?: string; error?: string }
+const resultText = (result: ResultWithFailure) => failureText(currentInterfaceLocale(), resultFailure(result))
+const resultFailureOrUnknown = (result: ResultWithFailure): Failure => resultFailure(result) ?? { code: IPC_HANDLER_FAILED }
+const failed = (result: ResultWithFailure) => authorError(currentInterfaceLocale(), resultFailureOrUnknown(result))
+const failureReason = (operation: 'export' | 'restore', result: ResultWithFailure & { damagedReviewCycle?: DamagedReviewCycle }) =>
+  archiveFailureMessage(currentInterfaceLocale(), operation, codeOf(resultFailureOrUnknown(result)) ?? IPC_HANDLER_FAILED, result.damagedReviewCycle)
 const withOmitted = (message: string, omitted?: readonly DamagedReviewCycle[]) => {
   if (!omitted?.length) return message
   const locale = currentInterfaceLocale()
@@ -98,7 +103,7 @@ function ProjectBackupPanelSession({
     void ipc.invoke('cloud-backup:view', projectSession).then(result => {
       if (!active()) return
       if (!result.success) {
-        setNotice({ kind: 'error', text: errorText(result.errorCode) })
+        setNotice({ kind: 'error', text: resultText(result) })
         return
       }
       updateBinding(result.binding)
@@ -142,7 +147,7 @@ function ProjectBackupPanelSession({
     const target = await ipc.invoke('dialog:select-project-restore-target', project ? `${project.name}-恢复副本` : text('恢复副本', 'Restored copy', '復元したコピー'))
     if (!target) return
     const result = await ipc.invoke('project:archive-restore', { archiveGrantId: archive.grantId, targetGrantId: target.grantId })
-    if (!result.success) return fail(failureReason('restore', result.errorCode || result.error))
+    if (!result.success) return fail(failureReason('restore', result))
     setNotice({ kind: 'success', text: text(`已恢复新副本 ${result.receipt.targetProjectId}：${result.receipt.targetProjectRoot}`, `Restored copy ${result.receipt.targetProjectId}: ${result.receipt.targetProjectRoot}`, `新しいコピー ${result.receipt.targetProjectId} として復元しました：${result.receipt.targetProjectRoot}`) })
   })
 
@@ -170,7 +175,7 @@ function ProjectBackupPanelSession({
     })
     const result = await ipc.invoke('project:archive-export', { targetArchiveGrantId: target.grantId, projectSession, exportId })
       .finally(() => { stopListening(); setExportProgress(null) })
-    if (!result.success) return fail(failureReason('export', result.errorCode || result.error, result.damagedReviewCycle))
+    if (!result.success) return fail(failureReason('export', result))
     setNotice({ kind: 'success', text: withOmitted(text(`本地存档已导出：${result.receipt.targetSha256}`, `Local archive exported: ${result.receipt.targetSha256}`, `ローカルアーカイブをエクスポートしました：${result.receipt.targetSha256}`), result.receipt.omittedReviewCycles) })
   })
 
@@ -180,7 +185,7 @@ function ProjectBackupPanelSession({
     const connected = await ipc.invoke('cloud-backup:connect', {
       endpoint: endpoint.trim(), username: username.trim(), secret,
     })
-    if (!connected.success) throw new Error(connected.errorCode)
+    if (!connected.success) throw failed(connected)
     const confirmed = await ipc.invoke('cloud-backup:confirm-binding', {
       projectSession,
       localEndpointAccountId: connected.account.accountId,
@@ -193,11 +198,11 @@ function ProjectBackupPanelSession({
     if (!confirmed.success) {
       const cleared = await ipc.invoke('cloud-backup:clear-credential', connected.account.accountId)
       if (!cleared.success) {
-        return fail(errorText(confirmed.errorCode) + (isSessionOnly
+        return fail(resultText(confirmed) + (isSessionOnly
           ? text('刚填的密码没能清掉，还记在书童里，退出书童后就不在了。', ' The password you just entered could not be cleared; Pagekin still holds it until you quit.', '入力したパスワードを消去できませんでした。Pagekin を終了するまで保持されます。')
           : text('刚填的密码没能从这台电脑上删掉，仍加密存在书童的数据文件夹里。', ' The password you just entered could not be removed from this computer; it is still stored encrypted in the Pagekin data folder.', '入力したパスワードをこのコンピューターから削除できませんでした。Pagekin のデータフォルダーに暗号化されたまま保存されています。')))
       }
-      throw new Error(confirmed.errorCode)
+      throw failed(confirmed)
     }
     setAccount(connected.account)
     updateBinding(confirmed.binding)
@@ -222,7 +227,7 @@ function ProjectBackupPanelSession({
       lastSelectedParentGenerationIds: matchesGenerationSource(account.accountId, cloudBookId.trim()) ? parentIds : [],
       expectedRevision: binding?.revision ?? null,
     })
-    if (!result.success) throw new Error(result.errorCode)
+    if (!result.success) throw failed(result)
     updateBinding(result.binding)
     setNotice({ kind: 'success', text: text('账号、云书和父世代已重新绑定；尚未上传。', 'Account, cloud book, and parents rebound. Nothing was uploaded.', 'アカウント、クラウドブック、親世代を紐付け直しました。アップロードはまだ行っていません。') })
   })
@@ -232,7 +237,7 @@ function ProjectBackupPanelSession({
     const bookId = cloudBookId.trim() || binding?.cloudBookId
     if (!localEndpointAccountId || !bookId) return fail(text('请先连接并绑定云端账号。', 'Connect and bind a cloud account first.', '先にクラウドのアカウントに接続して紐付けてください。'))
     const result = await ipc.invoke('cloud-backup:list', { localEndpointAccountId, cloudBookId: bookId })
-    if (!result.success) throw new Error(result.errorCode)
+    if (!result.success) throw failed(result)
     if (!matchesGenerationSource(localEndpointAccountId, bookId)) {
       setParentIds([])
       setSelectedGenerationId('')
@@ -249,7 +254,7 @@ function ProjectBackupPanelSession({
     setActiveOperationId(operationId)
     try {
       const result = await ipc.invoke('cloud-backup:backup', { operationId, projectSession, disclosureConfirmed: true })
-      if (!result.success) return fail(failureReason('export', result.errorCode, result.damagedReviewCycle))
+      if (!result.success) return fail(failureReason('export', result))
       if (result.binding) updateBinding(result.binding)
       setNotice({ kind: 'success', text: withOmitted(text(`云备份完成：${result.generation.generationId}；备份点 ${result.backupPoint}${result.bindingSaved ? '' : '；绑定未保存'}`, `Cloud backup complete: ${result.generation.generationId}; backup point ${result.backupPoint}${result.bindingSaved ? '' : '; binding not saved'}`, `クラウドバックアップが完了しました：${result.generation.generationId}。バックアップポイント ${result.backupPoint}${result.bindingSaved ? '' : '。紐付けは保存されていません'}`), result.omittedReviewCycles) })
     } finally {
@@ -267,7 +272,7 @@ function ProjectBackupPanelSession({
     setActiveOperationId(operationId)
     try {
       const result = await ipc.invoke('cloud-backup:restore-copy', { operationId, localEndpointAccountId, cloudBookId: bookId, generationId: selectedGenerationId, targetGrantId: target.grantId })
-      if (!result.success) throw new Error(result.errorCode)
+      if (!result.success) throw failed(result)
       setNotice({ kind: 'success', text: text(`云端世代已恢复为新副本 ${result.receipt.targetProjectId}：${result.receipt.targetProjectRoot}${result.bindingSaved ? '' : '；绑定未保存'}`, `Cloud generation restored as copy ${result.receipt.targetProjectId}: ${result.receipt.targetProjectRoot}${result.bindingSaved ? '' : '; binding not saved'}`, `クラウド世代を新しいコピー ${result.receipt.targetProjectId} として復元しました：${result.receipt.targetProjectRoot}${result.bindingSaved ? '' : '。紐付けは保存されていません'}`) })
     } finally {
       setActiveOperationId(current => current === operationId ? null : current)
@@ -278,7 +283,7 @@ function ProjectBackupPanelSession({
     if (!activeOperationId) return
     try {
       const result = await ipc.invoke('cloud-backup:cancel', activeOperationId)
-      if (!result.success) throw new Error(result.errorCode)
+      if (!result.success) throw failed(result)
       const finishedBeforeCancel = !result.cancelled
       if (finishedBeforeCancel) return
       setNotice({ kind: 'info', text: text('已发送取消请求，等待当前云操作停止。', 'Cancellation requested. Waiting for the current cloud operation to stop.', 'キャンセルを要求しました。現在のクラウド操作が停止するのを待っています。') })
@@ -291,7 +296,7 @@ function ProjectBackupPanelSession({
     const accountId = account?.accountId ?? binding?.localEndpointAccountId
     if (!accountId) return fail(text('当前没有可清除的本机凭据。', 'There is no local credential to clear.', '削除できる認証情報はこのコンピューターにありません。'))
     const result = await ipc.invoke('cloud-backup:clear-credential', accountId)
-    if (!result.success) throw new Error(result.errorCode)
+    if (!result.success) throw failed(result)
     setAccount(null)
     updateBinding(null)
     setSecret('')

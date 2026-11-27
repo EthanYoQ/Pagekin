@@ -340,7 +340,7 @@ describe('ProjectBackupPanel', () => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === 'cloud-backup:view') return { success: true, state: 'unconfigured', binding: null, account: null }
       if (channel === 'dialog:select-project-archive-export') return { grantId: 'export-grant', displayName: 'book.anovel' }
-      if (channel === 'project:archive-export') return { success: false, error: 'MIGRATION_VERIFICATION_FAILED', damagedReviewCycle }
+      if (channel === 'project:archive-export') return { success: false, errorCode: 'PORTABLE_UNSAFE_PROJECTION', error: 'PORTABLE_UNSAFE_PROJECTION', failure: { code: 'PORTABLE_UNSAFE_PROJECTION' }, damagedReviewCycle }
       throw new Error(`Unexpected IPC: ${channel}`)
     })
     await renderPanel()
@@ -357,7 +357,7 @@ describe('ProjectBackupPanel', () => {
       '作品没有改动。作品文件夹里有不认识的文件或链接，存档没有生成。请把这条提示反馈给我们。'],
     [{ errorCode: 'PORTABLE_ARCHIVE_SOURCE_UNSAFE', error: 'PORTABLE_ARCHIVE_SOURCE_UNSAFE' },
       '作品没有改动。作品文件夹里有不认识的文件或链接，存档没有生成。请把这条提示反馈给我们。'],
-    [{ error: 'MIGRATION_VERIFICATION_FAILED' },
+    [{ errorCode: 'PORTABLE_UNSAFE_PROJECTION', error: 'PORTABLE_UNSAFE_PROJECTION', failure: { code: 'PORTABLE_UNSAFE_PROJECTION' } },
       '作品没有改动。有一项数据无法安全打包，存档没有生成。请把这条提示反馈给我们。'],
     [{ errorCode: 'PORTABLE_EXPORT_AVATAR_DAMAGED', error: 'PORTABLE_EXPORT_AVATAR_DAMAGED' },
       '作品没有改动。有个角色头像文件坏了或不见了，存档没有生成。请在人物页给头像没显示的角色「选择头像」，再点「导出本地存档」。'],

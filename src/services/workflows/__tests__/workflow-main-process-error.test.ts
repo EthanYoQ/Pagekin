@@ -28,9 +28,9 @@ describe('workflow failures carrying a main-process error (#466)', () => {
   })
 
   it('带名字的错误类转来的未登记码不进说明，保留在 code 上（#787）', () => {
-    const failure = fail('en-US', 'PortableProjectArchiveError: PORTABLE_ARCHIVE_INVALID')
+    const failure = fail('en-US', 'PortableProjectArchiveError: PORTABLE_UNREGISTERED_TEST_CODE')
     expect(failure.message).toBe('The finalization transaction was not committed.')
-    expect(failure).toHaveProperty('code', 'PORTABLE_ARCHIVE_INVALID')
+    expect(failure).toHaveProperty('code', 'PORTABLE_UNREGISTERED_TEST_CODE')
   })
 
   it('未登记的错误码不进说明，保留在 code 上并记到控制台（#787）', () => {

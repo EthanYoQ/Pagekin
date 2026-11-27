@@ -411,7 +411,7 @@ describe('project controller project identity', () => {
     await expect(handler('dialog:select-folder')({ sender }, 'project-open')).resolves.toBeNull()
     await expect(handler('dialog:select-legacy-project')({ sender })).resolves.toBeNull()
     expect(mocks.issueDirectory).not.toHaveBeenCalled()
-    await expect(handler('dialog:select-folder')({ sender }, 'write')).rejects.toThrow('PROJECT_DIRECTORY_GRANT_PURPOSE_INVALID')
+    await expect(handler('dialog:select-folder')({ sender }, 'write')).rejects.toThrow('IPC_HANDLER_FAILED')
   })
 
   it('rejects an unselected, unregistered raw project path before probing it', async () => {
@@ -1072,7 +1072,7 @@ describe('project controller project identity', () => {
       activeProjectPath: null,
       databaseRestored: false,
       dbReady: false,
-      error: expect.stringContaining('cannot read'),
+      error: 'PROJECT_OPERATION_FAILED', failure: { code: 'PROJECT_OPERATION_FAILED' },
     })
     expect((result as { error: string }).error).not.toMatch(/PROJECT_ROLLBACK/)
 
@@ -1126,7 +1126,7 @@ describe('project controller project identity', () => {
       activeProjectPath: null,
       databaseRestored: false,
       dbReady: false,
-      error: expect.stringMatching(/cannot read/),
+      error: 'PROJECT_OPERATION_FAILED', failure: { code: 'PROJECT_OPERATION_FAILED' },
     })
     expect((result as { error: string }).error).not.toMatch(/cannot initialize/)
     expect(mocks.projectAccess.beginSession).not.toHaveBeenCalled()
@@ -1206,7 +1206,7 @@ describe('project controller project identity', () => {
 
     expect(result).toMatchObject({
       success: false,
-      error: 'Error: PROJECT_SESSION_REQUIRED',
+      error: 'PROJECT_SESSION_REQUIRED', failure: { code: 'PROJECT_SESSION_REQUIRED' },
     })
     expect(mocks.projectCoreUpdate).not.toHaveBeenCalled()
   })
@@ -1304,7 +1304,7 @@ describe('project controller project identity', () => {
     await expect(handler('project:save')({}, 'project-A', data, projectA, projectSession('project-A', projectA, 'stale-lease')))
       .resolves.toMatchObject({
         success: false,
-        error: 'Error: PROJECT_SESSION_STALE',
+        error: 'PROJECT_SESSION_STALE', failure: { code: 'PROJECT_SESSION_STALE' },
       })
     expect(mocks.projectCoreUpdate).not.toHaveBeenCalled()
   })
@@ -1354,7 +1354,7 @@ describe('project controller project identity', () => {
     await expect(handler('project:delete')({}, projectA, 'project-A', 'lease-project-A', projectSession())).resolves.toMatchObject({
       success: false,
       directoryDeleted: false,
-      error: expect.stringContaining('PROJECT_IDENTITY_CHANGED'),
+      error: 'PROJECT_OPERATION_FAILED', failure: { code: 'PROJECT_OPERATION_FAILED' },
     })
     expect(mocks.removeDirectoryWithWindowsRetry).not.toHaveBeenCalled()
     expect(mocks.closeProjectDatabase).not.toHaveBeenCalled()
@@ -1403,7 +1403,7 @@ describe('project controller project identity', () => {
       success: true,
       directoryDeleted: true,
       databaseRestored: false,
-      warning: expect.stringContaining('最近项目列表更新失败'),
+      warning: 'PROJECT_DELETE_RECENT_LIST_FAILED',
     })
     expect(mocks.currentProjectPath).toBe('')
     expect(mocks.projectAccess.invalidateCurrentSession).toHaveBeenCalledOnce()
@@ -1428,7 +1428,7 @@ describe('project controller project identity', () => {
     await expect(handler('project:delete')({}, projectA)).resolves.toMatchObject({
       success: false,
       directoryDeleted: false,
-      error: 'Error: PROJECT_SESSION_REQUIRED',
+      error: 'PROJECT_SESSION_REQUIRED', failure: { code: 'PROJECT_SESSION_REQUIRED' },
     })
     expect(mocks.removeDirectoryWithWindowsRetry).not.toHaveBeenCalled()
   })
@@ -1447,7 +1447,7 @@ describe('project controller project identity', () => {
     )).resolves.toMatchObject({
       success: false,
       directoryDeleted: false,
-      error: 'Error: PROJECT_SESSION_STALE',
+      error: 'PROJECT_SESSION_STALE', failure: { code: 'PROJECT_SESSION_STALE' },
     })
     expect(mocks.removeDirectoryWithWindowsRetry).not.toHaveBeenCalled()
   })
@@ -1893,8 +1893,8 @@ describe('新建、删除作品失败时，说真正的原因和办法，不露�
     const result = await deleteBook()
 
     expect(result).toMatchObject({ success: true, directoryDeleted: true })
-    expect(result.warning).toMatch(/最近项目/u)
-    expect(result.warning).not.toMatch(RAW_CREATE_DELETE_TEXT)
+    expect(displayedErrorMessage(shown('zh-CN'), result.warning!)).toMatch(/最近项目/u)
+    expect(displayedErrorMessage(shown('zh-CN'), result.warning!)).not.toMatch(RAW_CREATE_DELETE_TEXT)
   })
 })
 
