@@ -43,7 +43,7 @@ describe('update card copy', () => {
 
 describe('更新失败的说明', () => {
   // 主进程只交 UpdateError 的封闭枚举（electron/services/update-service.ts 的 classifyUpdateFailure），说明只按 reason 和 code 选，
-  // 字段里即使混进原文也不会显示。master 上同样成立，没有能红的路径。
+  // 字段里即使混进原文也不会显示。
   it('更新失败不显示异常原文', () => {
     const raw = 'net::ERR_CONNECTION_RESET at ClientRequest.<anonymous>'
     const leaked = { code: raw, phase: 'check', reason: raw, retryable: true, safeTechnicalDetails: raw } as unknown as Parameters<typeof getUpdateErrorMessage>[0]

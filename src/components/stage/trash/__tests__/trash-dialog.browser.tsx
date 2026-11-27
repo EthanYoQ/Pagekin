@@ -232,7 +232,7 @@ describe('回收站对话框（#564）', () => {
   })
 
   it('回收站操作失败不显示异常原文', async () => {
-    // 三个通道是直连通道，主进程在 catch 里把异常的 message 原样放进 error（electron/services/chapter-deletion-service.ts 的 messageOf）。
+    // 这三个通道直连，主进程会把异常 message 原样放进 error（electron/services/chapter-deletion-service.ts 的 messageOf）。
     const raw = 'database is locked'
     const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
     invoke.mockImplementation(async (channel: string, ...args: unknown[]) =>
