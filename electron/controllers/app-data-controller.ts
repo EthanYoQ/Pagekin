@@ -1,9 +1,12 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
-import { app, ipcMain } from 'electron'
+import { app } from 'electron'
 import { showOpenDialogInLastDirectory } from '../utils/remembered-dialog'
 import type { AppPromptLoadReceipt, AppPromptTemplate } from '../../src/shared/ipc-channels'
+import { IPC_HANDLER_FAILED, registeredErrorCode, wireNote } from '../../src/i18n/app-errors'
+import type { MessageKey } from '../../src/i18n/messages/en-US'
+import { authorOwned, failureCode, type WireFailure, type WireNote } from '../../src/shared/failure'
 import type { WritingLanguage } from '../../src/shared/writing-language'
 import {
   inspectWritingSkillMarkdown,
@@ -18,10 +21,12 @@ import {
   type WritingSkillBundledFile,
   type WritingSkillInspection,
   type WritingSkillPackageInspection,
+  type GitHubSkillUrlProblem,
 } from '../../src/shared/writing-skills'
 import { mainText } from '../i18n'
 import { VELA_HOME, writeJsonFile } from '../utils/config-utils'
 import { assertGlobalDataReady } from '../services/app-data-locator'
+import { handle } from '../ipc/handle'
 import {
   loadLocalWritingSkill,
   MAX_FOLDER_DEPTH,
@@ -40,6 +45,33 @@ type SkillEvent = { sender: { id: number; isDestroyed: () => boolean } }
 function text(zhCNText: string, enUSText: string): string {
   return mainText(app.getLocale(), zhCNText, enUSText)
 }
+
+/** 过 IPC 时只带目录说明，由渲染端按界面语言写成句子。 */
+class SkillRejected extends Error {
+  constructor(readonly note: WireNote) {
+    super(note.key)
+  }
+}
+
+/** 其余失败的原文可能带本机路径，只进日志。 */
+function appDataFailure(error: unknown): WireFailure {
+  if (error instanceof SkillRejected) return { code: 'WRITING_SKILL_REJECTED', note: error.note }
+  const code = failureCode(registeredErrorCode(error))
+  if (!code) console.error('[app-data] 提示词或写作 Skill 操作失败:', error)
+  return { code: code ?? IPC_HANDLER_FAILED }
+}
+
+const URL_PROBLEM_NOTES = {
+  'paste-skill': 'error.writingSkillUrlPasteSkill',
+  'not-url': 'error.writingSkillUrlNotUrl',
+  'https-only': 'error.writingSkillUrlHttpsOnly',
+  'github-only': 'error.writingSkillUrlGithubOnly',
+  'not-skill-md': 'error.writingSkillUrlNotSkillMarkdown',
+  owner: 'error.writingSkillUrlOwnerUnsupported',
+  repository: 'error.writingSkillUrlRepositoryUnsupported',
+  branch: 'error.writingSkillUrlBranchUnsupported',
+  path: 'error.writingSkillUrlPathUnsupported',
+} as const satisfies Record<GitHubSkillUrlProblem, MessageKey>
 
 function isContainedPath(rootPath: string, candidatePath: string): boolean {
   const relative = path.relative(rootPath, candidatePath)
@@ -86,7 +118,7 @@ function validSender(event: SkillEvent): boolean {
 
 function writingSkillDirectory(name: string): string {
   if (!WRITING_SKILL_NAME_PATTERN.test(name) || name === '.' || name === '..') {
-    throw new Error(text('写作 Skill 名称无效', 'The writing skill name is invalid'))
+    throw new SkillRejected(wireNote('error.writingSkillNameInvalid'))
   }
   const root = path.join(VELA_HOME, 'skills')
   const candidate = path.resolve(root, name)
@@ -152,18 +184,17 @@ function ensureOwnedSkillTarget(name: string): { directory: string; filePath: st
   return { directory, filePath }
 }
 
-function packageErrorText(code: WritingSkillPackageErrorCode): string {
-  const copy: Record<WritingSkillPackageErrorCode, readonly [string, string]> = {
-    SOURCE_INVALID: ['无法读取所选的文件或文件夹', 'The selected file or folder cannot be read'],
-    SYMLINK: ['Skill 中包含符号链接或快捷方式，已拒绝导入', 'The skill contains a symbolic link or junction and was rejected'],
-    SKILL_MD_MISSING: ['文件夹根目录里没有 SKILL.md', 'The folder has no SKILL.md at its root'],
-    SKILL_MD_INVALID: ['SKILL.md 必须是不超过 64 KiB 的 UTF-8 文本', 'SKILL.md must be UTF-8 text no larger than 64 KiB'],
-    FOLDER_TOO_LARGE: [
-      `文件夹内文件过多或层级过深（最多 ${MAX_FOLDER_ENTRIES} 项、${MAX_FOLDER_DEPTH} 层）`,
-      `The folder has too many entries or levels (up to ${MAX_FOLDER_ENTRIES} entries, ${MAX_FOLDER_DEPTH} levels)`,
-    ],
+function packageRejection(code: WritingSkillPackageErrorCode): SkillRejected {
+  if (code === 'FOLDER_TOO_LARGE') {
+    return new SkillRejected(wireNote('error.writingSkillFolderTooLarge', { entries: MAX_FOLDER_ENTRIES, depth: MAX_FOLDER_DEPTH }))
   }
-  return text(copy[code][0], copy[code][1])
+  const keys = {
+    SOURCE_INVALID: 'error.writingSkillSourceUnreadable',
+    SYMLINK: 'error.writingSkillSymlink',
+    SKILL_MD_MISSING: 'error.writingSkillMarkdownMissing',
+    SKILL_MD_INVALID: 'error.writingSkillMarkdownInvalid',
+  } as const satisfies Record<Exclude<WritingSkillPackageErrorCode, 'FOLDER_TOO_LARGE'>, MessageKey>
+  return new SkillRejected(wireNote(keys[code]))
 }
 
 function loadLocalSkillOrThrow(source: WritingSkillSource) {
@@ -171,17 +202,14 @@ function loadLocalSkillOrThrow(source: WritingSkillSource) {
   try {
     loaded = loadLocalWritingSkill(source)
   } catch (error) {
-    if (error instanceof WritingSkillPackageError) throw new Error(packageErrorText(error.code))
+    if (error instanceof WritingSkillPackageError) throw packageRejection(error.code)
     // 读盘时的系统错误（EACCES 等）带本机路径，界面只给可读说明，原文留在日志里。
     console.error('[skills] reading a local writing skill failed', error)
-    throw new Error(packageErrorText('SOURCE_INVALID'))
+    throw packageRejection('SOURCE_INVALID')
   }
   const { name } = loaded.inspection.metadata
   if (!WRITING_SKILL_NAME_PATTERN.test(name)) {
-    throw new Error(text(
-      `Skill 名称“${name}”无效：只能使用字母、数字、点、下划线和连字符`,
-      `The skill name "${name}" is invalid: use letters, digits, dots, underscores, and hyphens`,
-    ))
+    throw new SkillRejected(wireNote('error.writingSkillNameUnsupported', { name: authorOwned(name) }))
   }
   return loaded
 }
@@ -196,17 +224,11 @@ function installUserWritingSkill(
   bundle?: readonly WritingSkillBundledFile[],
 ): InstalledWritingSkill {
   if (!inspection.compatible) {
-    throw new Error(text(
-      `该 Skill 不是自包含提示词：${inspection.reasons.join(', ')}`,
-      `This is not a self-contained prompt skill: ${inspection.reasons.join(', ')}`,
-    ))
+    throw new SkillRejected(wireNote('error.writingSkillNotSelfContained', { reasons: authorOwned(inspection.reasons.join(', ')) }))
   }
   const requestedDirectory = writingSkillDirectory(inspection.metadata.name)
   if (fs.existsSync(requestedDirectory)) {
-    throw new Error(text(
-      `同名 Writing Skill 已安装：${inspection.metadata.name}`,
-      `A Writing Skill with this name is already installed: ${inspection.metadata.name}`,
-    ))
+    throw new SkillRejected(wireNote('error.writingSkillAlreadyInstalled', { name: authorOwned(inspection.metadata.name) }))
   }
   const { directory, filePath } = ensureOwnedSkillTarget(inspection.metadata.name)
   try {
@@ -228,10 +250,7 @@ function installUserWritingSkill(
     // 文件系统错误（EEXIST、EACCES、ENOSPC 等）带本机路径，界面只给可读说明，原文留在日志里。
     if (typeof (error as NodeJS.ErrnoException)?.code !== 'string') throw error
     console.error('[skills] writing skill install failed', error)
-    throw new Error(text(
-      '写入 Skill 文件失败，本次没有安装任何内容。请重新选择或检查该 Skill 后再试。',
-      'The skill files could not be written, so nothing was installed. Choose or inspect the skill again to retry.',
-    ))
+    throw new SkillRejected(wireNote('error.writingSkillWriteFailed'))
   }
   return {
     name: inspection.metadata.name,
@@ -258,13 +277,13 @@ async function fetchGitHubWritingSkill(sourceUrl: string): Promise<{
   raw: string
   inspection: RemoteWritingSkillInspection
 }> {
-  const location = parseGitHubWritingSkillUrl(sourceUrl, text)
-  const tooLarge = () => new Error(text('这个 SKILL.md 超过 64 KiB，不能安装。', 'This SKILL.md is larger than 64 KiB and cannot be installed.'))
+  const location = parseGitHubWritingSkillUrl(sourceUrl, problem => new SkillRejected(wireNote(URL_PROBLEM_NOTES[problem])))
+  const tooLarge = () => new SkillRejected(wireNote('error.writingSkillTooLarge'))
   const unreachable = (error: unknown) => {
     console.warn('[Skills] GitHub 请求失败:', error)
-    return new Error(text('连不上 GitHub，请检查网络后重试。', 'Could not reach GitHub. Check your network and try again.'))
+    return new SkillRejected(wireNote('error.writingSkillGithubUnreachable'))
   }
-  const githubGet = async (url: string, accept: string, notFound: Error) => {
+  const githubGet = async (url: string, accept: string, notFound: SkillRejected) => {
     let response: Response
     try {
       response = await fetch(url, { headers: { Accept: accept, 'User-Agent': 'AI-Novel-Writer' }, redirect: 'error', signal: AbortSignal.timeout(10_000) })
@@ -272,7 +291,7 @@ async function fetchGitHubWritingSkill(sourceUrl: string): Promise<{
       throw unreachable(error)
     }
     if (response.status === 404) throw notFound
-    if (!response.ok) throw new Error(text('GitHub 暂时拒绝了请求，请稍后重试。', 'GitHub refused the request for now. Try again later.'))
+    if (!response.ok) throw new SkillRejected(wireNote('error.writingSkillGithubRefused'))
     if (Number(response.headers.get('content-length') ?? 0) > MAX_WRITING_SKILL_BYTES) throw tooLarge()
     try {
       return await response.text()
@@ -285,7 +304,7 @@ async function fetchGitHubWritingSkill(sourceUrl: string): Promise<{
     const body = await githubGet(
       `https://api.github.com/repos/${encodeURIComponent(location.owner)}/${encodeURIComponent(location.repo)}`,
       'application/vnd.github+json',
-      new Error(text('GitHub 上找不到这个仓库。请检查地址，并确认仓库是公开的。', 'This repository was not found on GitHub. Check the URL and make sure the repository is public.')),
+      new SkillRejected(wireNote('error.writingSkillRepositoryNotFound')),
     )
     let repository: { default_branch?: unknown } = {}
     try {
@@ -294,16 +313,13 @@ async function fetchGitHubWritingSkill(sourceUrl: string): Promise<{
       // 代理或网关可能回网页而非 JSON。
     }
     if (typeof repository?.default_branch !== 'string' || !WRITING_SKILL_NAME_PATTERN.test(repository.default_branch)) {
-      throw new Error(text('读不出这个仓库的默认分支，请改用带分支的地址，例如 …/tree/main。', "Could not read this repository's default branch. Use a URL with a branch, such as …/tree/main."))
+      throw new SkillRejected(wireNote('error.writingSkillDefaultBranchUnreadable'))
     }
     ref = repository.default_branch
   }
 
   const resolvedUrl = githubRawUrl(location.owner, location.repo, ref, location.path)
-  const raw = await githubGet(resolvedUrl, 'text/plain', new Error(text(
-    '这个地址下没有 SKILL.md。请检查仓库、分支和路径。',
-    'No SKILL.md was found at this URL. Check the repository, branch, and path.',
-  )))
+  const raw = await githubGet(resolvedUrl, 'text/plain', new SkillRejected(wireNote('error.writingSkillMarkdownNotFound')))
   if (Buffer.byteLength(raw, 'utf8') > MAX_WRITING_SKILL_BYTES) throw tooLarge()
   const inspected = inspectWritingSkillMarkdown(raw)
   const contentSha256 = createHash('sha256').update(raw, 'utf8').digest('hex')
@@ -323,6 +339,13 @@ async function fetchGitHubWritingSkill(sourceUrl: string): Promise<{
       contentSha256,
     },
   }
+}
+
+function promptDiagnosticCode(error: unknown): string {
+  const message = error instanceof Error ? error.message : ''
+  if (message === 'PROMPT_TEMPLATE_INVALID' || message === 'PROMPT_FILENAME_MISMATCH') return message
+  console.error('[prompts] 读不出全局提示词文件:', error)
+  return 'PROMPT_FILE_UNREADABLE'
 }
 
 function promptFilename(template: AppPromptTemplate): string {
@@ -347,7 +370,7 @@ export function registerAppDataController(): void {
   const inspectedWritingSkills = new Map<string, Pick<RemoteWritingSkillInspection, 'contentSha256' | 'resolvedUrl'>>()
   // 每个渲染进程最多保留一个待安装的本机候选，新的选择会替换旧的。
   const localCandidates = new Map<number, { candidateId: string; source: WritingSkillSource; contentSha256: string }>()
-  ipcMain.handle('prompt:load-global', async (): Promise<AppPromptLoadReceipt> => {
+  handle('prompt:load-global', async (): Promise<AppPromptLoadReceipt> => {
     const promptsDirectory = path.join(VELA_HOME, 'prompts')
     if (!fs.existsSync(promptsDirectory)) return { templates: [], diagnostics: [] }
 
@@ -357,13 +380,8 @@ export function registerAppDataController(): void {
     try {
       entries = fs.readdirSync(promptsDirectory, { withFileTypes: true })
     } catch (error) {
-      return {
-        templates: [],
-        diagnostics: [{
-          path: 'prompts',
-          error: error instanceof Error ? error.message : String(error),
-        }],
-      }
+      console.error('[prompts] 读不出全局提示词目录:', error)
+      return { templates: [], diagnostics: [{ path: 'prompts', error: 'PROMPT_FILE_UNREADABLE' }] }
     }
     for (const entry of entries) {
       if (!entry.isFile() || !entry.name.endsWith('.json')) continue
@@ -372,13 +390,9 @@ export function registerAppDataController(): void {
         const canonicalPath = fs.realpathSync.native(candidatePath)
         if (!isContainedPath(fs.realpathSync.native(promptsDirectory), canonicalPath)) continue
         const parsed = JSON.parse(fs.readFileSync(canonicalPath, 'utf8')) as unknown
-        if (!isPromptTemplate(parsed)) {
-          throw new Error(text('提示词内容结构无效', 'The prompt content shape is invalid'))
-        }
+        if (!isPromptTemplate(parsed)) throw new Error('PROMPT_TEMPLATE_INVALID')
         const filenameKey = path.basename(entry.name, '.json')
-        if (promptFilename(parsed) !== filenameKey) {
-          throw new Error(text('提示词标识或语言与文件名不一致', 'The prompt identifier or language does not match its filename'))
-        }
+        if (promptFilename(parsed) !== filenameKey) throw new Error('PROMPT_FILENAME_MISMATCH')
         prompts.push(parsed)
       } catch (error) {
         diagnostics.push({
@@ -387,14 +401,14 @@ export function registerAppDataController(): void {
             ? { writingLanguage: promptLanguageFromFilename(entry.name) }
             : {}),
           path: entry.name,
-          error: error instanceof Error ? error.message : String(error),
+          error: promptDiagnosticCode(error),
         })
       }
     }
     return { templates: prompts, diagnostics }
   })
 
-  ipcMain.handle('prompt:save-global', async (_event, template: AppPromptTemplate) => {
+  handle('prompt:save-global', async (_event, template: AppPromptTemplate) => {
     try {
       if (!isPromptTemplate(template)) {
         throw new Error(text('提示词内容无效', 'The prompt content is invalid'))
@@ -407,11 +421,11 @@ export function registerAppDataController(): void {
       }
       return { success: true }
     } catch (error) {
-      return { success: false, error: String(error) }
+      return { success: false, failure: appDataFailure(error) }
     }
   })
 
-  ipcMain.handle('prompt:delete-global', async (_event, key: string, writingLanguage: WritingLanguage) => {
+  handle('prompt:delete-global', async (_event, key: string, writingLanguage: WritingLanguage) => {
     try {
       const filePaths = [promptKeyPath(key, writingLanguage)]
       if (writingLanguage === 'zh-CN') filePaths.push(promptKeyPath(key))
@@ -420,11 +434,11 @@ export function registerAppDataController(): void {
       }
       return { success: true }
     } catch (error) {
-      return { success: false, error: String(error) }
+      return { success: false, failure: appDataFailure(error) }
     }
   })
 
-  ipcMain.handle('skills:list-user', async () => {
+  handle('skills:list-user', async () => {
     const skillsDirectory = path.join(VELA_HOME, 'skills')
     if (!fs.existsSync(skillsDirectory)) return []
 
@@ -452,10 +466,10 @@ export function registerAppDataController(): void {
     return skills
   })
 
-  ipcMain.handle('skills:inspect-github', async (_event, sourceUrl: string) => {
+  handle('skills:inspect-github', async (_event, sourceUrl: string) => {
     try {
       if (typeof sourceUrl !== 'string' || sourceUrl.length > 2_048) {
-        throw new Error(text('GitHub 地址无效', 'The GitHub URL is invalid'))
+        throw new SkillRejected(wireNote('error.writingSkillGithubUrlInvalid'))
       }
       const { inspection } = await fetchGitHubWritingSkill(sourceUrl)
       inspectedWritingSkills.set(sourceUrl, {
@@ -465,21 +479,18 @@ export function registerAppDataController(): void {
       return { success: true, inspection }
     } catch (error) {
       if (typeof sourceUrl === 'string') inspectedWritingSkills.delete(sourceUrl)
-      return { success: false, error: error instanceof Error ? error.message : String(error) }
+      return { success: false, failure: appDataFailure(error) }
     }
   })
 
-  ipcMain.handle('skills:install-github', async (_event, sourceUrl: string) => {
+  handle('skills:install-github', async (_event, sourceUrl: string) => {
     try {
       if (typeof sourceUrl !== 'string' || sourceUrl.length > 2_048) {
-        throw new Error(text('GitHub 地址无效', 'The GitHub URL is invalid'))
+        throw new SkillRejected(wireNote('error.writingSkillGithubUrlInvalid'))
       }
       const confirmedInspection = inspectedWritingSkills.get(sourceUrl)
       if (!confirmedInspection) {
-        throw new Error(text(
-          '请先检查该 GitHub Writing Skill，再确认安装',
-          'Inspect this GitHub Writing Skill before confirming installation',
-        ))
+        throw new SkillRejected(wireNote('error.writingSkillInspectGithubFirst'))
       }
       inspectedWritingSkills.delete(sourceUrl)
       // Refetch after confirmation. Renderer-provided inspection data is never trusted as install input.
@@ -488,18 +499,15 @@ export function registerAppDataController(): void {
         inspection.contentSha256 !== confirmedInspection.contentSha256
         || inspection.resolvedUrl !== confirmedInspection.resolvedUrl
       ) {
-        throw new Error(text(
-          'Writing Skill 在检查后已发生变化，请重新检查',
-          'The Writing Skill changed after inspection; inspect it again',
-        ))
+        throw new SkillRejected(wireNote('error.writingSkillChangedAfterInspection'))
       }
       return { success: true, skill: installUserWritingSkill(inspection, raw) }
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : String(error) }
+      return { success: false, failure: appDataFailure(error) }
     }
   })
 
-  ipcMain.handle('skills:pick-local', async (event: SkillEvent, kind: LocalWritingSkillSourceKind) => {
+  handle('skills:pick-local', async (event: SkillEvent, kind: LocalWritingSkillSourceKind) => {
     try {
       if (!validSender(event)) throw new Error(text('请求来源无效', 'The request sender is invalid'))
       if (kind !== 'file' && kind !== 'folder') throw new Error(text('导入方式无效', 'The import kind is invalid'))
@@ -527,36 +535,30 @@ export function registerAppDataController(): void {
       }
       return { success: true, cancelled: false, inspection }
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : String(error) }
+      return { success: false, failure: appDataFailure(error) }
     }
   })
 
-  ipcMain.handle('skills:install-local', async (event: SkillEvent, candidateId: string) => {
+  handle('skills:install-local', async (event: SkillEvent, candidateId: string) => {
     try {
       if (!validSender(event)) throw new Error(text('请求来源无效', 'The request sender is invalid'))
       const pending = localCandidates.get(event.sender.id)
       if (!pending || pending.candidateId !== candidateId) {
-        throw new Error(text(
-          '请先检查该本机 Writing Skill，再确认安装',
-          'Inspect this local Writing Skill before confirming installation',
-        ))
+        throw new SkillRejected(wireNote('error.writingSkillInspectLocalFirst'))
       }
       localCandidates.delete(event.sender.id)
       // 确认后重新读盘，只安装与检查时逐字节相同的内容。
       const loaded = loadLocalSkillOrThrow(pending.source)
       if (loaded.contentSha256 !== pending.contentSha256) {
-        throw new Error(text(
-          'Writing Skill 在检查后已发生变化，请重新检查',
-          'The Writing Skill changed after inspection; inspect it again',
-        ))
+        throw new SkillRejected(wireNote('error.writingSkillChangedAfterInspection'))
       }
       return { success: true, skill: installUserWritingSkill(loaded.inspection, loaded.raw, loaded.bundledFiles) }
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : String(error) }
+      return { success: false, failure: appDataFailure(error) }
     }
   })
 
-  ipcMain.handle('skills:uninstall-user', async (_event, name: string) => {
+  handle('skills:uninstall-user', async (_event, name: string) => {
     try {
       const directory = writingSkillDirectory(name)
       const skillsRoot = path.join(VELA_HOME, 'skills')
@@ -573,7 +575,7 @@ export function registerAppDataController(): void {
       fs.rmSync(canonicalDirectory, { recursive: true, force: false })
       return { success: true }
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : String(error) }
+      return { success: false, failure: appDataFailure(error) }
     }
   })
 }

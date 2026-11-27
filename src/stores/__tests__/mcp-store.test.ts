@@ -63,13 +63,13 @@ describe('renderer MCP trust boundary', () => {
     mocks.invoke.mockImplementation(async (channel: string) => {
       if (channel === 'mcp:get-config-path') return 'C:/isolated/.vela/mcp_config.json'
       if (channel === 'mcp:load-config') {
-        return { success: false, status: 'error', servers: [], error: 'MCP 配置损坏' }
+        return { success: false, status: 'error', servers: [], failure: { code: 'MCP_CONFIG_INVALID' } }
       }
       throw new Error(`unexpected IPC: ${channel}`)
     })
 
     await useMCPStore.getState().init()
-    expect(useMCPStore.getState()).toMatchObject({ loading: false, error: 'MCP 配置损坏' })
+    expect(useMCPStore.getState()).toMatchObject({ loading: false, error: expect.stringContaining('MCP 配置文件损坏') })
 
     useMCPStore.setState({ error: null })
     mocks.invoke.mockImplementation(async (channel: string) => {
@@ -109,14 +109,14 @@ describe('MCP 连接失败的说明', () => {
   it.each([
     ['zh-CN', '项目已切换或重新打开', '连接失败'],
     ['en-US', 'The project was switched or reopened', 'Connection failed'],
-  ] as const)('%s 界面：登记的码换成说明，未登记的码和没有原因时都用这里的兜底', async (locale, stale, fallback) => {
+  ] as const)('%s 界面：登记的码换成说明，通用码和没有原因时都用这里的兜底', async (locale, stale, fallback) => {
     useLocaleStore.setState({ locale })
     for (const [error, shown] of [
-      ["Error invoking remote method 'mcp:connect': Error: PROJECT_SESSION_STALE", expect.stringContaining(stale)],
-      ['SOMETHING_NEW_FROM_MAIN', fallback],
+      ['PROJECT_SESSION_STALE', expect.stringContaining(stale)],
+      ['IPC_HANDLER_FAILED', fallback],
       [undefined, fallback],
     ] as const) {
-      mocks.invoke.mockResolvedValue({ success: false, error })
+      mocks.invoke.mockResolvedValue({ success: false, ...(error ? { failure: { code: error } } : {}) })
       await useMCPStore.getState().connectServer('safe-id')
       expect(useMCPStore.getState().error).toEqual(shown)
     }

@@ -49,7 +49,7 @@ describe('stage model assignments in the model store', () => {
 
   it('keeps the previous assignment and explains the failure when main refuses', async () => {
     useLLMStore.setState({ stageModelIds: { review: 'writer' } })
-    mocks.invoke.mockResolvedValue({ success: false, error: 'Error: LLM_STAGE_MODEL_UNAVAILABLE' })
+    mocks.invoke.mockResolvedValue({ success: false, failure: { code: 'LLM_STAGE_MODEL_UNAVAILABLE' } })
 
     await expect(useLLMStore.getState().setStageModel('review', 'reviewer')).resolves.toBe(false)
 

@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { rendered } from './rendered-failure'
 
 type IpcHandler = (...args: unknown[]) => Promise<unknown>
 
@@ -19,7 +20,7 @@ vi.mock('electron', () => ({
 let fixtureRoot = ''
 
 async function inspect(url: string): Promise<{ success: boolean; error?: string }> {
-  return await mocks.handlers.get('skills:inspect-github')!({}, url) as { success: boolean; error?: string }
+  return rendered(await mocks.handlers.get('skills:inspect-github')!({}, url), mocks.locale) as { success: boolean; error?: string }
 }
 
 const ENGLISH_SENTENCE = /\b(?:Invalid|Only|Use|Incomplete|failed|must|larger|returned|fetch|aborted|malformed)\b/u

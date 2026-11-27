@@ -262,7 +262,7 @@ async function main() {
 
     currentStep = 'U03.A07-request-parameters'
     const probed = await invoke(page, 'llm:test-connection', savedModel)
-    assert.equal(probed.success, true, probed.error)
+    assert.equal(probed.success, true, JSON.stringify(probed.failure))
     assert.deepEqual(fixture.requests[1], { method: 'POST', path: '/v1/chat/completions', authorized: true,
       parameters: { model: discoveredModelName, max_tokens: 1024, temperature: 0.35, stream: false, reasoning_effort: null } })
     assert.equal(fixture.requests.length, 2)
