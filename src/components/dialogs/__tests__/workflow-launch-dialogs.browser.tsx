@@ -230,7 +230,8 @@ describe('workflow launch dialogs', () => {
 
     await act(async () => page.getByRole('button', { name: /确认生成/ }).click())
 
-    await expect.element(page.getByText('架构启动被领域门禁拒绝')).toBeVisible()
+    await expect.element(page.getByText('出了意外问题，暂时说不清原因。请再试一次。')).toBeVisible()
+    expect(document.body.textContent).not.toContain('架构启动被领域门禁拒绝')
     expect(onClose).not.toHaveBeenCalled()
     await expect.element(page.getByRole('dialog')).toBeVisible()
   })
@@ -396,7 +397,8 @@ describe('workflow launch dialogs', () => {
 
     await act(async () => page.getByRole('button', { name: '开始生成' }).click())
 
-    await expect.element(page.getByText('故事前提尚未生成')).toBeVisible()
+    await expect.element(page.getByText('出了意外问题，暂时说不清原因。请再试一次。')).toBeVisible()
+    expect(document.body.textContent).not.toContain('故事前提尚未生成')
     expect(onClose).not.toHaveBeenCalled()
     await expect.element(page.getByRole('dialog')).toBeVisible()
   })

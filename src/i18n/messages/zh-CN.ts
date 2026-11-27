@@ -110,7 +110,6 @@ export const zhCN = {
   'backup.omittedReviewCycleUnknownOne': '有条审稿记录损坏，没放进存档。正文和其他审稿内容都在。',
   'backup.omittedReviewCycleUnknownMany': '有几条审稿记录损坏，没放进存档。正文和其他审稿内容都在。',
   'error.externalFileGrantExpired': '所选文件或文件夹的访问授权已失效，请重新选择。',
-  'error.unknown': '发生错误：{message}',
   'error.unregisteredCode': '出了意外问题，暂时说不清原因。请再试一次。',
   'error.ipcHandlerFailed': '这次操作没有完成，出了意外问题。请再试一次；还不行，请把这条提示反馈给我们。',
   'error.projectLeaseExpired': '项目租约已失效，已拒绝操作。',

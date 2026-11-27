@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 import { AuthorError, AuthorNote, authorOwned, failureOf, note, type Failure } from '../../shared/failure'
-import { appErrorMessage, authorError, catalogNote, caughtFailure, displayedErrorMessage, failureText, knownAppErrorMessage } from '../app-errors'
+import { appErrorMessage, authorError, catalogNote, caughtFailure, displayedErrorMessage, reasonOf, failureText, knownAppErrorMessage } from '../app-errors'
 import { translate } from '../core'
 import { shown } from './shown-locale'
 
@@ -46,11 +46,11 @@ describe('旧显示入口收到 AuthorError 时显示它的说明', () => {
     expect(failureText(zh, { code: 'NETWORK_ERROR', because: { code: 'NETWORK_ERROR' } })).toBe(networkGeneric)
   })
 
-  it('未迁移通道给的原文只在中文界面附上，已登记码按码说明', () => {
+  it('原因认不出时只显示概述，已登记码按码说明', () => {
     const summary = note('知识库没有更新。', 'The knowledge base was not updated.')
-    expect(failureText(zh, { note: summary, because: { legacy: '数据库被占用' } })).toBe('知识库没有更新。：数据库被占用')
-    expect(failureText(en, { note: summary, because: { legacy: 'database is locked' } })).toBe('The knowledge base was not updated.')
-    expect(failureText(en, { note: summary, because: { legacy: 'PROJECT_NOT_OPEN' } })).toBe(`The knowledge base was not updated. ${translate(en, 'error.projectNotOpen')}`)
+    expect(failureText(zh, { note: summary, because: reasonOf(new Error('数据库被占用')) })).toBe('知识库没有更新。')
+    expect(failureText(en, { note: summary, because: reasonOf(new Error('database is locked')) })).toBe('The knowledge base was not updated.')
+    expect(failureText(en, { note: summary, because: reasonOf(new Error('PROJECT_NOT_OPEN')) })).toBe(`The knowledge base was not updated. ${translate(en, 'error.projectNotOpen')}`)
   })
 })
 

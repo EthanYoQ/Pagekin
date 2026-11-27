@@ -275,11 +275,7 @@ export class GenerateDirectoryCommand extends BaseWorkflowCommand<ChapterBluepri
       || startChapter > totalChapters
       || endChapter < startChapter
     ) {
-      throw new Error(workflowUiText(
-        context,
-        `章节范围无效：第 ${startChapter}–${endChapter} 章`,
-        `Invalid chapter range: chapters ${startChapter}–${endChapter}.`,
-      ))
+      throw authorError(context.interfaceLocale, { note: note(`章节范围无效：第 {startChapter}–{endChapter} 章`, `Invalid chapter range: chapters {startChapter}–{endChapter}.`, { startChapter, endChapter }) })
     }
 
     if (!context.data.directoryResumeHandle) assertPlanningActionRange({ from: startChapter, to: endChapter })
@@ -296,7 +292,7 @@ export class GenerateDirectoryCommand extends BaseWorkflowCommand<ChapterBluepri
       (_, index) => startChapter + index,
     )
     const template = await resolvePromptTemplate('chapter_blueprint_chunk', projectSession, writingLanguage)
-    if (!template) throw new Error(workflowUiText(context, '章节蓝图模板丢失', 'The chapter blueprint template is missing.'))
+    if (!template) throw authorError(context.interfaceLocale, { note: note('章节蓝图模板丢失', 'The chapter blueprint template is missing.') })
 
     let activeRange = { startChapter, endChapter }
     const compactTaskFor = (
@@ -324,7 +320,7 @@ export class GenerateDirectoryCommand extends BaseWorkflowCommand<ChapterBluepri
         const batchStart = items[0]
         const batchEnd = items.at(-1)
         if (batchStart === undefined || batchEnd === undefined) {
-          throw new Error(workflowUiText(context, '章节蓝图批次不能为空', 'The chapter blueprint batch cannot be empty.'))
+          throw authorError(context.interfaceLocale, { note: note('章节蓝图批次不能为空', 'The chapter blueprint batch cannot be empty.') })
         }
         activeRange = { startChapter: batchStart, endChapter: batchEnd }
         callbacks.log(workflowUiText(

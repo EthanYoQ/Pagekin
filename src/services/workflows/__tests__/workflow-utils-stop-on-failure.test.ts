@@ -108,7 +108,7 @@ describe('runPostProcessPipeline stopOnFailure', () => {
       'db:post-process-mark-step-failed',
       'run-1',
       'first',
-      'provider timeout',
+      'POST_PROCESS_STEP_FAILED',
       'C:/novel',
       projectSession,
     )

@@ -11,7 +11,7 @@ import { Button } from '../ui/Button'
 import { ipc } from '../../services/ipc-client'
 import { requireIpcSuccess } from '../../services/ipc-result'
 import { CORE_FIELD_MAP, parseCoreField } from '../../services/resource-protocol'
-import { appErrorMessage } from '../../i18n/app-errors'
+import { appErrorMessage, authorError } from '../../i18n/app-errors'
 import { toast } from '../ui/Toast'
 import { CharacterCardImportButton } from '../characters/CharacterCardImportButton'
 import CodeMirrorEditor from './CodeMirrorEditor'
@@ -51,6 +51,7 @@ import {
   isProjectSessionCurrent,
   isProjectSessionPath,
 } from '../project-session-gate'
+import { note } from '../../shared/failure'
 
 
 /** 与 Sidebar / WorldBuildingEditor 保持一致的架构文件元信息 */
@@ -241,26 +242,26 @@ function ArchFileViewerSession({
     const savedSnapshot = useEditorStore.getState().tabs.find(tab => tab.id === tabId)
     let submittedSnapshot = { content: md, contentRevision: savedSnapshot?.contentRevision ?? 0 }
     try {
-      if (!resourceWriteAllowed(filePath)) throw new Error(text('资源只读或无效', 'This resource is read-only or invalid.'))
+      if (!resourceWriteAllowed(filePath)) throw authorError(currentInterfaceLocale(), { note: note('资源只读或无效', 'This resource is read-only or invalid.') })
       if (recoveryRef.current) {
         const original = recoveryRef.current
         const session = recoverySession.current
-        if (!session || !isProjectSessionCurrent(session)) throw new Error(text('项目会话已切换，请重新打开恢复稿', 'The project session changed. Reopen the recovery draft.'))
+        if (!session || !isProjectSessionCurrent(session)) throw authorError(currentInterfaceLocale(), { note: note('项目会话已切换，请重新打开恢复稿', 'The project session changed. Reopen the recovery draft.') })
         const fresh = await ipc.invokeWithProjectSession(session, 'generation:read-context', { handle: original.handle })
         const progress = original.plotOutline
         const candidate = fresh.plotOutlineRecovery
         const tab = useEditorStore.getState().tabs.find(tab => tab.id === tabId)
         const operationId = tab?.planningSaveOperationId
-        if (!progress || !candidate || !operationId || candidate.leaseEpoch !== session.leaseId) throw new Error(text('恢复内容暂时无法读取，请重新打开恢复稿', 'Recovery content is unavailable. Reopen the recovery draft.'))
+        if (!progress || !candidate || !operationId || candidate.leaseEpoch !== session.leaseId) throw authorError(currentInterfaceLocale(), { note: note('恢复内容暂时无法读取，请重新打开恢复稿', 'Recovery content is unavailable. Reopen the recovery draft.') })
         const pending = tab?.planningSaveSnapshot
-        if (pending?.status === 'saved' || candidate.saved && !pending) throw new Error(text('本次恢复已保存，后续修改仅供复制。', 'This recovery is saved. Further edits can only be copied.'))
-        if (candidate.writeState.kind !== 'ready' && !candidate.saved) throw new Error(text('当前无法保存，请等待生成结束或检查来源变化', 'Wait for generation to finish or check changed sources before saving.'))
+        if (pending?.status === 'saved' || candidate.saved && !pending) throw authorError(currentInterfaceLocale(), { note: note('本次恢复已保存，后续修改仅供复制。', 'This recovery is saved. Further edits can only be copied.') })
+        if (candidate.writeState.kind !== 'ready' && !candidate.saved) throw authorError(currentInterfaceLocale(), { note: note('当前无法保存，请等待生成结束或检查来源变化', 'Wait for generation to finish or check changed sources before saving.') })
         let submission = pending
         if (!submission) {
           const committedRange = { from: progress.range.from, to: Number(authorEndRef.current) }
           let synopsis = md.trimEnd()
           if (!validPlotOutlineAuthorPrefix(synopsis, progress, committedRange)) synopsis = withPlotOutlineCoverageNote(synopsis, committedRange.to, progress.sourceExpected)
-          if (!validPlotOutlineAuthorPrefix(synopsis, progress, committedRange)) throw new Error(text('请保留连续完整章节，并移除所选保存终点之后的未完成内容。原有范围外内容须保持不变。', 'Keep complete consecutive chapters and remove incomplete content after the selected ending chapter. Preserve the original content outside this range.'))
+          if (!validPlotOutlineAuthorPrefix(synopsis, progress, committedRange)) throw authorError(currentInterfaceLocale(), { note: note('请保留连续完整章节，并移除所选保存终点之后的未完成内容。原有范围外内容须保持不变。', 'Keep complete consecutive chapters and remove incomplete content after the selected ending chapter. Preserve the original content outside this range.') })
           submission = {
             ...submittedSnapshot, status: 'pending', channel: 'db:project-core-synopsis-commit',
             request: { synopsis, expected: progress.sourceExpected,
@@ -288,7 +289,7 @@ function ArchFileViewerSession({
         setRecoveryError('')
       } else {
         const dbField = parseCoreField(filePath)
-        if (!dbField) throw new Error(text('资源只读或无效', 'This resource is read-only or invalid.'))
+        if (!dbField) throw authorError(currentInterfaceLocale(), { note: note('资源只读或无效', 'This resource is read-only or invalid.') })
         requireIpcSuccess(await ipc.invokeWithProjectSession(
           projectSession,
           'db:project-core-update',
@@ -328,7 +329,7 @@ function ArchFileViewerSession({
     } finally {
       if (isProjectSessionCurrent(projectSession)) setSaving(false)
     }
-  }, [filePath, isCharacterProjection, projectKey, tabId, refreshRecovery, text])
+  }, [filePath, isCharacterProjection, projectKey, tabId, refreshRecovery])
 
   useEffect(() => {
     if (isCharacterProjection) return
@@ -471,7 +472,7 @@ function ArchFileViewerSession({
   ) => {
     const projectSession = captureProjectSession(useProjectStore.getState().currentProject)
     if (!projectSession || !isProjectSessionPath(projectSession, projectKey) || !isProjectSessionCurrent(projectSession)) {
-      throw new Error(text('项目会话已切换，未启动架构生成', 'The project session changed, so architecture generation did not start.'))
+      throw authorError(currentInterfaceLocale(), { note: note('项目会话已切换，未启动架构生成', 'The project session changed, so architecture generation did not start.') })
     }
     await launchCreativeWorkflow({
       workflow: 'generate_architecture',
@@ -531,7 +532,7 @@ function ArchFileViewerSession({
       const continuation = next?.planningContinuation
       const session = recoverySession.current
       if (!session || !isProjectSessionCurrent(session) || !continuation?.remainingRange
-        || !['ready', 'continued'].includes(continuation.state)) throw new Error(text('当前不能继续，请先保存完整章节或等待生成结束', 'Save completed chapters or wait for generation to finish before continuing.'))
+        || !['ready', 'continued'].includes(continuation.state)) throw authorError(currentInterfaceLocale(), { note: note('当前不能继续，请先保存完整章节或等待生成结束', 'Save completed chapters or wait for generation to finish before continuing.') })
       await useWorkflowStore.getState().startWorkflow(createArchitectureWorkflow({
         projectPath: projectKey, projectSession: session, selectedSteps: ['synopsis'],
         synopsisRange: continuation.remainingRange, targetUnits: continuation.targetUnits, restartFrom: continuation.sourceHandle,

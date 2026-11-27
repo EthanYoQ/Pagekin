@@ -1,5 +1,6 @@
 import { localize } from '../i18n/core'
 import type { Locale } from '../i18n/types'
+import { AuthorError, note } from './failure'
 
 export const ZH_CN_TRUNCATION_MARKER = '\n…[内容已按上下文预算截断]…\n'
 export const EN_US_TRUNCATION_MARKER = '\n…[content truncated to fit the context budget]…\n'
@@ -10,24 +11,30 @@ export function visibleProseUnitCount(text: string): number {
   return text.match(/[\p{L}\p{N}]/gu)?.length ?? 0
 }
 
-function mechanicalCompletionError(uiLocale: Locale, zhCNReason: string, enUSReason: string): Error {
-  return new Error(localize(
-    uiLocale,
-    `AI 输出包含${zhCNReason}，可能仍不完整，结果未被保存。`,
-    `AI output contains ${enUSReason} and may still be incomplete, so it was not saved.`,
-  ))
+const INCOMPLETE = {
+  blank: note('AI 输出包含空白或无可见正文，可能仍不完整，结果未被保存。', 'AI output contains blank or no visible prose and may still be incomplete, so it was not saved.'),
+  fence: note('AI 输出包含代码围栏，可能仍不完整，结果未被保存。', 'AI output contains a code fence and may still be incomplete, so it was not saved.'),
+  think: note('AI 输出包含 think 标签残片，可能仍不完整，结果未被保存。', 'AI output contains a leftover think tag and may still be incomplete, so it was not saved.'),
+  truncation: note('AI 输出包含截断标记，可能仍不完整，结果未被保存。', 'AI output contains a truncation marker and may still be incomplete, so it was not saved.'),
+  duplicate: note('AI 输出包含明显重复段落，可能仍不完整，结果未被保存。', 'AI output contains an obviously duplicated paragraph and may still be incomplete, so it was not saved.'),
+  meta: note('AI 输出包含首段元话术，可能仍不完整，结果未被保存。', 'AI output contains opening meta commentary and may still be incomplete, so it was not saved.'),
+}
+
+function mechanicalCompletionError(uiLocale: Locale, kind: keyof typeof INCOMPLETE): AuthorError {
+  const reason = INCOMPLETE[kind]
+  return new AuthorError({ note: reason }, localize(uiLocale, reason.copy!.zh, reason.copy!.en))
 }
 
 export function assertMechanicallyCompleteVisibleText(content: string, uiLocale: Locale, source = ''): void {
   const trimmed = content.trim()
   if (visibleProseUnitCount(trimmed) === 0) {
-    throw mechanicalCompletionError(uiLocale, '空白或无可见正文', 'blank or no visible prose')
+    throw mechanicalCompletionError(uiLocale, 'blank')
   }
   if (/(?:^|\n)\s*```/u.test(trimmed)) {
-    throw mechanicalCompletionError(uiLocale, '代码围栏', 'a code fence')
+    throw mechanicalCompletionError(uiLocale, 'fence')
   }
   if (/<\/?\s*think(?:\s|>|$)/iu.test(trimmed)) {
-    throw mechanicalCompletionError(uiLocale, 'think 标签残片', 'a leftover think tag')
+    throw mechanicalCompletionError(uiLocale, 'think')
   }
 
   const paragraphs = trimmed
@@ -44,7 +51,7 @@ export function assertMechanicallyCompleteVisibleText(content: string, uiLocale:
       || /^(?:(?:as\s+requested|certainly)[,!:]?\s+)?i(?:'ve|\s+have|\s+will)\s+(?:revised|rewritten|generated|provide|write|revise)\s+(?:(?:the|your|this|complete|full|revised)\s+)*(?:text|chapter|content|revision|version|draft|prose)[.!:：]?$/iu.test(opening)
     )
   ) {
-    throw mechanicalCompletionError(uiLocale, '首段元话术', 'opening meta commentary')
+    throw mechanicalCompletionError(uiLocale, 'meta')
   }
 
   if (
@@ -52,7 +59,7 @@ export function assertMechanicallyCompleteVisibleText(content: string, uiLocale:
     || trimmed.includes(EN_US_TRUNCATION_MARKER.trim())
     || paragraphs.some(paragraph => /^(?:…\s*)?(?:\[(?:内容已按上下文预算截断|内容截断|输出被截断|content truncated to fit the context budget|truncated)\]|[（(]?(?:未完待续|未完)[）)]?)(?:\s*…)?$/iu.test(paragraph))
   ) {
-    throw mechanicalCompletionError(uiLocale, '截断标记', 'a truncation marker')
+    throw mechanicalCompletionError(uiLocale, 'truncation')
   }
 
   const groups = [(text: string) => text.split(/\n\s*\n+/u), (text: string) => text.split(/\r?\n/u)]
@@ -69,7 +76,7 @@ export function assertMechanicallyCompleteVisibleText(content: string, uiLocale:
       if (visibleProseUnitCount(normalized) < MIN_OBVIOUS_DUPLICATE_PARAGRAPH_VISIBLE_UNITS) continue
       const count = (seenParagraphs.get(normalized) ?? 0) + 1
       if (count > Math.max(1, sourceCounts.get(normalized) ?? 0)) {
-        throw mechanicalCompletionError(uiLocale, '明显重复段落', 'an obviously duplicated paragraph')
+        throw mechanicalCompletionError(uiLocale, 'duplicate')
       }
       seenParagraphs.set(normalized, count)
     }

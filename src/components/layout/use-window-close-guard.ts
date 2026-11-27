@@ -6,8 +6,9 @@ import { countUnsavedEditorItems } from '../../stores/editor-unsaved'
 import { discardAllEditorChanges } from '../../stores/editor-discard'
 import { sameProjectPathKey } from '../../shared/project-session-context'
 import { ipc } from '../../services/ipc-client'
-import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
-import { displayedErrorMessage } from '../../i18n/app-errors'
+import { currentInterfaceLocale } from '../../stores/locale-store'
+import { displayedErrorMessage, authorError } from '../../i18n/app-errors'
+import { note } from '../../shared/failure'
 
 export interface ExitRequest {
   requestId: string
@@ -19,7 +20,6 @@ export interface ExitRequest {
  * App 在外壳之外调用一次，外壳渲染出错时也照样回复；外壳只负责呈现确认对话框。
  */
 export function useWindowCloseGuard() {
-  const text = useLocaleStore(s => s.text)
   const [exitRequest, setExitRequest] = useState<ExitRequest | null>(null)
   const [exitBusy, setExitBusy] = useState(false)
   const [exitError, setExitError] = useState<string | null>(null)
@@ -51,7 +51,7 @@ export function useWindowCloseGuard() {
     setExitBusy(true)
     try {
       const result = await ipc.invoke('window:resolve-close', request.requestId, 'cancel')
-      if (!result.success) throw new Error(text('退出请求已失效，请重试', 'The exit request expired. Try again.'))
+      if (!result.success) throw authorError(currentInterfaceLocale(), { note: note('退出请求已失效，请重试', 'The exit request expired. Try again.') })
       setExitRequest(null)
       setExitError(null)
     } catch (error) {
@@ -68,7 +68,7 @@ export function useWindowCloseGuard() {
     setExitError(null)
     try {
       const result = await ipc.invoke('window:resolve-close', request.requestId, 'proceed')
-      if (!result.success) throw new Error(text('退出请求已失效，请重试', 'The exit request expired. Try again.'))
+      if (!result.success) throw authorError(currentInterfaceLocale(), { note: note('退出请求已失效，请重试', 'The exit request expired. Try again.') })
       discardAllEditorChanges()
       setExitRequest(null)
     } catch (error) {
@@ -86,7 +86,7 @@ export function useWindowCloseGuard() {
     try {
       await saveDirtyEditorChangesForExit(useProjectStore.getState().currentProject?.path)
       const result = await ipc.invoke('window:resolve-close', request.requestId, 'proceed')
-      if (!result.success) throw new Error(text('退出请求已失效，请重试', 'The exit request expired. Try again.'))
+      if (!result.success) throw authorError(currentInterfaceLocale(), { note: note('退出请求已失效，请重试', 'The exit request expired. Try again.') })
     } catch (error) {
       setExitError(displayedErrorMessage(currentInterfaceLocale(), error))
     } finally {

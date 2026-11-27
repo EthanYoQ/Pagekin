@@ -39,7 +39,7 @@ vi.mock('../../rerank', async importOriginal => ({ ...await importOriginal<objec
 vi.mock('../../utils/remembered-dialog', () => ({ showOpenDialogInLastDirectory: mocks.pick }))
 
 import { RerankError } from '../../rerank'
-import { displayedErrorMessage, englishWithReason, failureText, receivedIpcResult, resultFailure } from '../../../src/i18n/app-errors'
+import { displayedErrorMessage, failureText, receivedIpcResult, resultFailure } from '../../../src/i18n/app-errors'
 import { selectCopy, translate } from '../../../src/i18n/core'
 import { note, type Failure } from '../../../src/shared/failure'
 import { shown } from '../../../src/i18n/__tests__/shown-locale'
@@ -101,7 +101,7 @@ async function connectionNotice(raw: unknown): Promise<string> {
   const result = receivedIpcResult(await raw) as Received
   expect(result.success).toBe(false)
   const reason = 'failure' in result ? failureText(locale(), resultFailure(result)) : displayedErrorMessage(locale(), result.error)
-  return selectCopy(locale() as InterfaceLocale, `连接失败：${reason}`, englishWithReason(locale(), 'Connection failed', reason, ': '))
+  return selectCopy(locale() as InterfaceLocale, `连接失败：${reason}`, `Connection failed: ${reason}`)
 }
 
 const chatModel: ModelProfile = {

@@ -28,7 +28,8 @@ import { openChapterFile } from '../../panels/sidebar/sidebar-file-openers'
 import { captureProjectSession, isProjectSessionCurrent, isProjectSessionPath } from '../../project-session-gate'
 import { toast } from '../../ui/Toast'
 import { pluralEn } from '../../../shared/plural-en'
-import { errorCodeOf, failureText, knownAppErrorMessage, resultFailure } from '../../../i18n/app-errors'
+import { authorError, errorCodeOf, failureText, knownAppErrorMessage, resultFailure } from '../../../i18n/app-errors'
+import { errorLocaleForRun } from '../../../i18n/core'
 import { note } from '../../../shared/failure'
 import { providerContextFailureText } from '../../../services/generation/prompt-budget-failure'
 import { plotWriteFailureText } from './plot-write-failure'
@@ -416,10 +417,10 @@ export function usePlotThreads(projectKey: string, {
     try {
       const { value } = await startGraph({ kind: 'plot' }, frozenModelId)
       if (value.result?.kind !== 'plot') throw new Error('GRAPH_GENERATION_KIND_MISMATCH')
-      if (value.sourceStatus !== 'current') throw new Error(uiText(
+      if (value.sourceStatus !== 'current') throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note(
         '剧情资料在生成期间已更新，本次结果未保存，请重新生成。',
         'Plot sources changed during generation. This result was not saved; generate it again.',
-      ))
+      ) })
       const effect = await confirmGraph(0, value.view.handle)
       if (effect.kind === 'plot' && isProjectSessionCurrent(session)) setPlotSources(previous => previous ? { ...previous, snapshot: effect.snapshot } : previous)
     } catch (error) {

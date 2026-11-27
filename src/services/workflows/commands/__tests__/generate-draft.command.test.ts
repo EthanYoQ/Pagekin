@@ -46,7 +46,7 @@ import { assembleChapterMaterials } from '../../chapter-materials'
 import { MATERIAL_DECISION_MAX_INPUT_UNITS, materialBudgetFrom, type BeginGenerationRequest, type MaterialBudget } from '../../../../shared/generation-owner-contract'
 import { WorkflowCancelledError } from '../../workflow-cancellation'
 import { shown } from '../../../../i18n/__tests__/shown-locale'
-import { displayedErrorMessage, failureText } from '../../../../i18n/app-errors'
+import { failureText } from '../../../../i18n/app-errors'
 import { translate } from '../../../../i18n/core'
 import { runFailure } from '../../../../components/run/run-failure'
 import { useWorkflowStore } from '../../../../stores/workflow-store'
@@ -5034,7 +5034,7 @@ ${headingPrefix}第3章：潮门
         const step = run.steps[0]!
         const proxy = translate(shown(locale), 'error.proxyUnreachable')
         const generic = translate(shown(locale), 'error.generationNetworkFailed')
-        const card = step.failure ? failureText(shown(locale), step.failure) : displayedErrorMessage(shown(locale), step.error)
+        const card = failureText(shown(locale), step.failure)
         const failedLog = useWorkflowStore.getState().globalLogs.filter(line => line.level === 'error').at(-1)?.message
         expect({ card, prompt: runFailure(run, shown(locale)).presentation.reason }, locale).toEqual({ card: proxy, prompt: proxy })
         expect(failedLog, locale).toContain(proxy)

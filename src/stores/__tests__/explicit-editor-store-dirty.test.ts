@@ -295,7 +295,7 @@ describe('explicit editor dirty integration', () => {
     recentList.resolve([])
     await expect(opening).resolves.toBe(true)
     expect(alertError).toHaveBeenCalledWith(
-      expect.stringContaining('unexpected IPC'),
+      '草稿列表读取失败',
       expect.objectContaining({ title: '项目已打开，部分数据加载失败' }),
     )
     expect(useCharacterStore.getState()).toMatchObject({

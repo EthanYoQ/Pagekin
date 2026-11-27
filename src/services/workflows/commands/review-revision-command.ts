@@ -16,6 +16,8 @@ import { assertMateriallyCompleteRevision } from './refinement-completeness'
 import { countDraftUnits, draftTargetUnitRange } from '../../../shared/draft-units'
 import { throwIfSourceDraftChanged } from '../source-draft-changed'
 import { pluralEn } from '../../../shared/plural-en'
+import { authorError } from '../../../i18n/app-errors'
+import { note } from '../../../shared/failure'
 
 export interface ReviewRevisionCommandSource {
   draftPath: string
@@ -137,7 +139,7 @@ export abstract class ReviewRevisionCommand extends BaseWorkflowCommand<string> 
 
   private assertSession(params: CommandExecuteParams): void {
     if (!sameProjectSessionContext(requireWorkflowProjectSession(params.context), projectSessionContextFromProject(useProjectStore.getState().currentProject))) {
-      throw new Error(workflowUiText(params.context, '当前项目已切换，结果未保存', 'The project changed, so the result was not saved.'))
+      throw authorError(params.context.interfaceLocale, { note: note('当前项目已切换，结果未保存', 'The project changed, so the result was not saved.') })
     }
   }
 

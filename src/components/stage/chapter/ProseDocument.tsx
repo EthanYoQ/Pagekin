@@ -4,7 +4,7 @@ import type { ProjectData } from '../../../shared/ipc-channels'
 import { pluralEn } from '../../../shared/plural-en'
 import { registerEditorExitSaveHandler, useEditorStore, type EditorTab } from '../../../stores/editor-store'
 import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
-import { authorError, displayedErrorMessage, resultFailure } from '../../../i18n/app-errors'
+import { authorErrorOr, displayedErrorMessage, resultFailure } from '../../../i18n/app-errors'
 import CodeMirrorEditor from '../../editor/CodeMirrorEditor'
 import { captureProjectSession, isProjectSessionCurrent, isProjectSessionPath } from '../../project-session-gate'
 import { Button } from '../../ui/Button'
@@ -12,6 +12,7 @@ import { Notice } from '../../ui/Notice'
 import { toast } from '../../ui/Toast'
 import { commandLabel } from '../shortcut-keys'
 import { isProjectFileTab, RECOVERY_PREFIX } from './chapter-tab-routing'
+import { note } from '../../../shared/failure'
 
 /**
  * 恢复候选可以编辑，保存只写回这份候选，不会写进正式草稿（F-072）；作者确认没问题后，再从章节里另起一稿。
@@ -37,11 +38,11 @@ export default function ProseDocument({ tab, project }: { tab: EditorTab; projec
     const result = await ipc.invokeWithProjectSession(session, 'db:recovery-candidate-update', candidateId, content, session.projectPath)
     if (!result.success) {
       const failure = resultFailure(result)
-      throw failure ? authorError(currentInterfaceLocale(), failure) : new Error(text('保存恢复候选失败', 'Could not save the recovery candidate.'))
+      throw authorErrorOr(currentInterfaceLocale(), failure, note('保存恢复候选失败', 'Could not save the recovery candidate.'))
     }
     if (!isProjectSessionCurrent(session)) return
     useEditorStore.getState().settleTabSave(tab.id, snapshot)
-  }, [project, tab.filePath, tab.id, tab.projectKey, text])
+  }, [project, tab.filePath, tab.id, tab.projectKey])
 
   const save = useCallback(async (content: string, propagate = false) => {
     setSaving(true)

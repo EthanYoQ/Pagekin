@@ -3,10 +3,10 @@ import type { PromptLoadDiagnostic, ProjectSessionContext } from '../shared/ipc-
 import { sameProjectSessionContext } from '../shared/project-session-context'
 import { ipc } from './ipc-client'
 import { requireIpcSuccess } from './ipc-result'
-import { currentInterfaceLocale, useLocaleStore } from '../stores/locale-store'
-import { catalogNote, caughtFailure, failureText } from '../i18n/app-errors'
+import { currentInterfaceLocale } from '../stores/locale-store'
+import { catalogNote, caughtFailure, failureText, authorError } from '../i18n/app-errors'
 import type { MessageKey } from '../i18n/core'
-import { codeOf, failureOf } from '../shared/failure'
+import { codeOf, failureOf, note } from '../shared/failure'
 import type { PromptTemplate } from './prompt-templates'
 import { resolveWritingLanguage, type WritingLanguage } from '../shared/writing-language'
 
@@ -25,7 +25,7 @@ const diagnosticOf = (error: unknown): Pick<PromptLoadDiagnostic, 'error' | 'fai
   return { error: (failure && codeOf(failure)) ?? PROMPT_FILE_UNREADABLE, ...(failure?.note ? { failure } : {}) }
 }
 
-const sessionChangedError = () => new Error(useLocaleStore.getState().text('项目会话已变化，已拒绝读取项目提示词', 'The book session changed, so project prompts were not read.'))
+const sessionChangedError = () => authorError(currentInterfaceLocale(), { note: note('项目会话已变化，已拒绝读取项目提示词', 'The book session changed, so project prompts were not read.') })
 
 export type PromptSource = 'builtin' | 'global' | 'project'
 

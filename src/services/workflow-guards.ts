@@ -9,7 +9,9 @@ import {
 } from '../shared/project-session-context'
 import { localize } from '../i18n/core'
 import { ARCH_STEP_NAMES } from './architecture-step-selection'
-import type { Locale } from '../i18n/types'
+import type { ErrorDisplayLocale, Locale } from '../i18n/types'
+import { authorError, writtenNote } from '../i18n/app-errors'
+import type { AuthorError, AuthorNote } from '../shared/failure'
 
 import { readPostProcessStatus, getChapterFinalizeScope, getFailedStepLabels } from './workflows/workflow-utils'
 
@@ -18,6 +20,11 @@ export interface GuardResult {
   message?: string
   action?: 'open-config' | 'open-world-building' | 'open-blueprint'
   pending?: true
+}
+
+/** 前置校验没通过时抛出：message 是本文件写好的句子，原样给作者看；没有时用 fallback。 */
+export function guardStop(locale: ErrorDisplayLocale, { message: sentence }: GuardResult, fallback: AuthorNote): AuthorError {
+  return authorError(locale, { note: sentence ? writtenNote(sentence) : fallback })
 }
 
 function captureGuardProject(

@@ -26,7 +26,7 @@ import { Input } from '../ui/Input'
 import { Label } from '../ui/Label'
 import { Check } from '../ui/Check'
 import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
-import { authorError, caughtFailure, displayedErrorMessage, englishWithReason, failureText, resultFailure } from '../../i18n/app-errors'
+import { authorError, caughtFailure, displayedErrorMessage, failureText, resultFailure } from '../../i18n/app-errors'
 import { errorLocaleForRun } from '../../i18n/core'
 import type { Locale } from '../../i18n/types'
 import { note } from '../../shared/failure'
@@ -95,8 +95,8 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
   const resumableRun = resumableRuns.find(run => run.id === selectedResumableRunId)
     ?? resumableRuns[0]
     ?? null
-  // 存下的失败原因按导入运行的语言写好，也可能是旧版本留下的错误码：登记过的码按界面语言说明。
-  const resumableFailure = resumableRun?.lastError ? displayedErrorMessage(currentInterfaceLocale(), resumableRun.lastError) : ''
+  // last_error 不可信（可能是报错原文，取消的运行也会残留旧原因），只按状态显示通用说明。
+  const resumableFailure = resumableRun?.status === 'failed' ? failureText(currentInterfaceLocale(), undefined) : ''
   const resumableRunIsActive = resumableRun
     ? activeWorkflows.some(workflow => workflow.id === resumableRun.id)
     : false
@@ -682,11 +682,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
               <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
                 {text(
                   `阶段：${resumableRun.stage}；进度：${runProgress(resumableRun).completed}/${runProgress(resumableRun).total}${resumableFailure ? `；上次失败：${resumableFailure}` : ''}`,
-                  englishWithReason(currentInterfaceLocale(),
-                    `Stage: ${resumableRun.stage}; progress: ${runProgress(resumableRun).completed}/${runProgress(resumableRun).total}`,
-                    resumableFailure,
-                    ' — ',
-                  ),
+                  `Stage: ${resumableRun.stage}; progress: ${runProgress(resumableRun).completed}/${runProgress(resumableRun).total}${resumableFailure ? ` — ${resumableFailure}` : ''}`,
                 )}
               </div>
               {resumableRun.stage === 'parsing' && (resumableRun.unfinishedSourceDisplay?.length ?? 0) > 0 && (

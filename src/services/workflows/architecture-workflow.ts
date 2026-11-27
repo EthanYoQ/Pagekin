@@ -411,8 +411,7 @@ export async function migrateLegacyCharacterRoster(projectPath: string, options:
   })
   const completedRun = useWorkflowStore.getState().history.find(run => run.id === completedRunId)
   if (!completedRun || completedRun.status !== 'completed') {
-    if (completedRun?.error) throw new Error(completedRun.error)
-    throw authorError(currentInterfaceLocale(), { note: note(
+    throw authorError(currentInterfaceLocale(), completedRun?.failure ?? { note: note(
       '旧版角色名单修复未完成；原文和已有角色卡均未被覆盖。',
       'Legacy cast repair did not complete; the original text and existing cards were not overwritten.',
     ) })

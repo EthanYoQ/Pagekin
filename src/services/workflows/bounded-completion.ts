@@ -6,15 +6,16 @@ import {
 } from '../../shared/visible-text-integrity'
 import type { LLMFinishReason } from '../../shared/ipc-channels'
 import type { WritingLanguage } from '../../shared/writing-language'
-import { localize, type Locale } from '../../i18n/core'
+import { localize, type Locale, errorLocaleForRun } from '../../i18n/core'
 import type { ErrorDisplayLocale } from '../../i18n/types'
 import { promptLanguageText } from '../prompt-language'
 import type { GenerationAttemptReceipt } from '../generation/generation-harness'
 import { networkFailureNote } from '../generation/prompt-budget-failure'
-import { failureText } from '../../i18n/app-errors'
+import { failureText, authorError } from '../../i18n/app-errors'
 import { AuthorError, note, type AuthorNote, type Failure, type FailureCode } from '../../shared/failure'
 import { stripThinkingTags } from './workflow-utils'
 import { WorkflowCancelledError } from './workflow-cancellation'
+import { currentInterfaceLocale } from '../../stores/locale-store'
 
 const MAX_BOUNDED_CONTINUATIONS = 7
 const MAX_STRUCTURED_CONTINUATIONS = 2
@@ -83,11 +84,7 @@ export function redactVisibleCompletionText(text: string): string {
 }
 
 function noVisibleContinuationProgressError(uiLocale: Locale): Error {
-  return new Error(localize(
-    uiLocale,
-    'AI 续写未增加新的可见正文，结果未被保存。请重试或缩短本次修改范围。',
-    'The AI continuation added no new visible prose, so the result was not saved. Try again or shorten the requested edit.',
-  ))
+  return authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('AI 续写未增加新的可见正文，结果未被保存。请重试或缩短本次修改范围。', 'The AI continuation added no new visible prose, so the result was not saved. Try again or shorten the requested edit.') })
 }
 
 /**
@@ -149,16 +146,12 @@ export function createBoundedCompletionError(
 }
 
 function continuationLimitExceededError(maxContinuations: number, uiLocale: Locale): Error {
-  return new Error(
-    localize(
-      uiLocale,
-      `AI 输出连续达到本次请求长度限制，已自动续写 ${maxContinuations} 次，尚未完整生成。` +
-        '请缩短本次任务，或拆分为更小批次后重试。',
-      `AI output repeatedly reached this request length limit. Automatic continuation ran ${maxContinuations} ` +
-        `${maxContinuations === 1 ? 'time' : 'times'}, but the output is not yet complete. ` +
-        'Shorten the task or split it into smaller batches, then try again.',
-    ),
-  )
+  const locale = errorLocaleForRun(uiLocale, currentInterfaceLocale())
+  return authorError(locale, { note: maxContinuations === 1
+    ? note('AI 输出连续达到本次请求长度限制，已自动续写 {count} 次，尚未完整生成。请缩短本次任务，或拆分为更小批次后重试。',
+      'AI output repeatedly reached this request length limit. Automatic continuation ran {count} time, but the output is not yet complete. Shorten the task or split it into smaller batches, then try again.', { count: maxContinuations })
+    : note('AI 输出连续达到本次请求长度限制，已自动续写 {count} 次，尚未完整生成。请缩短本次任务，或拆分为更小批次后重试。',
+      'AI output repeatedly reached this request length limit. Automatic continuation ran {count} times, but the output is not yet complete. Shorten the task or split it into smaller batches, then try again.', { count: maxContinuations }) })
 }
 
 function assertNotCancelled(uiLocale: Locale, isCancelled?: () => boolean): void {
@@ -181,21 +174,15 @@ function assertValidContinuationLimit(
     || maxContinuations < 0
     || maxContinuations > MAX_BOUNDED_CONTINUATIONS
   ) {
-    throw new Error(localize(
-      uiLocale,
-      `自动续写次数必须是 0 到 ${MAX_BOUNDED_CONTINUATIONS} 的整数。请缩短任务或提高模型最大输出 Tokens 后重试。`,
-      `The automatic-continuation limit must be an integer from 0 to ${MAX_BOUNDED_CONTINUATIONS}. Shorten the task or increase the maximum output tokens, then try again.`,
-    ))
+    throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note(`自动续写次数必须是 0 到 {MAX_BOUNDED_CONTINUATIONS} 的整数。请缩短任务或提高模型最大输出 Tokens 后重试。`, `The automatic-continuation limit must be an integer from 0 to {MAX_BOUNDED_CONTINUATIONS}. Shorten the task or increase the maximum output tokens, then try again.`, { MAX_BOUNDED_CONTINUATIONS }) })
   }
   const modeLimit = modeContinuationLimit(mode)
   if (maxContinuations > modeLimit) {
-    throw new Error(localize(
-      uiLocale,
-      `当前输出类型最多自动续写 ${modeLimit} 次。` +
-        '请缩短本次任务、提高模型最大输出 Tokens，或拆分为更小批次后重试。',
-      `This output type allows at most ${modeLimit} automatic continuations. ` +
-        'Shorten the task, increase the maximum output tokens, or split it into smaller batches and try again.',
-    ))
+    throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note(
+      '当前输出类型最多自动续写 {modeLimit} 次。请缩短本次任务、提高模型最大输出 Tokens，或拆分为更小批次后重试。',
+      'This output type allows at most {modeLimit} automatic continuations. Shorten the task, increase the maximum output tokens, or split it into smaller batches and try again.',
+      { modeLimit },
+    ) })
   }
 }
 

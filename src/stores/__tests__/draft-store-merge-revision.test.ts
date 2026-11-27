@@ -16,7 +16,7 @@ const {
   markTabSaved: vi.fn(),
   settleMergedRevision: vi.fn(),
   startWorkflow: vi.fn(),
-  workflowHistory: [] as Array<{ id: string; status: string; error: string }>,
+  workflowHistory: [] as Array<{ id: string; status: string }>,
   editorTabs: [] as Array<{
     id: string
     filePath: string
@@ -268,11 +268,11 @@ describe('draft-store merged revision persistence', () => {
       return { success: true }
     })
     if (failure === 'reject') startWorkflow.mockRejectedValue(new Error('synthetic recheck launch failure'))
-    else workflowHistory.push({ id: 'recheck', status: 'failed', error: 'synthetic recheck launch failure' })
+    else workflowHistory.push({ id: 'recheck', status: 'failed' })
 
     await expect(useDraftStore.getState().applyMergedRevision('ai-novel://draft/ch1', 1,
       'ai-novel://draft/11', 'ai-novel://revision/1', '合并正文', '原稿', projectPath, projectSession))
       .resolves.toMatchObject({ success: true, receipt: { reviewCycle: { disposition: 'required' } },
-        postCommitError: 'Error: synthetic recheck launch failure' })
+        postCommitError: expect.any(String) })
   })
 })

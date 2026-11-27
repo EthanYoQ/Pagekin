@@ -13,15 +13,18 @@ import {
 } from '../../../shared/project-session-context'
 import { requireWorkflowProjectSession, workflowUiText } from '../workflow-project-session'
 import { globalEventBus } from '../../../shared/event-bus'
+import { authorError } from '../../../i18n/app-errors'
+import { note } from '../../../shared/failure'
+import { currentInterfaceLocale } from '../../../stores/locale-store'
 
 type UiText = (zhCN: string, enUS: string) => string
 
-function assertLegacyRepairSessionCurrent(projectSession: CommandExecuteParams['context']['projectSession'], text: UiText): void {
+function assertLegacyRepairSessionCurrent(projectSession: CommandExecuteParams['context']['projectSession']): void {
   if (!sameProjectSessionContext(
     projectSession,
     projectSessionContextFromProject(useProjectStore.getState().currentProject),
   )) {
-    throw new Error(text('当前项目已切换，旧版角色名单修复已停止以避免写入错误项目', 'The project changed, so the legacy cast repair stopped to avoid writing to the wrong project.'))
+    throw authorError(currentInterfaceLocale(), { note: note('当前项目已切换，旧版角色名单修复已停止以避免写入错误项目', 'The project changed, so the legacy cast repair stopped to avoid writing to the wrong project.') })
   }
 }
 
@@ -40,20 +43,20 @@ export class RepairLegacyCharacterRosterCommand extends BaseWorkflowCommand<stri
   async execute({ context, callbacks }: CommandExecuteParams): Promise<string> {
     const session = requireWorkflowProjectSession(context)
     const text: UiText = (zh, en) => workflowUiText(context, zh, en)
-    if (!sameProjectPathKey(session.projectPath, this.input.expectedProjectPath)) throw new Error(text('当前项目已切换，旧版角色名单修复已停止以避免写入错误项目', 'The project changed, so the legacy cast repair stopped to avoid writing to the wrong project.'))
-    assertLegacyRepairSessionCurrent(session, text)
+    if (!sameProjectPathKey(session.projectPath, this.input.expectedProjectPath)) throw authorError(context.interfaceLocale, { note: note('当前项目已切换，旧版角色名单修复已停止以避免写入错误项目', 'The project changed, so the legacy cast repair stopped to avoid writing to the wrong project.') })
+    assertLegacyRepairSessionCurrent(session)
     this.assertNotCancelled(context)
     const source = this.input.recoveryHandle ? undefined : await ipc.invokeWithProjectSession(session, 'legacy-roster:read-source')
-    assertLegacyRepairSessionCurrent(session, text)
+    assertLegacyRepairSessionCurrent(session)
     this.assertNotCancelled(context)
-    if (source && this.input.expectedMode && (source.snapshot.migrationState === 'legacy_cards_preserved' ? 'existing' : 'model') !== this.input.expectedMode) throw new Error(text('确认修复后旧版角色名单发生了变化，本次修复已停止，未改动任何角色数据。请重新发起修复。', 'The legacy cast changed after you confirmed the repair, so this repair stopped. No character data was changed. Start the repair again.'))
+    if (source && this.input.expectedMode && (source.snapshot.migrationState === 'legacy_cards_preserved' ? 'existing' : 'model') !== this.input.expectedMode) throw authorError(context.interfaceLocale, { note: note('确认修复后旧版角色名单发生了变化，本次修复已停止，未改动任何角色数据。请重新发起修复。', 'The legacy cast changed after you confirmed the repair, so this repair stopped. No character data was changed. Start the repair again.') })
     if (source && source.snapshot.migrationState === 'legacy_cards_preserved') {
       const result = await ipc.invokeWithProjectSession(session, 'legacy-roster:adopt-existing', {
         operationId: `legacy-cards:${context.runId}`, expectedRevision: source.snapshot.revision,
         expectedLegacyHash: source.legacyHash, expectedIdentityRevision: source.identityRevision,
         expectedFactsHash: source.factsHash,
       })
-      assertLegacyRepairSessionCurrent(session, text)
+      assertLegacyRepairSessionCurrent(session)
       this.notifyRefresh(['characterCards'], session.projectPath, session)
       globalEventBus.emit('ARCH_FILE_UPDATED', { fileName: 'characters.md', projectPath: session.projectPath, projectSession: session, runId: context.runId })
       return result.snapshot.renderedMarkdown
@@ -62,11 +65,11 @@ export class RepairLegacyCharacterRosterCommand extends BaseWorkflowCommand<stri
     if (!handle && !this.input.restart) {
       const runs = await ipc.invokeWithProjectSession(session, 'generation:list', ['legacy-character-roster-repair'])
       this.assertNotCancelled(context)
-      assertLegacyRepairSessionCurrent(session, text)
+      assertLegacyRepairSessionCurrent(session)
       handle = runs.find(run => run.operation === 'legacy-character-roster-repair')?.handle
-      if (handle) throw new Error(text('已有旧版角色名单修复运行，请明确查看或恢复；重新开始须单独选择。', 'A legacy cast repair run already exists. View or resume it explicitly; starting over is a separate choice.'))
+      if (handle) throw authorError(context.interfaceLocale, { note: note('已有旧版角色名单修复运行，请明确查看或恢复；重新开始须单独选择。', 'A legacy cast repair run already exists. View or resume it explicitly; starting over is a separate choice.') })
     }
-    const client = createLegacyRosterGeneration(session, () => { this.assertNotCancelled(context); assertLegacyRepairSessionCurrent(session, text) })
+    const client = createLegacyRosterGeneration(session, () => { this.assertNotCancelled(context); assertLegacyRepairSessionCurrent(session) })
     const timer = setInterval(() => { if (context.cancelled) void client.cancel().catch(() => {}) }, 50)
     try {
       const modelId = context.generationModelId || routeModelId('legacy-character-roster-repair') || ''
@@ -76,7 +79,7 @@ export class RepairLegacyCharacterRosterCommand extends BaseWorkflowCommand<stri
       context.data.legacyRosterGenerationHandle = current.view.handle
       const completed = current.proposal ? current : await client.execute()
       this.assertNotCancelled(context)
-      assertLegacyRepairSessionCurrent(session, text)
+      assertLegacyRepairSessionCurrent(session)
       context.mainGenerationRunHandle = completed.view.handle
       const batch = completed.proposal ?? await client.stage()
       context.data.characterProposalBatch = batch

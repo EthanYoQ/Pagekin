@@ -188,7 +188,7 @@ describe('ArchFileViewer locale', () => {
         projectKey={PROJECT_PATH} content="未保存的故事前提" savedContent="" />,
     ))
     await act(async () => (container.querySelector('[title="保存（Cmd+S）"]') as HTMLButtonElement).click())
-    expect(errorToast).toHaveBeenCalledWith(expect.stringContaining('磁盘已满'))
+    expect(errorToast).toHaveBeenCalledWith('出了意外问题，暂时说不清原因。请再试一次。')
     expect(container.textContent).toContain('保存失败')
     expect(container.textContent).toContain('未保存的故事前提')
     expect(container.querySelector('[title="有未保存的修改"]')).not.toBeNull()

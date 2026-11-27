@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { shown } from '../../src/i18n/__tests__/shown-locale'
-import { displayedErrorMessage } from '../../src/i18n/app-errors'
+import { displayedErrorMessage, resultFailure } from '../../src/i18n/app-errors'
 import { planFinalizationRetry } from '../../src/shared/finalization-step-error'
 import { workflowMainProcessError } from '../../src/services/workflows/workflow-project-session'
 import { closeProjectDatabase } from '../database'
@@ -29,7 +29,7 @@ function failKnowledgeCopyWrite(error: NodeJS.ErrnoException) {
 }
 
 const rebuildShown = (result: { error?: string; errorCode?: string }) =>
-  workflowMainProcessError(shown('zh-CN'), result.errorCode ?? result.error, '重建检索失败', 'Could not rebuild search.').message
+  workflowMainProcessError(shown('zh-CN'), resultFailure(result), '重建检索失败', 'Could not rebuild search.').message
 
 beforeAll(() => { fs.mkdirSync(path.resolve('.runtime/.cache'), { recursive: true }) })
 

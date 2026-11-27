@@ -6,7 +6,8 @@ import { useDraftStore } from '../stores/draft-store'
 import { useEditorStore } from '../stores/editor-store'
 import { useWorkflowStore } from '../stores/workflow-store'
 import { currentInterfaceLocale, useLocaleStore } from '../stores/locale-store'
-import { displayedErrorMessage, englishWithReason } from '../i18n/app-errors'
+import { failureText, reasonOf } from '../i18n/app-errors'
+import { note, type AuthorNote } from '../shared/failure'
 import {
   projectSessionContextFromProject,
   sameProjectSessionContext,
@@ -178,15 +179,14 @@ export async function onProjectOpened(
   const characterError = useCharacterStore.getState().lastError
   if (characterError) warnings.push(text(
     `角色卡读取失败：${characterError}`,
-    englishWithReason(currentInterfaceLocale(), 'Could not load character cards.', characterError),
+    `Could not load character cards. ${characterError}`,
   ))
+  const loadWarning = (summary: AuthorNote, error: unknown) => failureText(currentInterfaceLocale(), { note: summary, because: reasonOf(error) })
   if (results[0].status === 'rejected' && !characterError) {
-    const reason = displayedErrorMessage(currentInterfaceLocale(), results[0].reason)
-    warnings.push(text(`角色卡读取失败：${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not load character cards.', reason)))
+    warnings.push(loadWarning(note('角色卡读取失败', 'Could not load character cards.'), results[0].reason))
   }
   if (results[1].status === 'rejected') {
-    const reason = displayedErrorMessage(currentInterfaceLocale(), results[1].reason)
-    warnings.push(text(`草稿列表读取失败：${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not load the draft list.', reason)))
+    warnings.push(loadWarning(note('草稿列表读取失败', 'Could not load the draft list.'), results[1].reason))
   }
 
   globalEventBus.emit('PROJECT_CHANGED', {

@@ -39,12 +39,12 @@ describe('i18n core', () => {
 
   it('translates catalog messages into Japanese', () => {
     expect(translate('ja-JP', 'error.projectNotOpen')).toBe('先にプロジェクトを開いてください。')
-    expect(translate('ja-JP', 'error.unknown', { message: '<b>Book</b>' })).toBe('問題が発生しました：<b>Book</b>')
+    expect(translate('ja-JP', 'error.projectOpenRetryBook', { title: '<b>Book</b>' })).toBe('数秒待ってから、もう一度「Open “<b>Book</b>”」をクリックしてください。')
   })
 
   it('translates and interpolates values as plain text', () => {
-    expect(translate('en-US', 'error.unknown', { message: '<b>Book</b>' }))
-      .toBe('Something went wrong: <b>Book</b>')
+    expect(translate('en-US', 'error.projectOpenRetryBook', { title: '<b>Book</b>' }))
+      .toBe('Wait a few seconds, then click Open “<b>Book</b>” again.')
   })
 
   it('falls back to English and then the key', () => {

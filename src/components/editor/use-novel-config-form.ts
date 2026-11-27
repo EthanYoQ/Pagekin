@@ -15,7 +15,8 @@ import {
   isProjectSessionPath,
 } from '../project-session-gate'
 import type { SaveOutcome } from './save-feedback'
-import { displayedErrorMessage } from '../../i18n/app-errors'
+import { displayedErrorMessage, authorError } from '../../i18n/app-errors'
+import { note } from '../../shared/failure'
 
 /** 正在写盘的设定保存，按作品会话记：设定页随切标签重挂，实例 state 会丢，在途的保存要跨重挂认得出，不能再发一次。 */
 const useSavesInFlight = create<Record<string, boolean>>(() => ({}))
@@ -81,7 +82,7 @@ export function useNovelConfigForm(projectKey: string) {
     try {
       const saved = await saveProject(projectSession)
       if (!isProjectSessionCurrent(projectSession)) return false
-      if (!saved) throw new Error(text('项目配置未能写入磁盘', 'The project configuration could not be written to disk.'))
+      if (!saved) throw authorError(currentInterfaceLocale(), { note: note('项目配置未能写入磁盘', 'The project configuration could not be written to disk.') })
       addLog('info', text('小说配置已保存', 'Novel configuration saved'))
       const stillDirty = useEditorStore.getState().tabs.some(
         tab => tab.type === 'config' && tab.projectKey === projectKey && tab.dirty,

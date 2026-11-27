@@ -11,6 +11,7 @@ import { projectSessionContextFromProject, sameProjectSessionContext } from '../
 import { useProjectStore } from '../../stores/project-store'
 import { useWorkflowReasoningStore } from '../../stores/workflow-reasoning-store'
 import { PLOT_OUTLINE_PROTOCOL, plotOutlineSourceInvalidText } from '../../shared/plot-outline-contract'
+import { authorError, writtenNote } from '../../i18n/app-errors'
 
 export interface WorkflowMainGenerationSelection extends Omit<BeginGenerationRequest, 'operation' | 'uiActionNonce' | 'modelId' | 'parentRootActionId' | 'selectedDraftIds' | 'selectedFinalizedDraftIds'> {
   operation: GenerationOperation
@@ -106,7 +107,7 @@ export async function createWorkflowMainGenerationRuntime(request: WorkflowMainG
         view = stored.nonReplayable && !importStage ? await transport.resume(projectSession, resumeHandle).catch((error: unknown) => {
           // 主进程按设计拒绝续写来源无效的大纲任务，只给错误码；换成与恢复稿入口相同的说明。
           if (stored.plotOutline?.protocol === PLOT_OUTLINE_PROTOCOL && String((error as Error)?.message ?? error).includes('GENERATION_PLOT_OUTLINE_PREFIX_INVALID'))
-            throw new Error(plotOutlineSourceInvalidText(stored.plotOutline.sourceExpected.synopsis, workflowUiLocale(context)))
+            throw authorError(context.interfaceLocale, { note: writtenNote(plotOutlineSourceInvalidText(stored.plotOutline.sourceExpected.synopsis, workflowUiLocale(context))) })
           throw error
         }) : stored
       } else {

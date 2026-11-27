@@ -70,13 +70,15 @@ it('认不出的失败显示时仍有通用说明', async () => {
   expect(shown.stepError).toBe('出了意外问题，暂时说不清原因。请再试一次。')
 })
 
-describe('未迁移的产生点在运行卡片上的显示与 master 相同', () => {
+describe('未迁移的产生点在运行卡片上：登记码照常说明，没标记的句子只显示通用说明（#845 PR-H2）', () => {
   const proxy = '代理 127.0.0.1:7890 连不上，请在设置里检查代理。'
+  const GENERIC = '出了意外问题，暂时说不清原因。请再试一次。'
+  const NETWORK = '没连上模型服务，或回复中途断了。请检查网络或代理后重试。'
   it.each([
     ['整条是已登记码', new Error('PROJECT_NOT_OPEN'), '请先打开项目。', '请先打开项目。'],
     ['IPC 包着的已登记码', new Error("Error invoking remote method 'db:save': Error: PROJECT_NOT_OPEN"), '请先打开项目。', '请先打开项目。'],
-    ['产生点写好的句子', new Error('第 3 章的大纲还没生成。'), '第 3 章的大纲还没生成。', '第 3 章的大纲还没生成。'],
-    ['句子另挂已登记码', Object.assign(new Error(proxy), { code: 'NETWORK_ERROR' }), proxy, proxy],
+    ['产生点写好的句子', new Error('第 3 章的大纲还没生成。'), GENERIC, '生成在完成前停止。'],
+    ['句子另挂已登记码', Object.assign(new Error(proxy), { code: 'NETWORK_ERROR' }), NETWORK, NETWORK],
   ] as const)('%s', async (_name, thrown, stepError, notice) => {
     expect(await failedCard(thrown)).toEqual({ expandable: true, stepError, notice })
   })

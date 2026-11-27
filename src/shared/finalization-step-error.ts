@@ -3,6 +3,8 @@ type StepRetry = 'prompt' | 'described' | 'never' | { after: string; rerunIfSucc
 export const CHAPTER_RESTORED_REPROJECTION_PENDING = 'CHAPTER_RESTORED_REPROJECTION_PENDING'
 
 export const POST_PROCESS_INTERRUPTED = 'POST_PROCESS_INTERRUPTED'
+/** 后处理步骤失败但报错没有码：落库只写这个标记，原文只进控制台。它不在步骤表里，重试规则与任意未知失败相同。 */
+export const POST_PROCESS_STEP_FAILED = 'POST_PROCESS_STEP_FAILED'
 
 const FINALIZATION_STEP_ERRORS: { code: RegExp; zh: string; en: string; enMany?: string; retry: StepRetry }[] = [
   { code: /^FINALIZATION_GENERATION_INCOMPLETE$/, retry: 'prompt',

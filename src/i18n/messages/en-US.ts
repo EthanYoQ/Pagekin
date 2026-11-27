@@ -108,7 +108,6 @@ export const enUS = {
   'backup.omittedReviewCycleUnknownOne': 'A damaged review record was left out of the archive. The text and other reviews are included.',
   'backup.omittedReviewCycleUnknownMany': 'Some damaged review records were left out of the archive. The text and other reviews are included.',
   'error.externalFileGrantExpired': 'Access to the selected file or folder has expired. Choose it again.',
-  'error.unknown': 'Something went wrong: {message}',
   'error.unregisteredCode': 'Something unexpected went wrong. Try again.',
   'error.ipcHandlerFailed': 'That action did not finish because something unexpected went wrong. Try again; if it keeps happening, send us this message.',
   'error.projectLeaseExpired': 'The project lease has expired; the operation was rejected.',

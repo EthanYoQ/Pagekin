@@ -3,8 +3,13 @@ import { join } from 'node:path'
 import ts from 'typescript'
 import { REPO_ROOT, repoSourceFiles } from './repo-source-files.ts'
 
-export const LEGACY_FAILURE_CALLS = ['displayedErrorMessage', 'appErrorMessage', 'knownAppErrorMessage', 'englishWithReason', 'authorOwned'] as const
-export type LegacyFailureKind = typeof LEGACY_FAILURE_CALLS[number] | '{ legacy:'
+export const LEGACY_FAILURE_CALLS = ['displayedErrorMessage', 'appErrorMessage', 'knownAppErrorMessage', 'authorOwned'] as const
+export type LegacyFailureKind = typeof LEGACY_FAILURE_CALLS[number]
+
+/** 已删掉的旧失败约定（#845 PR-H2）：生产代码里再出现这些名字即红。 */
+export const REMOVED_FAILURE_NAMES = ['englishWithReason', 'LegacyReason', 'legacyReasonText', 'unregisteredCodeMessage', 'WIRE_EXCLUDED_KEYS', 'DIRECT_CHANNELS'] as const
+/** 已删掉的目录键与名单文件：字符串里再出现即红。 */
+export const REMOVED_FAILURE_STRINGS = ['error.unknown', 'direct-channels'] as const
 export type LegacyFailureCounts = Record<string, Partial<Record<LegacyFailureKind, number>>>
 
 const NOT_PRODUCTION = /\/__tests__\/|\.(?:test|spec|browser|typecheck)\.[cm]?[jt]sx?$|^src\/stories\//u
@@ -33,9 +38,20 @@ export function legacyFailureCounts(file: string, text: string): Partial<Record<
       const name = calleeName(node)
       if ((LEGACY_FAILURE_CALLS as readonly string[]).includes(name ?? '')) add(name as LegacyFailureKind)
     }
-    if (isLegacyReason(node)) add('{ legacy:')
   })
   return counts
+}
+
+/** 旧失败约定的入口：删掉的名字、目录键、名单文件，以及只装原文的 { legacy } 对象。 */
+export function removedFailureEntries(file: string, text: string): string[] {
+  const found: string[] = []
+  walk(file, text, (node, source) => {
+    const hit = ts.isIdentifier(node) && (REMOVED_FAILURE_NAMES as readonly string[]).includes(node.text)
+      || ts.isStringLiteralLike(node) && REMOVED_FAILURE_STRINGS.some(removed => node.text.includes(removed))
+      || isLegacyReason(node)
+    if (hit) found.push(`${file}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1} ${node.getText(source)}`)
+  })
+  return found
 }
 
 const propertyName = (name: ts.PropertyName) => ts.isIdentifier(name) || ts.isStringLiteralLike(name) ? name.text : undefined
@@ -69,10 +85,13 @@ function isCaughtValue(expression: ts.Expression): boolean {
   return false
 }
 
+/** 参数原样进作者看到的说明的调用：作者数据，或本应用写好的整句。 */
+const OWNED_TEXT_CALLS = new Set(['authorOwned', 'writtenNote'])
+
 export function rawTextInNoteArguments(file: string, text: string): string[] {
   const found: string[] = []
   walk(file, text, (node, source) => {
-    if (ts.isCallExpression(node) && calleeName(node) === 'authorOwned' && node.arguments.some(readsRawText)) {
+    if (ts.isCallExpression(node) && OWNED_TEXT_CALLS.has(calleeName(node) ?? '') && node.arguments.some(readsRawText)) {
       found.push(`${file}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1} ${node.getText(source)}`)
     }
   })

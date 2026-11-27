@@ -8,6 +8,7 @@ import { BaseWorkflowCommand, type CommandExecuteParams, type WorkflowGeneration
 import { requireIpcSuccess } from '../../ipc-result'
 import { POST_PROCESS_INTERRUPTED, describeFinalizationStepError, planFinalizationRetry } from '../../../shared/finalization-step-error'
 import { runPostProcessPipeline } from '../workflow-utils'
+import { expectFailedWith, shownFailure } from '../../../stores/__tests__/run-failure-expect'
 
 // #587 第三轮：包装层只因「取消已请求」就把任何错误改写成取消，store 便把真实失败记成已取消。
 // 这里走真实的包装（callLLMResult、withRetry 与后处理流水线）和真实的 store，看作者最后看到的运行状态。
@@ -106,8 +107,7 @@ describe('callLLMResult：作者点了取消', () => {
       throw storageFailure()
     })).execute({ step: {}, context, callbacks }))
 
-    expect(finished).toMatchObject({ status: 'failed', errorCode: 'GENERATION_STORAGE_FAILED' })
-    expect(finished.steps[0]).toMatchObject({ status: 'failed', errorCode: 'GENERATION_STORAGE_FAILED' })
+    expectFailedWith(finished, 'GENERATION_STORAGE_FAILED')
   })
 
   it('会话因取消中止：运行和这一步都记已取消', async () => {
@@ -150,8 +150,7 @@ describe.each([
       return returnedIncomplete(failureCode)
     })).execute({ step: {}, context, callbacks }))
 
-    expect(finished).toMatchObject({ status: 'failed', errorCode: failureCode })
-    expect(finished.steps[0]).toMatchObject({ status: 'failed', errorCode: failureCode })
+    expectFailedWith(finished, failureCode)
   })
 
   it('取消截断的结果（收据没有失败码）：运行和这一步都记已取消', async () => {
@@ -184,9 +183,9 @@ describe('定稿后处理（withRetry）：作者点了取消', () => {
     const finished = await runOneStep(postProcess(true, executor))
 
     expect(executor).toHaveBeenCalledOnce()
-    expect(markedFailed()).toEqual([['db:post-process-mark-step-failed', 'post-run-1', 'character_cards', '生成记录写入失败：磁盘空间不足', projectPath, session]])
+    expect(markedFailed()).toEqual([['db:post-process-mark-step-failed', 'post-run-1', 'character_cards', 'GENERATION_STORAGE_FAILED', projectPath, session]])
     expect(finished).toMatchObject({ status: 'failed' })
-    expect(finished.error).toContain('角色状态更新')
+    expect(shownFailure(finished)).toContain('角色状态更新')
     expect(finished.steps[0]).toMatchObject({ status: 'failed' })
   })
 
@@ -208,7 +207,7 @@ describe('定稿后处理（withRetry）：作者点了取消', () => {
     expectInterruptedWithRetry()
     expect(finished).toMatchObject({ status: 'cancelled' })
     expect(finished.steps[0]).toMatchObject({ status: 'cancelled' })
-    expect(finished.error).toBe('工作流已取消')
+    expect(shownFailure(finished)).toBe('工作流已取消')
   })
 
   it('作者没有取消、主进程却返回取消码：照常记失败并重试，失败提示与重试入口都在', async () => {
@@ -220,7 +219,7 @@ describe('定稿后处理（withRetry）：作者点了取消', () => {
     expect(executor).toHaveBeenCalledTimes(3)
     expect(markedFailed()).toHaveLength(1)
     expect(finished).toMatchObject({ status: 'failed' })
-    expect(finished.error).toContain('角色状态更新')
+    expect(shownFailure(finished)).toContain('角色状态更新')
   })
 
   it('这一步因取消中止：这一步记为中断、可重试，运行记已取消', async () => {

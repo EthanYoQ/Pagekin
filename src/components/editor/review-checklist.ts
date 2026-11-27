@@ -697,12 +697,10 @@ export function useReviewChecklist({
       if (!isProjectSessionCurrent(projectSession)) return
       const run = useWorkflowStore.getState().history.find(candidate => candidate.id === runId)
       if (!run || run.status !== 'completed') {
-        throw run?.failure || !run?.error
-          ? authorError(currentInterfaceLocale(), run?.failure ?? { note: note(
-            '复验任务未完成；可在修复模型或资源问题后再次重试。',
-            'The recheck did not complete. Fix the model or resource issue and retry.',
-          ) })
-          : new Error(run.error)
+        throw authorError(currentInterfaceLocale(), run?.failure ?? { note: note(
+          '复验任务未完成；可在修复模型或资源问题后再次重试。',
+          'The recheck did not complete. Fix the model or resource issue and retry.',
+        ) })
       }
       // 界面上的循环由复验完成的广播触发重读；这里只读一次决定提示。
       const refreshed = await ipc.invokeWithProjectSession(projectSession, 'db:review-cycle-get', sourceReviewId, projectSession.projectPath)

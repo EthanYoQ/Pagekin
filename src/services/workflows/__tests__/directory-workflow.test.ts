@@ -22,6 +22,7 @@ import { globalEventBus } from '../../../shared/event-bus'
 import { TerminalProviderFailureError } from '../../generation/generation-harness'
 import { isWorkflowCancellation } from '../workflow-cancellation'
 import { shown } from '../../../i18n/__tests__/shown-locale'
+import { expectEndedWith, shownFailure } from '../../../stores/__tests__/run-failure-expect'
 
 const blueprint: ChapterBlueprint = {
   chapterNumber: 1,
@@ -567,8 +568,9 @@ describe('directory workflow project context', () => {
     await useWorkflowStore.getState().startWorkflow({ ...workflow, runId: 'cancel-window-coded-failure-run', steps: [workflow.steps[1]] })
 
     const finished = useWorkflowStore.getState().history[0]
-    expect(finished).toMatchObject({ status: 'failed', errorCode: code, error: '章节蓝图生成失败，请重试。' })
-    expect(finished.steps[0]).toMatchObject({ status: 'failed', errorCode: code })
+    expectEndedWith(finished, 'failed', code)
+    expect(shownFailure(finished)).toBe('章节蓝图生成失败，请重试。')
+    expectEndedWith(finished.steps[0], 'failed', code)
   })
 
   it('蓝图已提交后作者取消：运行记已取消，已取消的那一步写明蓝图已保存、角色同步可能未完成', async () => {
@@ -588,7 +590,8 @@ describe('directory workflow project context', () => {
 
     const finished = useWorkflowStore.getState().history[0]
     expect(finished).toMatchObject({ id: 'post-commit-cancel-run', status: 'cancelled' })
-    expect(finished.steps[0]).toMatchObject({ status: 'cancelled', error: '章节蓝图已保存，但任务取消后角色同步可能未完成。' })
+    expect(finished.steps[0]).toMatchObject({ status: 'cancelled' })
+    expect(shownFailure(finished.steps[0])).toBe('章节蓝图已保存，但任务取消后角色同步可能未完成。')
   })
 
   it('freezes English workflow labels and user-visible logs at launch', async () => {
