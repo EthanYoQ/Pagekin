@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { authorError, catalogNote } from '../../i18n/app-errors'
+import { authorError, catalogNote, failureText } from '../../i18n/app-errors'
 import { shown } from '../../i18n/__tests__/shown-locale'
 import { useLocaleStore } from '../locale-store'
 import { useProjectStore } from '../project-store'
@@ -72,5 +72,33 @@ describe('复验失败和正文生成失败读到的 run.error 与 master 相同
     const run = await failedRun(thrown())
     expect(run.error || recheckFallback).toBe(expected.runError || recheckFallback)
     expect(new Error(run.error).message).toBe(expected.runError)
+  })
+})
+
+describe('写作 Skill 快照加载失败', () => {
+  async function snapshotFailedRun(bindings: (channel: string) => unknown): Promise<WorkflowRun> {
+    vi.stubGlobal('window', { aiNovelAPI: { invoke: vi.fn(async (channel: string, path?: unknown) => {
+      if (channel === 'skills:list-user') return []
+      return typeof path === 'string' && path.endsWith('writing-skills.json') ? bindings(channel) : false
+    }), on: vi.fn(() => () => {}), once: vi.fn() } })
+    const runId = await useWorkflowStore.getState().startWorkflow({
+      type: 'chapter_creation', title: '第 1 章', projectPath: projectSession.projectPath, projectSession,
+      steps: [{ name: '写稿', description: '写稿', executor: async () => undefined }],
+    })
+    return useWorkflowStore.getState().history.find(run => run.id === runId)!
+  }
+
+  it('渲染端余下的显示点不把原文交给作者：运行时原文只进日志', async () => {
+    const raw = "Cannot read properties of undefined (reading 'bindings')"
+    const run = await snapshotFailedRun(() => { throw new TypeError(raw) })
+    expect(run.status).toBe('failed')
+    expect(run.error).toBe('写作 Skill 快照加载失败，工作流未启动')
+    expect(run.error).not.toContain(raw)
+    expect(failureText(shown('en-US'), run.failure)).toBe('Writing skill snapshot could not be loaded, so the workflow was not started.')
+  })
+
+  it('原来能看到的具体说明逐字保留：绑定文件损坏', async () => {
+    const run = await snapshotFailedRun(channel => channel === 'fs:check-exists' ? true : { success: true, content: '{broken' })
+    expect(run.error).toBe('写作 Skill 快照加载失败，工作流未启动：写作 Skill 绑定文件已损坏')
   })
 })

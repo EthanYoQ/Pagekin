@@ -1,5 +1,5 @@
-import { caughtFailure, displayedErrorMessage } from '../i18n/app-errors'
-import { failureOf, type Failure } from '../shared/failure'
+import { caughtFailure, displayedErrorMessage, failureText } from '../i18n/app-errors'
+import { failureOf, note, type Failure } from '../shared/failure'
 import type { GenerationTransportDiagnostics } from '../shared/generation-contract'
 import type { CharacterProposalBatch } from '../shared/character-proposal'
 import type { CharacterProposalChoices } from '../services/character-proposal-choices'
@@ -507,9 +507,9 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
 
     const cancellationRequestSettled = () => context.cancellationRequest?.catch(() => undefined)
 
-    const endBeforeFirstStep = async (status: 'failed' | 'cancelled', error: string) => {
+    const endBeforeFirstStep = async (status: 'failed' | 'cancelled', error: string, failure?: Failure) => {
       await cancellationRequestSettled()
-      updateRunById(set, run.id, { status, completedAt: new Date().toISOString(), error })
+      updateRunById(set, run.id, { status, completedAt: new Date().toISOString(), error, ...(failure ? { failure } : {}) })
       set(s => {
         const endedRun = s.activeRuns.find(active => active.id === run.id)
         const newRuns = s.activeRuns.filter(active => active.id !== run.id)
@@ -539,14 +539,13 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         await cancelBeforeFirstStep()
         return runId
       }
-      const reason = displayedErrorMessage(context.interfaceLocale, error)
-      const failure = uiText(
-        uiLocale,
-        `写作 Skill 快照加载失败，工作流未启动：${reason}`,
-        `Writing skill snapshot could not be loaded, so the workflow was not started: ${reason}`,
-      )
-      await endBeforeFirstStep('failed', failure)
-      get().addLog('error', failure, uiLocale)
+      const failure: Failure = {
+        note: note('写作 Skill 快照加载失败，工作流未启动', 'Writing skill snapshot could not be loaded, so the workflow was not started.'),
+        because: caughtFailure(error),
+      }
+      const shown = failureText(context.interfaceLocale, failure)
+      await endBeforeFirstStep('failed', shown, failure)
+      get().addLog('error', shown, uiLocale)
       return runId
     }
     if (!sameProjectSessionContext(
