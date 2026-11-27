@@ -424,7 +424,6 @@ const ERROR_KEYS = {
   MCP_REQUEST_TIMEOUT: 'error.mcpRequestTimeout',
   MCP_SERVER_NOT_CONNECTED: 'error.mcpServerNotConnected',
   // 导入运行与导入回执（#474 B1）：导入对话框、导入运行卡片与可继续的导入列表里作者能照着处理的原因。
-  // 主进程在导入通道的 IPC 边界按导入运行的语言把这些码写成说明，原码放在 errorCode。
   IMPORT_RUN_EXECUTION_STALE: 'error.importRunExecutionStale',
   IMPORT_RUN_EXECUTOR_BUSY: 'error.importRunExecutorBusy',
   IMPORT_RUN_ANOTHER_RUNNING: 'error.importRunAnotherRunning',
@@ -442,6 +441,11 @@ const ERROR_KEYS = {
   IMPORT_INSPECTION_LIMIT: 'error.importInspectionLimit',
   FINALIZED_IMPORT_PREVIEW_STALE: 'error.finalizedImportPreviewStale',
   FINALIZED_IMPORT_CHAPTER_ALREADY_FINALIZED: 'error.finalizedImportChapterAlreadyFinalized',
+  IMPORT_RUN_CHECK_FAILED: 'error.importRunCheckFailedUncoded',
+  IMPORT_RUN_SOURCE_OVERLAP: 'error.importRunSourceOverlap',
+  IMPORT_RUN_AUTHOR_PREVIOUS_RUNNING: 'error.importRunAuthorPreviousRunning',
+  IMPORT_RUN_AUTHOR_STATE_CHANGED: 'error.importRunAuthorStateChanged',
+  AUTHOR_IMPORT_PREVIEW_STALE: 'error.authorImportPreviewStale',
 } as const
 
 type KnownErrorCode = keyof typeof ERROR_KEYS
