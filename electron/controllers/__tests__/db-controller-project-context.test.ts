@@ -228,7 +228,6 @@ vi.mock('../../services/import-source-identity-secret', () => ({
 }))
 
 import { registerDatabaseController } from '../db-controller'
-import { storedImportFailure, writtenImportFailure } from '../../../src/shared/import-run'
 
 function currentSession() {
   return {
@@ -597,20 +596,24 @@ describe('database controller project context guard', () => {
   })
 
   describe('import run failures shown in the import dialog and run card (#474)', () => {
-    it('stores the marked sentence from the renderer as it is', async () => {
-      const execution = { owner: 'renderer', epoch: 1, expiresAt: 1 }
-      const written = storedImportFailure('Chapter 3 could not be written.', 'en-US')
-      await handler('db:import-run-fail')({}, 'run', 'knowledge', written, execution, 'C:/projects/A')
-      expect(mocks.importRunFail).toHaveBeenLastCalledWith('run', 'knowledge', written, execution)
-    })
-
-    it('stores the generic explanation for an unmarked reason instead of its raw text', async () => {
+    it('stores a readable failure reason instead of the IPC wrapper or a bare code', async () => {
       mocks.importRunGet.mockReturnValue({ locale: 'en-US' })
       const execution = { owner: 'renderer', epoch: 1, expiresAt: 1 }
-      await handler('db:import-run-fail')({}, 'run', 'knowledge', "ENOENT: open 'C:/Users/Private/secret.txt'", execution, 'C:/projects/A')
-      const stored = mocks.importRunFail.mock.lastCall?.[2] as string
-      expect(stored).not.toContain('Private')
-      expect(writtenImportFailure(stored, 'en-US')).toBe('Something unexpected went wrong. Try again.')
+      await handler('db:import-run-fail')(
+        {}, 'run', 'knowledge',
+        "Error invoking remote method 'db:import-run-effect-receipt-get': Error: IMPORT_RUN_EXECUTION_STALE",
+        execution, 'C:/projects/A',
+      )
+      expect(mocks.importRunFail).toHaveBeenLastCalledWith('run', 'knowledge', expect.not.stringMatching(/IPC|remote method|IMPORT_RUN_/), execution)
+      const reason = mocks.importRunFail.mock.lastCall?.[2] as string
+      expect(reason).toMatch(/^This import was taken over by another window/)
+
+      await handler('db:import-run-fail')(
+        {}, 'run', 'knowledge',
+        "Error invoking remote method 'kb:import-reference-text': Error: Chapter 3 could not be written.",
+        execution, 'C:/projects/A',
+      )
+      expect(mocks.importRunFail).toHaveBeenLastCalledWith('run', 'knowledge', 'Chapter 3 could not be written.', execution)
     })
   })
 

@@ -52,7 +52,6 @@ import type {
 import {
   AUTHOR_IMPORT_PREVIEW_STALE,
   isImportRunDirectCheckpointStage,
-  isStoredImportFailure,
 } from '../../src/shared/import-run'
 import { ImportSourceIdentityRepository } from '../repositories/import-source-identity-repository'
 import { importInspectionStore } from '../services/import-inspection-store'
@@ -351,7 +350,7 @@ export function registerDatabaseController() {
         ImportRunRepository.failParsedSource(
           parsingRun.id,
           sourceId,
-          persistedImportRunFailure(error, request.locale),
+          persistedImportRunFailure(error instanceof Error ? error.message : String(error), request.locale),
         )
         throw error
       }
@@ -525,8 +524,7 @@ export function registerDatabaseController() {
     expectedProjectPath: string,
   ) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-    // 渲染端交来的是已经加上标记的说明；没有标记的按认不出的失败存通用说明。
-    const reason = typeof errorMessage === 'string' && !isStoredImportFailure(errorMessage)
+    const reason = typeof errorMessage === 'string'
       ? persistedImportRunFailure(errorMessage, () => importRunLocale(runId))
       : errorMessage
     return { success: true, run: ImportRunRepository.fail(runId, stage, reason, execution) }

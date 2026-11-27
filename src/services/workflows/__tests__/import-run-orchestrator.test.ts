@@ -6,7 +6,7 @@ import type {
   ImportRunSnapshot,
   ImportRunStage,
 } from '../../../shared/import-run'
-import { createImportRunChapterBatchCheckpointId, storedImportFailure, writtenImportFailure } from '../../../shared/import-run'
+import { createImportRunChapterBatchCheckpointId } from '../../../shared/import-run'
 import type { FinalizedDraftImportReceipt } from '../../../shared/finalized-draft-import'
 import { failureText, importStopFailure } from '../../../i18n/app-errors'
 import { useProjectStore } from '../../../stores/project-store'
@@ -103,9 +103,8 @@ function harness(total = 25, overrides: Partial<ImportRunSnapshot> = {}, interfa
       run = { ...run, stage: nextStage }
       return run
     }),
-    // 存下的原因按对话框显示的样子记：去掉标记；标记里的语言不是界面语言时保留原样，断言会失败。
     fail: vi.fn(async (_runId, stage, error) => {
-      run = { ...run, stage, status: 'failed', lastError: writtenImportFailure(error, interfaceLocale) ?? error }
+      run = { ...run, stage, status: 'failed', lastError: error }
       return run
     }),
     cancelAtBoundary: vi.fn(async () => {
@@ -474,7 +473,7 @@ describe('ImportRunOrchestrator', () => {
 
     await expect(running).rejects.toThrow('provider unavailable')
     expect(deps.fail).toHaveBeenCalledWith(
-      'run-1', 'global', storedImportFailure(failureText(shown('en-US'), undefined), 'en-US'), authoritativeExecution,
+      'run-1', 'global', 'provider unavailable', authoritativeExecution,
     )
   })
 
@@ -1074,9 +1073,9 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
   })
 
   it.each([
-    ['an unrelated provider failure', new Error('provider unavailable'), undefined],
-    ['a step explanation that carries a stop code', Object.assign(new Error('蓝图推演失败：活动时长用完（ROOT_BUDGET_EXHAUSTED）'), { code: 'ROOT_BUDGET_EXHAUSTED' }), { code: 'ROOT_BUDGET_EXHAUSTED' }],
-  ] as const)('keeps %s as it was and stores only its explanation', async (_case, thrown, reason) => {
+    ['an unrelated provider failure', new Error('provider unavailable')],
+    ['a step explanation that carries a stop code', Object.assign(new Error('蓝图推演失败：活动时长用完（ROOT_BUDGET_EXHAUSTED）'), { code: 'ROOT_BUDGET_EXHAUSTED' })],
+  ])('keeps %s as it was', async (_case, thrown) => {
     const { deps, getRun } = harness(1, { stage: 'global' })
     deps.inferGlobal = vi.fn(async () => { throw thrown })
 
@@ -1084,10 +1083,10 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
       .executeStage('run-1', 'global', 'test-runner', { cancelled: false }, callbacks)
       .catch((error: Error) => error)
     expect(failure).toBe(thrown)
-    expect(getRun().lastError).toBe(failureText(shown('en-US'), reason))
+    expect(getRun().lastError).toBe(thrown.message)
   })
 
-  it('keeps a stop code raised outside the generation stages as it was and stores its explanation', async () => {
+  it('keeps a stop code raised outside the generation stages as it was', async () => {
     const { deps, getRun } = harness(1, { stage: 'refresh' })
     const thrown = new Error('GENERATION_STORAGE_FAILED')
     deps.refresh = vi.fn(async () => { throw thrown })
@@ -1096,7 +1095,7 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
       .executeStage('run-1', 'refresh', 'test-runner', { cancelled: false }, callbacks)
       .catch((error: Error) => error)
     expect(failure).toBe(thrown)
-    expect(getRun().lastError).toBe(failureText(shown('en-US'), { code: 'GENERATION_STORAGE_FAILED' }))
+    expect(getRun().lastError).toBe(thrown.message)
   })
 
   it('gives an author-manuscript inference stop the author explanation instead of Start over', async () => {

@@ -8,7 +8,6 @@ import { InferBlueprintsPerChapterCommand } from '../commands/import-novel.comma
 import { GenerationHarnessError } from '../../generation/generation-harness'
 import { isWorkflowCancellation } from '../workflow-cancellation'
 import type { ImportRunSnapshot } from '../../../shared/import-run'
-import { storedImportFailure } from '../../../shared/import-run'
 import { useProjectStore } from '../../../stores/project-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import { useLLMStore } from '../../../stores/llm-store'
@@ -139,7 +138,7 @@ describe('导入停下的原因随导入运行语言', () => {
 
     expect(ended.status).toBe('failed')
     for (const line of shownOnRunCard(ended, interfaceLocale)) expect(line).toBe(expected)
-    expect(failed).toEqual([storedImportFailure(expected, errorLocaleForRun(runLocale, shown(interfaceLocale)))])
+    expect(failed).toEqual([expected])
   })
 
   it.each([
@@ -173,7 +172,7 @@ describe('导入取消判定不变', () => {
 
     expect(ended.status).toBe('failed')
     expect(channels).not.toContain('db:import-run-cancel-at-boundary')
-    expect(failed).toEqual([storedImportFailure('这次导入的请求次数或运行时长已到上限，这一批没有发送。在导入对话框里点「继续导入」，已提交的批次不会重做。', 'zh-CN')])
+    expect(failed).toEqual(['这次导入的请求次数或运行时长已到上限，这一批没有发送。在导入对话框里点「继续导入」，已提交的批次不会重做。'])
   })
 
   it.each([

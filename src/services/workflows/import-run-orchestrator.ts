@@ -17,11 +17,10 @@ import {
   IMPORT_RUN_BLUEPRINT_BATCH_SIZE,
   IMPORT_RUN_KNOWLEDGE_BATCH_SIZE,
   parseImportRunChapterBatchCheckpointId,
-  storedImportFailure,
 } from '../../shared/import-run'
 import type { StepCallbacks } from '../../stores/workflow-store'
 import type { FinalizedDraftImportDraftReceipt, FinalizedDraftImportReceipt } from '../../shared/finalized-draft-import'
-import { authorError, errorCodeOf, failureText, importStopFailure, reasonOf } from '../../i18n/app-errors'
+import { authorError, errorCodeOf, importStopFailure } from '../../i18n/app-errors'
 import { localize } from '../../i18n/core'
 import type { ErrorDisplayLocale } from '../../i18n/types'
 import { note, type AuthorError, type Literal, type NoteParams } from '../../shared/failure'
@@ -355,8 +354,7 @@ export class ImportRunOrchestrator {
           await this.dependencies.fail(
             runId,
             requestedStage,
-            // 存进运行的只有可以给作者看的说明；认不出的报错存通用说明，原文不进记录。
-            storedImportFailure(failureText(this.dependencies.interfaceLocale, reasonOf(failure)), this.dependencies.interfaceLocale),
+            failure instanceof Error ? failure.message : String(failure),
             execution.current,
           )
         } catch (leaseError) {

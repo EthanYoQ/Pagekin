@@ -37,7 +37,6 @@ import type {
   ImportRunLocale,
   ImportSourceFileIdentity,
 } from '../../src/shared/import-run'
-import { storedImportFailure } from '../../src/shared/import-run'
 import type { ProjectSessionContext } from '../../src/shared/ipc-channels'
 import { countDraftUnits } from '../../src/shared/draft-units'
 import { getCurrentProjectPath, getProjectDb } from '../database'
@@ -93,11 +92,6 @@ function defaultFileIdentity(filePath: string): ImportSourceFileIdentity {
 
 function text(zhCNText: string, enUSText: string): string {
   return mainText(app.getLocale(), zhCNText, enUSText)
-}
-
-/** 存进导入运行的说明按哪种语言写。 */
-function failureLocale(locale: ImportRunLocale | undefined) {
-  return importErrorLocale(importRunLocale(undefined, locale))
 }
 
 function importText(locale: ImportRunLocale | undefined, zhCNText: string, enUSText: string): string {
@@ -540,7 +534,7 @@ export function registerImportController(
                 ImportRunRepository.failParsedSource(
                   parsingRun.id,
                   opaqueSourceId,
-                  storedImportFailure(importText(responseLocale, '所选来源文件为空', 'Selected source file is empty'), failureLocale(responseLocale)),
+                  importText(responseLocale, '所选来源文件为空', 'Selected source file is empty'),
                 )
               }
               continue
@@ -567,11 +561,11 @@ export function registerImportController(
               ImportRunRepository.failParsedSource(
                 parsingRun.id,
                 opaqueSourceId,
-                storedImportFailure(importText(
+                importText(
                   responseLocale,
                   '所选来源文件只有章节标题，没有可导入的正文',
                   'The selected source file contains chapter headings but no body text',
-                ), failureLocale(responseLocale)),
+                ),
               )
             }
             continue
@@ -622,7 +616,7 @@ export function registerImportController(
             ImportRunRepository.failParsedSource(
               parsingRun.id,
               opaqueSourceId,
-              storedImportFailure(importSelectionErrorMessage(error, responseLocale, limits), failureLocale(responseLocale)),
+              importSelectionErrorMessage(error, responseLocale, limits),
             )
           }
           throw error

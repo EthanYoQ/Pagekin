@@ -13,7 +13,6 @@ import { useDraftStore } from '../../../stores/draft-store'
 import { useThemeStore } from '../../../stores/theme-store'
 import { composite, contrast } from '../../ui/__tests__/color-contrast'
 import type { ImportRunPreparationResult, ImportRunSnapshot } from '../../../shared/import-run'
-import { storedImportFailure } from '../../../shared/import-run'
 import type { AuthorManuscriptImportPreview } from '../../../shared/author-manuscript-import'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -305,8 +304,7 @@ describe('current-project reference import', () => {
     await expect.element(page.getByText('One or more selected files are empty. Add novel text and choose the unfinished files again.')).toBeVisible()
   })
 
-  it('shows the stored parsing explanation and the files to choose again after reopen, never a private diagnostic', async () => {
-    await act(async () => useLocaleStore.setState({ locale: 'en-US' }))
+  it('never shows the stored parsing reason after reopen, only the generic text and the files to choose again', async () => {
     const privateDiagnostic = "ENOENT: open 'C:\\Users\\Private\\secret-novel.txt'"
     const safeFailure = 'Could not read the selected files. Please choose them again.'
     const parsing = importRun({
@@ -314,7 +312,7 @@ describe('current-project reference import', () => {
       locale: 'en-US',
       stage: 'parsing',
       status: 'failed',
-      lastError: storedImportFailure(safeFailure, 'en-US'),
+      lastError: safeFailure,
       unfinishedSourceDisplay: [{ displayName: 'secret-novel.txt', mediaType: 'text/plain', size: 20 }],
       completedSources: 0,
       totalSources: 1,
@@ -330,14 +328,19 @@ describe('current-project reference import', () => {
     await act(async () => useProjectStore.setState({ currentProject: { ...project } as never }))
     await act(async () => page.getByTestId('import-target-current').click())
 
-    await expect.element(page.getByTestId('import-resumable-run')).toHaveTextContent(safeFailure)
+    // #845 PR-H2：last_error 里分不清主进程写好的说明和原文，一律显示通用说明；要重新选的文件仍列出。
+    await expect.element(page.getByTestId('import-resumable-run')).toHaveTextContent('出了意外问题，暂时说不清原因。请再试一次。')
     await expect.element(page.getByTestId('import-resumable-run')).toHaveTextContent('secret-novel.txt')
+    expect(container.textContent).not.toContain(safeFailure)
     expect(container.textContent).not.toContain(privateDiagnostic)
     expect(container.textContent).not.toContain('C:\\Users\\Private')
   })
 
-  // #845 PR-H2：旧记录没有标记，分不清是不是报错原文，所以只显示通用说明。
+  // #845 PR-H2：对话框不读 last_error 的内容。旧版本存的是报错原文，上一轮的写入带过 author-safe 标记，都只显示通用说明。
   describe('续导入面板里的上次失败', () => {
+    const OLD_RECORD = "ENOENT: open 'C:\\Users\\Private\\secret-novel.txt' PRIVATE_DIAGNOSTIC_123"
+    const NEW_RECORD = 'author-safe:v1:zh-CN:PRIVATE_DIAGNOSTIC_123'
+
     async function openWith(run: ImportRunSnapshot) {
       invoke.mockImplementation(async (channel: string) => {
         if (channel === 'db:import-run-list-resumable') return [run]
@@ -351,38 +354,15 @@ describe('current-project reference import', () => {
       return page.getByTestId('import-resumable-run').element().textContent ?? ''
     }
 
-    it('取消的旧记录不写上次失败', async () => {
-      const shown = await openWith(importRun({ stage: 'global', status: 'cancelled', lastError: 'provider unavailable' }))
+    it.each([['旧', OLD_RECORD], ['新', NEW_RECORD]])('取消的%s记录不写上次失败', async (_kind, lastError) => {
+      const shown = await openWith(importRun({ stage: 'global', status: 'cancelled', lastError }))
       expect(shown).not.toContain('上次失败')
     })
 
-    it('取消的新记录不写上次失败', async () => {
-      const shown = await openWith(importRun({ stage: 'global', status: 'cancelled', lastError: 'author-safe:v1:zh-CN:模型服务暂时不可用，导入停在了已保存的进度处。' }))
-      expect(shown).not.toContain('上次失败')
-    })
-
-    it('真实失败的新记录照原句显示', async () => {
-      const shown = await openWith(importRun({ stage: 'global', status: 'failed', lastError: 'author-safe:v1:zh-CN:模型服务暂时不可用，导入停在了已保存的进度处。' }))
-      expect(shown).toContain('上次失败：模型服务暂时不可用，导入停在了已保存的进度处。')
-    })
-
-    it('切到英文界面后不显示中文写的说明，只给英文通用说明', async () => {
-      await act(async () => useLocaleStore.setState({ locale: 'en-US' }))
-      invoke.mockImplementation(async (channel: string) => {
-        if (channel === 'db:import-run-list-resumable') return [importRun({ stage: 'global', status: 'failed', lastError: storedImportFailure('模型服务暂时不可用，导入停在了已保存的进度处。', 'zh-CN') })]
-        if (channel === 'db:project-core-get') return null
-        if (channel === 'db:blueprint-get-all') return []
-        return { success: true }
-      })
-      await act(async () => useProjectStore.setState({ currentProject: { ...project } as never }))
-      await act(async () => page.getByTestId('import-target-current').click())
-      await expect.element(page.getByTestId('import-resumable-run')).toHaveTextContent('Something unexpected went wrong. Try again.')
-      expect(page.getByTestId('import-resumable-run').element().textContent).not.toMatch(/\p{Script=Han}/u)
-    })
-
-    it('带原文的旧记录只显示通用说明', async () => {
-      const shown = await openWith(importRun({ stage: 'global', status: 'failed', lastError: "ENOENT: open 'C:\\Users\\Private\\secret-novel.txt'" }))
+    it.each([['旧', OLD_RECORD], ['新', NEW_RECORD]])('失败的%s记录只显示通用说明，不带存下的内容', async (_kind, lastError) => {
+      const shown = await openWith(importRun({ stage: 'global', status: 'failed', lastError }))
       expect(shown).toContain('上次失败：出了意外问题，暂时说不清原因。请再试一次。')
+      expect(shown).not.toContain('PRIVATE_DIAGNOSTIC_123')
     })
   })
 
@@ -406,7 +386,7 @@ describe('current-project reference import', () => {
   })
 
   it.each([
-    ['zh-CN', storedImportFailure('这次导入已由别的窗口接手。请在那个窗口里继续。', 'zh-CN'), '上次失败：这次导入已由别的窗口接手'],
+    ['zh-CN', 'IMPORT_RUN_EXECUTION_STALE', '上次失败：出了意外问题，暂时说不清原因。请再试一次。'],
     ['en-US', '导入已取消，停在了已保存的进度处。', 'Stage: global; progress: 0/1'],
   ] as const)('shows the resumable run failure in the %s UI language (#484)', async (locale, lastError, expected) => {
     const failed = importRun({ id: 'failed-run', stage: 'global', status: 'failed', lastError })
