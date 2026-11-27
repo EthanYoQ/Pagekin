@@ -234,7 +234,7 @@ async function main() {
       operationId: randomUUID(), expectedRevision: roster.revision, expectedIdentityRevision: roster.identityRevision,
       schemaVersion: 1, intent: 'manual_edit', entries: [character],
     }, projectPath, context)
-    assert.equal(characters.success, true, characters.error)
+    assert.equal(characters.success, true, characters.failure?.code)
     await setWordsPerChapter(page, projectPath, context, 100)
     assert.equal((await invoke(page, 'db:blueprint-upsert', { chapterNumber: 1, title: '灯塔', role: '发展',
       purpose: '沿岸调查', keyEvents: '发现暗门', characters: [] }, projectPath, context)).success, true)
@@ -349,7 +349,7 @@ async function main() {
       operationId: randomUUID(), expectedRevision: batchRoster.revision, expectedIdentityRevision: batchRoster.identityRevision,
       schemaVersion: 1, intent: 'manual_edit', entries: [{ ...character, characterId: `draft:${randomUUID()}` }],
     }, batchCreated.projectPath, batchContext)
-    assert.equal(batchCharacter.success, true, batchCharacter.error)
+    assert.equal(batchCharacter.success, true, batchCharacter.failure?.code)
     for (const [chapterNumber, title] of [[1, '潮门'], [2, '回声']]) {
       const saved = await invoke(page, 'db:blueprint-upsert', { chapterNumber, title, role: '发展',
         purpose: '调查潮门', keyEvents: '发现线索', characters: [] }, batchCreated.projectPath, batchContext)
@@ -466,7 +466,7 @@ async function main() {
       expectedIdentityRevision: candidateRoster.identityRevision, schemaVersion: 1, intent: 'manual_edit',
       entries: [{ ...character, characterId: `draft:${randomUUID()}` }],
     }, candidateCreated.projectPath, candidateContext)
-    assert.equal(candidateCharacter.success, true, candidateCharacter.error)
+    assert.equal(candidateCharacter.success, true, candidateCharacter.failure?.code)
     await setWordsPerChapter(page, candidateCreated.projectPath, candidateContext, 200)
     const candidateBlueprint = await invoke(page, 'db:blueprint-upsert', { chapterNumber: 1, title: '石墙',
       role: '发展', purpose: '寻找暗门', keyEvents: '发现通道', characters: [] }, candidateCreated.projectPath, candidateContext)
@@ -569,7 +569,7 @@ async function main() {
       expectedIdentityRevision: cancelRoster.identityRevision, schemaVersion: 1, intent: 'manual_edit',
       entries: [{ ...character, characterId: `draft:${randomUUID()}` }],
     }, cancelCreated.projectPath, cancelContext)
-    assert.equal(cancelCharacter.success, true, cancelCharacter.error)
+    assert.equal(cancelCharacter.success, true, cancelCharacter.failure?.code)
     await setWordsPerChapter(page, cancelCreated.projectPath, cancelContext, 100)
     const cancelBlueprint = await invoke(page, 'db:blueprint-upsert', { chapterNumber: 1, title: '灯影',
       role: '发展', purpose: '沿岸观察', keyEvents: '发现异常', characters: [] }, cancelCreated.projectPath, cancelContext)

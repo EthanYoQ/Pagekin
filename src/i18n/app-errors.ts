@@ -418,6 +418,8 @@ const ERROR_KEYS = {
   POST_PROCESS_WRITE_FAILED: 'error.postProcessWriteFailed',
   REVIEW_WRITE_FAILED: 'error.reviewWriteFailed',
   REVISION_WRITE_FAILED: 'error.revisionWriteFailed',
+  CONSISTENCY_EXEMPTION_WRITE_FAILED: 'error.consistencyExemptionWriteFailed',
+  CHARACTER_ROSTER_WRITE_FAILED: 'error.characterRosterWriteFailed',
   // 知识库与检索索引（#474 B3）：知识库页、设置里的检索索引检查、导入创作资料与定稿收入知识库按码说明。
   EMBEDDING_REQUEST_FAILED: 'error.embeddingRequestFailed',
   EMBEDDING_OLLAMA_NATIVE_URL: 'error.embeddingOllamaNativeUrl',
@@ -457,6 +459,8 @@ const ERROR_KEYS = {
   LLM_DEFAULT_MODEL_ROLLBACK_FAILED: 'error.defaultModelRollbackFailed',
   LLM_STAGE_MODEL_UNAVAILABLE: 'error.stageModelUnavailable',
   LLM_STAGE_MODEL_REQUEST_INVALID: 'error.stageModelRequestInvalid',
+  LLM_CONNECTION_TEST_FAILED: 'error.connectionFailed',
+  WRITING_SKILL_REJECTED: 'error.writingSkillRejected',
   MODEL_ENDPOINT_INVALID: 'error.modelEndpointInvalid',
   NETWORK_PROXY_INVALID: 'error.networkProxyInvalid',
   CONFIG_FILE_DAMAGED: 'error.configFileDamaged',

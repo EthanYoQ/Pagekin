@@ -24,6 +24,7 @@ vi.mock('../../utils/config-utils', () => ({
 }))
 
 import { registerLLMController } from '../llm-controller'
+import { rendered } from './rendered-failure'
 
 const chatModel: ModelProfile = {
   id: 'local-chat',
@@ -48,7 +49,7 @@ const systemError = (code: string, message = '') => Object.assign(new Error(mess
 function testConnection(model: ModelProfile): Promise<{ success: boolean; error?: string }> {
   const handler = mocks.handlers.get('llm:test-connection')
   if (!handler) throw new Error('Missing llm:test-connection handler')
-  return handler({}, model) as Promise<{ success: boolean; error?: string }>
+  return Promise.resolve(handler({}, model)).then(result => rendered(result as { success: boolean; error?: string }, mocks.locale))
 }
 
 function failWith(error: unknown) {
@@ -120,7 +121,7 @@ describe('connection test explains why the model service could not be reached', 
 
     const result = await testConnection(chatModel)
 
-    expect(result).toEqual({ success: false, error: expect.stringContaining('base_url') })
+    expect(result).toMatchObject({ success: false, error: expect.stringContaining('base_url') })
     expect(result.error).not.toMatch(/fetch failed|bad port/u)
   })
 
@@ -151,5 +152,15 @@ describe('connection test explains why the model service could not be reached', 
 
     expect(result.error).toContain(expected)
     expect(result.error).not.toMatch(forbidden)
+  })
+
+  it('认不出的失败只回通用码，原文写进主进程日志', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const unknown = new Error('SECRET_UNKNOWN_FAILURE_MARKER')
+    failWith(unknown)
+    const result = await testConnection(chatModel)
+    expect(result.success).toBe(false)
+    expect(result.error).not.toContain('SECRET_UNKNOWN_FAILURE_MARKER')
+    expect(logged).toHaveBeenCalledWith(expect.any(String), unknown)
   })
 })

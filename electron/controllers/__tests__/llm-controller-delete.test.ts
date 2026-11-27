@@ -133,7 +133,7 @@ describe('llm model deletion consistency', () => {
 
     await expect(deleteHandler()({}, 'generation')).resolves.toMatchObject({
       success: false,
-      error: expect.stringContaining('models file locked'),
+      failure: { code: 'IPC_HANDLER_FAILED' },
     })
     expect(writes.map(write => write.path)).toEqual([
       'config.json',
@@ -156,7 +156,7 @@ describe('llm model deletion consistency', () => {
 
     await expect(deleteHandler()({}, 'generation')).resolves.toEqual({
       success: false,
-      error: 'Error: LLM_DEFAULT_MODEL_ROLLBACK_FAILED',
+      failure: { code: 'LLM_DEFAULT_MODEL_ROLLBACK_FAILED' },
     })
     expect(consoleError).toHaveBeenCalledOnce()
     consoleError.mockRestore()
@@ -168,7 +168,7 @@ describe('llm model deletion consistency', () => {
 
     await expect(deleteHandler()({}, 'generation')).resolves.toEqual({
       success: false,
-      error: 'Error: LLM_MODEL_CONFIG_CORRUPT',
+      failure: { code: 'LLM_MODEL_CONFIG_CORRUPT' },
     })
     expect(mocks.writeJsonFile).not.toHaveBeenCalled()
   })

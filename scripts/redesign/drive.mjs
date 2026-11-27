@@ -525,7 +525,7 @@ async function runSession(sessionName, names, options, realKey = null, roots = c
           for (const [channel, value] of [['llm:save-model', generation], ['llm:save-model', embedding],
             ['llm:set-default-model', generation.id], ['llm:set-default-embedding-model', embedding.id]]) {
             const result = await invoke(context.page, channel, value)
-            assert.equal(result?.success, true, `${channel} 失败：${result?.error ?? ''}`)
+            assert.equal(result?.success, true, `${channel} 失败：${JSON.stringify(result?.failure ?? null)}`)
           }
           shared.realModels = { generation: generation.modelName, embedding: embedding.modelName }
         },

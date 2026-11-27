@@ -59,7 +59,7 @@ describe('model configuration corruption boundary', () => {
     expect(reloaded).toEqual([expect.objectContaining(profile)])
     await expect(handler('llm:save-model')({}, { ...profile, reasoningMapping: {
       ...profile.reasoningMapping, providerValues: { off: 4096, medium: 4096 },
-    } })).resolves.toMatchObject({ success: false, error: expect.stringContaining('INVALID_REASONING_MAPPING') })
+    } })).resolves.toMatchObject({ success: false, failure: { code: 'IPC_HANDLER_FAILED' } })
     expect(fs.readFileSync(file)).toEqual(before)
   })
   it('saves a validated advanced mapping and rejects malformed mappings without changing the file', async () => {
@@ -72,7 +72,7 @@ describe('model configuration corruption boundary', () => {
     expect(JSON.parse(before.toString())[0].reasoningMapping).toEqual(profile.reasoningMapping)
     await expect(handler('llm:save-model')({}, { ...profile, reasoningMapping: {
       ...profile.reasoningMapping, providerValues: { xhigh: 100 },
-    } })).resolves.toMatchObject({ success: false, error: expect.stringContaining('INVALID_REASONING_MAPPING') })
+    } })).resolves.toMatchObject({ success: false, failure: { code: 'IPC_HANDLER_FAILED' } })
     expect(fs.readFileSync(file)).toEqual(before)
   })
   it('saves a Gemini thinking-level mapping only on the Gemini protocol and only with documented levels', async () => {
@@ -87,7 +87,7 @@ describe('model configuration corruption boundary', () => {
       { id: 'gemini-3', protocol: 'gemini', reasoningMapping: { ...mapping, providerValues: { off: 'minimal', high: 'ultra' } } },
     ]) {
       await expect(handler('llm:save-model')({}, rejected))
-        .resolves.toMatchObject({ success: false, error: expect.stringContaining('INVALID_REASONING_MAPPING') })
+        .resolves.toMatchObject({ success: false, failure: { code: 'IPC_HANDLER_FAILED' } })
     }
     expect(fs.readFileSync(file)).toEqual(before)
   })
@@ -99,7 +99,7 @@ describe('model configuration corruption boundary', () => {
     await expect(handler('llm:save-model')({}, {
       id: 'model-1',
       name: 'Model 1',
-    })).resolves.toMatchObject({ success: false, error: expect.stringContaining('LLM_MODEL_CONFIG_CORRUPT') })
+    })).resolves.toMatchObject({ success: false, failure: { code: 'LLM_MODEL_CONFIG_CORRUPT' } })
     expect(fs.readFileSync(modelsPath)).toEqual(originalBytes)
   })
 
@@ -113,7 +113,7 @@ describe('model configuration corruption boundary', () => {
 
     await expect(handler(channel)({}, modelId)).resolves.toMatchObject({
       success: false,
-      error: expect.stringContaining('LLM_GLOBAL_CONFIG_CORRUPT'),
+      failure: { code: 'LLM_GLOBAL_CONFIG_CORRUPT' },
     })
     expect(fs.readFileSync(configPath)).toEqual(originalBytes)
   })

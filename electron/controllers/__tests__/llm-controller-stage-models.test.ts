@@ -91,14 +91,14 @@ describe('stage model settings', () => {
     ['an embedding-only model', { stage: 'review', modelId: 'embedder' }, 'LLM_STAGE_MODEL_UNAVAILABLE'],
     ['a model that does not exist', { stage: 'review', modelId: 'gone' }, 'LLM_STAGE_MODEL_UNAVAILABLE'],
   ])('refuses %s without writing', async (_label, request, code) => {
-    await expect(handler('llm:set-stage-model')({}, request)).resolves.toEqual({ success: false, error: expect.stringContaining(code) })
+    await expect(handler('llm:set-stage-model')({}, request)).resolves.toEqual({ success: false, failure: { code } })
     expect(writes).toEqual([])
   })
 
   it('refuses to overwrite a damaged config file', async () => {
     mocks.corrupt.add('config.json')
     await expect(handler('llm:set-stage-model')({}, { stage: 'review', modelId: 'reviewer' }))
-      .resolves.toEqual({ success: false, error: expect.stringContaining('LLM_GLOBAL_CONFIG_CORRUPT') })
+      .resolves.toEqual({ success: false, failure: { code: 'LLM_GLOBAL_CONFIG_CORRUPT' } })
     expect(writes).toEqual([])
   })
 })
@@ -119,7 +119,7 @@ describe('deleting a model that a stage uses', () => {
       writes.push({ path, value: structuredClone(value) })
       if (path === 'models.json') throw new Error('models file locked')
     })
-    await expect(handler('llm:delete-model')({}, 'reviewer')).resolves.toEqual({ success: false, error: expect.stringContaining('models file locked') })
+    await expect(handler('llm:delete-model')({}, 'reviewer')).resolves.toEqual({ success: false, failure: { code: 'IPC_HANDLER_FAILED' } })
     expect(writes.map(write => write.path)).toEqual(['config.json', 'models.json', 'config.json'])
     expect(writes[0]?.value).toEqual({ defaultModelId: 'writer', stageModelIds: {} })
     expect(writes.at(-1)?.value).toEqual({ defaultModelId: 'writer', stageModelIds: { review: 'reviewer' } })

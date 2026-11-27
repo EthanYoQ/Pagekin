@@ -553,7 +553,7 @@ export type ModelDiscoveryErrorCode =
 
 export type ModelDiscoveryResult =
   | { success: true; models: DiscoveredModel[] }
-  | { success: false; errorCode: ModelDiscoveryErrorCode }
+  | { success: false; reason: ModelDiscoveryErrorCode }
 
 export type ModelDiscoveryRequest = Pick<
   ModelProfile,
@@ -580,13 +580,13 @@ export interface LLMChannels {
   }
   'llm:save-model': {
     args: [model: ModelProfile]
-    return: { success: boolean }
+    return: { success: boolean; failure?: Failure }
   }
   'llm:delete-model': {
     args: [modelId: string]
     return: {
       success: boolean
-      error?: string
+      failure?: Failure
       defaultModelId?: string | null
       defaultEmbeddingModelId?: string | null
       defaultRerankModelId?: string | null
@@ -599,11 +599,11 @@ export interface LLMChannels {
   }
   'llm:set-stage-model': {
     args: [request: { stage: ModelStage; modelId: string | null }]
-    return: { success: true; stageModelIds: StageModelIds } | { success: false; error: string }
+    return: { success: true; stageModelIds: StageModelIds } | { success: false; failure: Failure }
   }
   'llm:set-default-model': {
     args: [modelId: string | null]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'llm:get-default-model': {
     args: []
@@ -611,7 +611,7 @@ export interface LLMChannels {
   }
   'llm:set-default-embedding-model': {
     args: [modelId: string | null]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'llm:get-default-embedding-model': {
     args: []
@@ -619,7 +619,7 @@ export interface LLMChannels {
   }
   'llm:set-default-rerank-model': {
     args: [modelId: string | null]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'llm:get-default-rerank-model': {
     args: []
@@ -627,7 +627,7 @@ export interface LLMChannels {
   }
   'llm:test-connection': {
     args: [model: ModelProfile, creativeStrategy?: CreativeStrategy]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
 }
 
@@ -697,31 +697,31 @@ export interface AppPromptLoadReceipt {
 
 export interface AppDataChannels {
   'prompt:load-global': { args: []; return: AppPromptLoadReceipt }
-  'prompt:save-global': { args: [template: AppPromptTemplate]; return: { success: boolean; error?: string } }
-  'prompt:delete-global': { args: [key: string, writingLanguage: WritingLanguage]; return: { success: boolean; error?: string } }
+  'prompt:save-global': { args: [template: AppPromptTemplate]; return: { success: boolean; failure?: Failure } }
+  'prompt:delete-global': { args: [key: string, writingLanguage: WritingLanguage]; return: { success: boolean; failure?: Failure } }
   'skills:list-user': {
     args: []
     return: Array<{ name: string; content: string; baseDir: string; filePath: string; bundle: import('./writing-skills').InstalledWritingSkillBundle }>
   }
   'skills:inspect-github': {
     args: [sourceUrl: string]
-    return: { success: boolean; inspection?: import('./writing-skills').RemoteWritingSkillInspection; error?: string }
+    return: { success: boolean; inspection?: import('./writing-skills').RemoteWritingSkillInspection; failure?: Failure }
   }
   'skills:install-github': {
     args: [sourceUrl: string]
-    return: { success: boolean; skill?: import('./writing-skills').InstalledWritingSkill; error?: string }
+    return: { success: boolean; skill?: import('./writing-skills').InstalledWritingSkill; failure?: Failure }
   }
   'skills:pick-local': {
     args: [kind: import('./writing-skills').LocalWritingSkillSourceKind]
-    return: { success: boolean; cancelled?: boolean; inspection?: import('./writing-skills').LocalWritingSkillInspection; error?: string }
+    return: { success: boolean; cancelled?: boolean; inspection?: import('./writing-skills').LocalWritingSkillInspection; failure?: Failure }
   }
   'skills:install-local': {
     args: [candidateId: string]
-    return: { success: boolean; skill?: import('./writing-skills').InstalledWritingSkill; error?: string }
+    return: { success: boolean; skill?: import('./writing-skills').InstalledWritingSkill; failure?: Failure }
   }
   'skills:uninstall-user': {
     args: [name: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
 }
 
@@ -957,7 +957,7 @@ export interface DatabaseChannels {
       operationId: string,
       expectedProjectPath: string,
     ]
-    return: { success: boolean; operation?: BlueprintCharacterSyncOperation; error?: string }
+    return: { success: boolean; operation?: BlueprintCharacterSyncOperation; failure?: Failure }
   }
   'db:blueprint-update-notes': { args: [chapterNumber: number, notes: string, expectedProjectPath: string]; return: { success: boolean; updated?: boolean; error?: string } }
   'db:blueprint-delete': { args: [chapterNumber: number, expectedProjectPath: string]; return: { success: boolean; error?: string } }
@@ -972,7 +972,7 @@ export interface DatabaseChannels {
   'db:character-continuity-timeline': { args: [characterId: string, expectedProjectPath: string]; return: CharacterContinuityTimeline }
   'db:character-roster-commit': {
     args: [request: CharacterRosterCommitRequest, expectedProjectPath: string]
-    return: { success: boolean; receipt?: CharacterRosterCommitReceipt; error?: string }
+    return: { success: boolean; receipt?: CharacterRosterCommitReceipt; failure?: Failure }
   }
 
   'db:draft-import-finalized-batch': {
@@ -995,11 +995,11 @@ export interface DatabaseChannels {
   }
   'db:continuity-save-finalized': {
     args: [request: SaveFinalizedContinuityRequest, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'db:continuity-save-character-state-candidates': {
     args: [request: SaveFinalizedCharacterStateCandidatesRequest, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'db:continuity-list-before': {
     args: [chapterNumber: number, expectedProjectPath: string]
@@ -1014,11 +1014,11 @@ export interface DatabaseChannels {
   'db:character-continuity-preflight-nodes': { args: [expectedProjectPath: string]; return: ContinuityNode[] }
   'db:consistency-exemption-save': {
     args: [stableFactKey: string, reason: string, chapterNumber: number | null, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'db:consistency-exemption-revoke': {
     args: [stableFactKey: string, chapterNumber: number | null, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'db:narrative-thread-list': {
     args: [expectedProjectPath: string]
@@ -1311,16 +1311,16 @@ export type MCPConfigLoadResult =
 export type MCPConfigLoadResponse =
   | ({ status: 'missing'; servers: [] } & { success: true })
   | ({ status: 'loaded'; servers: MCPServerSummary[] } & { success: true })
-  | ({ status: 'error'; servers: []; error: string } & { success: false })
+  | ({ status: 'error'; servers: []; failure: Failure } & { success: false })
 
 export interface MCPChannels {
   'mcp:load-config': { args: []; return: MCPConfigLoadResponse }
-  'mcp:connect': { args: [serverId: string]; return: { success: boolean; error?: string } }
-  'mcp:disconnect': { args: [serverId: string]; return: { success: boolean; error?: string } }
-  'mcp:disconnect-all': { args: []; return: { success: boolean; error?: string } }
+  'mcp:connect': { args: [serverId: string]; return: { success: boolean; failure?: Failure } }
+  'mcp:disconnect': { args: [serverId: string]; return: { success: boolean; failure?: Failure } }
+  'mcp:disconnect-all': { args: []; return: { success: boolean; failure?: Failure } }
   'mcp:list-tools': { args: []; return: MCPToolDescription[] }
   'mcp:list-resources': { args: []; return: MCPResourceDescription[] }
-  'mcp:call-tool': { args: [serverId: string, toolName: string, args: Record<string, unknown>]; return: { success: boolean; content: string; error?: string } }
+  'mcp:call-tool': { args: [serverId: string, toolName: string, args: Record<string, unknown>]; return: { success: boolean; content: string; failure?: Failure } }
   'mcp:get-servers-status': { args: []; return: MCPServerStatus[] }
   'mcp:get-config-path': { args: []; return: string }
 }

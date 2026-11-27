@@ -23,7 +23,8 @@ import { Input } from '../ui/Input'
 import { NativeSelect } from '../ui/NativeSelect'
 import { confirm as confirmAction } from '../ui/Confirm'
 import { useUnsavedSettings } from './unsaved-settings'
-import { displayedErrorMessage } from '../../i18n/app-errors'
+import { authorError, displayedErrorMessage, IPC_HANDLER_FAILED, resultFailure } from '../../i18n/app-errors'
+import { note, type AuthorNote, type Failure } from '../../shared/failure'
 
 const STAGE_COPY: Record<WritingSkillStage, readonly [string, string]> = {
   planning: ['设定与规划', 'Planning'],
@@ -228,7 +229,7 @@ export default function SkillSettings() {
     setCandidate(null)
     try {
       const result = await ipc.invoke('skills:inspect-github', sourceUrl.trim())
-      if (!result.success || !result.inspection) throw new Error(result.error || text('Skill 检查失败', 'Skill inspection failed'))
+      if (!result.success || !result.inspection) throw skillError(result, note('Skill 检查失败', 'Skill inspection failed'))
       setCandidate({ origin: 'github', inspection: result.inspection })
     } catch (cause) {
       setError(displayedErrorMessage(currentInterfaceLocale(), cause))
@@ -244,7 +245,7 @@ export default function SkillSettings() {
       const result = await ipc.invoke('skills:pick-local', kind)
       if (result.success && result.cancelled) return
       setCandidate(null)
-      if (!result.success || !result.inspection) throw new Error(result.error || text('Skill 检查失败', 'Skill inspection failed'))
+      if (!result.success || !result.inspection) throw skillError(result, note('Skill 检查失败', 'Skill inspection failed'))
       setCandidate({ origin: 'local', inspection: result.inspection })
     } catch (cause) {
       setError(displayedErrorMessage(currentInterfaceLocale(), cause))
@@ -266,7 +267,7 @@ export default function SkillSettings() {
       const result = candidate.origin === 'local'
         ? await ipc.invoke('skills:install-local', candidate.inspection.candidateId)
         : await ipc.invoke('skills:install-github', candidate.inspection.sourceUrl)
-      if (!result.success) throw new Error(result.error || text('Skill 安装失败', 'Skill installation failed'))
+      if (!result.success) throw skillError(result, note('Skill 安装失败', 'Skill installation failed'))
       await reload()
       setCandidate(null)
       if (candidate.origin === 'github') setSourceUrl('')
@@ -313,7 +314,7 @@ export default function SkillSettings() {
         }
       }
       const result = await ipc.invoke('skills:uninstall-user', skill.metadata.name)
-      if (!result.success) throw new Error(result.error || text('Skill 卸载失败', 'Skill uninstall failed'))
+      if (!result.success) throw skillError(result, note('Skill 卸载失败', 'Skill uninstall failed'))
       await reload()
     } catch (cause) {
       setError(displayedErrorMessage(currentInterfaceLocale(), cause))
@@ -468,4 +469,10 @@ export default function SkillSettings() {
       </section>
     </div>
   )
+}
+
+/** IPC_HANDLER_FAILED 只是笼统失败，让给这里的兜底句。 */
+function skillError(result: { failure?: Failure }, fallback: AuthorNote) {
+  const failure = resultFailure(result)
+  return authorError(currentInterfaceLocale(), failure && failure.code !== IPC_HANDLER_FAILED ? failure : { note: fallback })
 }

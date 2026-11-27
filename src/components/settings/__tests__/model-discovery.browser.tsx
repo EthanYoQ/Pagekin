@@ -553,7 +553,7 @@ describe('model discovery settings flow', () => {
           'list-late': () => settle(listReplies, 'oldest', listResponse(listWindow)),
           'list-lower': () => settle(listReplies, 'newest', listResponse(64_000)),
           'list-without-window': () => settle(listReplies, 'newest', listResponse()),
-          'list-failed': () => settle(listReplies, 'newest', { success: false, errorCode: 'network' }),
+          'list-failed': () => settle(listReplies, 'newest', { success: false, reason: 'network' }),
           'list-without-target': () => settle(listReplies, 'newest', { success: true, models: endpointModels('other') }),
           refresh: () => act(async () => { await page.getByRole('button', { name: '获取模型列表', exact: true }).click() }),
           'await-list': () => vi.waitFor(() => expect(listReplies.length).toBeGreaterThan(0), { timeout: 3_000 }),
@@ -982,7 +982,7 @@ describe('model discovery settings flow', () => {
     const model = savedProfile()
     const discoverModels = vi.fn(async () => ({
       success: false as const,
-      errorCode: 'unsupported' as const,
+      reason: 'unsupported' as const,
     }))
     const { saveModel } = await renderSettings(model, discoverModels)
     await act(async () => {
@@ -1200,7 +1200,7 @@ describe('model discovery settings flow', () => {
     },
   ])('renders $locale $errorCode guidance', async ({ errorCode, locale, expected }) => {
     const model = savedProfile()
-    const discoverModels = vi.fn(async () => ({ success: false as const, errorCode }))
+    const discoverModels = vi.fn(async () => ({ success: false as const, reason: errorCode }))
     await renderSettings(model, discoverModels, locale)
     await act(async () => {
       await page.getByRole('button', { name: locale === 'zh-CN' ? /^编辑「/ : /^Edit “/ }).click()
@@ -1339,7 +1339,7 @@ describe('model discovery settings flow', () => {
   })
 
   it('saves a typed model name on a new configuration whose endpoint has no model list', async () => {
-    const discoverModels = vi.fn(async () => ({ success: false as const, errorCode: 'unsupported' as const }))
+    const discoverModels = vi.fn(async () => ({ success: false as const, reason: 'unsupported' as const }))
     const { saveModel } = await renderSettings(savedProfile(), discoverModels, 'zh-CN', [], false)
     await act(async () => { await page.getByRole('button', { name: '添加模型', exact: true }).click() })
     await typeInto(baseUrlInput('https://api.openai.com'), 'https://gateway.invalid/v1')

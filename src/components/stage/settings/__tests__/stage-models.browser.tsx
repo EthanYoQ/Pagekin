@@ -122,12 +122,12 @@ describe('分工模型设置页', () => {
 
   it('保存失败时提示原因，下拉回到原来的选择', async () => {
     useLLMStore.setState({ stageModelIds: { review: 'glm' } })
-    invoke.mockImplementation(async channel => channel === 'llm:set-stage-model' ? { success: false, error: 'Error: LLM_STAGE_MODEL_UNAVAILABLE' } : undefined)
+    invoke.mockImplementation(async channel => channel === 'llm:set-stage-model' ? { success: false, failure: { code: 'LLM_STAGE_MODEL_UNAVAILABLE' } } : undefined)
     await mount()
     await choose('review', 'flash')
     expect(select('review').value).toBe('glm')
     expect(document.body.textContent).toContain('分工设置没有保存')
-    expect(document.body.textContent).toContain('不能用于文本生成')
+    expect(document.body.textContent).toContain('这个模型已删除或不能用于文本生成，这个环节保留原来的模型。请在「分工模型」里另选一个。')
     await act(async () => button('确定')?.click())
   })
 

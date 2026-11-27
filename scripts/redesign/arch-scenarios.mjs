@@ -58,7 +58,7 @@ async function addCharacters({ page, invoke, path, session }, names) {
     background: `${name}在旧港住了很多年。` }))
   const committed = await invoke(page, 'db:character-roster-commit', { operationId: randomUUID(), expectedRevision: roster.revision,
     expectedIdentityRevision: roster.identityRevision, schemaVersion: 1, intent: 'manual_edit', entries: [...roster.entries, ...added] }, path, session)
-  assert.equal(committed.success, true, committed.error)
+  assert.equal(committed.success, true, committed.failure?.code)
 }
 
 export function seedArch({ clear = [], totalChapters, characters = [], core = {} } = {}) {
