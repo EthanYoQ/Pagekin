@@ -1301,16 +1301,16 @@ export type MCPConfigLoadResult =
 export type MCPConfigLoadResponse =
   | ({ status: 'missing'; servers: [] } & { success: true })
   | ({ status: 'loaded'; servers: MCPServerSummary[] } & { success: true })
-  | ({ status: 'error'; servers: []; error: string } & { success: false })
+  | ({ status: 'error'; servers: []; failure: Failure } & { success: false })
 
 export interface MCPChannels {
   'mcp:load-config': { args: []; return: MCPConfigLoadResponse }
-  'mcp:connect': { args: [serverId: string]; return: { success: boolean; error?: string } }
-  'mcp:disconnect': { args: [serverId: string]; return: { success: boolean; error?: string } }
-  'mcp:disconnect-all': { args: []; return: { success: boolean; error?: string } }
+  'mcp:connect': { args: [serverId: string]; return: { success: boolean; failure?: Failure } }
+  'mcp:disconnect': { args: [serverId: string]; return: { success: boolean; failure?: Failure } }
+  'mcp:disconnect-all': { args: []; return: { success: boolean; failure?: Failure } }
   'mcp:list-tools': { args: []; return: MCPToolDescription[] }
   'mcp:list-resources': { args: []; return: MCPResourceDescription[] }
-  'mcp:call-tool': { args: [serverId: string, toolName: string, args: Record<string, unknown>]; return: { success: boolean; content: string; error?: string } }
+  'mcp:call-tool': { args: [serverId: string, toolName: string, args: Record<string, unknown>]; return: { success: boolean; content: string; failure?: Failure } }
   'mcp:get-servers-status': { args: []; return: MCPServerStatus[] }
   'mcp:get-config-path': { args: []; return: string }
 }

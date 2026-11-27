@@ -210,9 +210,6 @@
   "src/stores/locale-store.ts": {
     "displayedErrorMessage": 1
   },
-  "src/stores/mcp-store.ts": {
-    "displayedErrorMessage": 3
-  },
   "src/stores/navigation/stage-navigation.ts": {
     "displayedErrorMessage": 1
   },
