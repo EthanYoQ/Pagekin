@@ -24,7 +24,6 @@ export function explained(locale: ErrorDisplayLocale, labelled: AuthorNote, plai
   return { note: shown ? labelled : plain, because }
 }
 
-/** 标记过的失败原样用；只有中文原文或什么都没有时，用这一处的说明，中文原文接在后面。 */
 export function failureOr(fallback: AuthorNote, reason: Failure | LegacyReason | undefined): Failure {
   if (reason && !('legacy' in reason)) return reason
   return reason ? { note: fallback, because: reason } : { note: fallback }

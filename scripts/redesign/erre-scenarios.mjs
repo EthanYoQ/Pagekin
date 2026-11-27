@@ -6,7 +6,6 @@ import { seedStageSample } from './scenarios.mjs'
 import { STAGE_SAMPLE } from './stage-sample.mjs'
 
 export const ERRE_SCENARIOS = {
-  // 英文界面写下一章，假模型的正文回复以 content_filter 结束：失败说明全英文、不露码。
   'erre-draft-content-filter-en': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page, invoke, reload, fake, shoot }) => {
     fake.failProse()
     assert.equal((await invoke(page, 'config:set', { locale: 'en-US' })).success, true)
