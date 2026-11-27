@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { captureProjectSession, isProjectSessionCurrent, isProjectSessionPath } from '../project-session-gate'
 import { useProjectStore } from '../../stores/project-store'
 import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
-import { authorError, displayedErrorMessage, resultFailure } from '../../i18n/app-errors'
+import { authorError, caughtFailure, displayedErrorMessage, failureText, resultFailure } from '../../i18n/app-errors'
 import { authorOwned, note } from '../../shared/failure'
 import { useLLMStore } from '../../stores/llm-store'
 import { ipc } from '../../services/ipc-client'
@@ -517,11 +517,9 @@ export function useReviewChecklist({
       return saved
     } catch (error) {
       if (!isProjectSessionCurrent(projectSession)) return null
-      setChecklistError(displayedErrorMessage(
-        currentInterfaceLocale(),
-        error,
-        text('确认审稿清单时发生错误。', 'An error occurred while confirming the review checklist.'),
-      ))
+      setChecklistError(failureText(currentInterfaceLocale(), caughtFailure(error), {
+        fallback: note('确认审稿清单时发生错误。', 'An error occurred while confirming the review checklist.'),
+      }))
     } finally {
       if (isProjectSessionCurrent(projectSession)) setConfirming(false)
     }
@@ -643,8 +641,9 @@ export function useReviewChecklist({
       return null
     } catch (error) {
       if (!isProjectSessionCurrent(projectSession)) return null
-      return displayedErrorMessage(currentInterfaceLocale(), error,
-        text('启动审稿修稿时发生错误。', 'An error occurred while starting the review-driven revision.'))
+      return failureText(currentInterfaceLocale(), caughtFailure(error), {
+        fallback: note('启动审稿修稿时发生错误。', 'An error occurred while starting the review-driven revision.'),
+      })
     } finally {
       if (isProjectSessionCurrent(projectSession)) setProcessing(false)
     }

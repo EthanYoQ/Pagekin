@@ -8,7 +8,9 @@ const {
   startWorkflow,
   editorTabs,
   workflowHistory,
+  interfaceLocale,
 } = vi.hoisted(() => ({
+  interfaceLocale: { current: 'zh-CN' as 'zh-CN' | 'en-US' },
   invokeWithProjectSession: vi.fn(),
   syncTabContent: vi.fn(),
   markTabSaved: vi.fn(),
@@ -59,11 +61,13 @@ vi.mock('../workflow-store', () => ({
 }))
 
 vi.mock('../locale-store', () => ({
-  useLocaleStore: { getState: () => ({ locale: 'zh-CN' }) },
+  useLocaleStore: { getState: () => ({ locale: interfaceLocale.current, text: (zh: string, en: string) => interfaceLocale.current === 'en-US' ? en : zh }) },
+  currentInterfaceLocale: () => interfaceLocale.current,
 }))
 
 import { useDraftStore } from '../draft-store'
-import { displayedErrorMessage } from '../../i18n/app-errors'
+import { failureText } from '../../i18n/app-errors'
+import { note } from '../../shared/failure'
 import { shown } from '../../i18n/__tests__/shown-locale'
 
 const projectPath = 'C:\\novels\\project-a'
@@ -165,8 +169,26 @@ describe('draft-store merged revision persistence', () => {
     )
 
     expect(result.success).toBe(false)
-    expect(displayedErrorMessage(shown('en-US'), result.error)).toBe('The text or status of this draft changed. Reopen the revision comparison, then merge again.')
-    expect(displayedErrorMessage(shown('zh-CN'), result.error)).toBe('这一稿的正文或状态已经变化。请重新打开修订对比后再合并。')
+    expect(failureText(shown('en-US'), result.failure)).toBe('The text or status of this draft changed. Reopen the revision comparison, then merge again.')
+    expect(failureText(shown('zh-CN'), result.failure)).toBe('这一稿的正文或状态已经变化。请重新打开修订对比后再合并。')
+  })
+
+  it('英文界面合并修订失败时显示原因', async () => {
+    interfaceLocale.current = 'en-US'
+    try {
+      invokeWithProjectSession.mockResolvedValueOnce({ success: false, failure: { code: 'REVISION_NOT_PENDING' } })
+      const result = await useDraftStore.getState().applyMergedRevision(
+        'ai-novel://draft/ch1', 1, 'ai-novel://draft/11', 'ai-novel://revision/1', '合并稿', '原稿', projectPath, projectSession,
+      )
+
+      expect(result.success).toBe(false)
+      const shownText = (locale: 'en-US' | 'zh-CN') => failureText(shown(locale), { note: note('合并失败', 'Could not merge the revision.'), because: result.failure })
+      expect(shownText('en-US')).not.toBe('Could not merge the revision.')
+      expect(shownText('en-US')).toContain(failureText(shown('en-US'), { code: 'REVISION_NOT_PENDING' }))
+      expect(shownText('zh-CN')).toContain(failureText(shown('zh-CN'), { code: 'REVISION_NOT_PENDING' }))
+    } finally {
+      interfaceLocale.current = 'zh-CN'
+    }
   })
 
   it('freezes the editor snapshot before awaiting the merge receipt', async () => {
@@ -228,7 +250,7 @@ describe('draft-store merged revision persistence', () => {
     })
     const result = await useDraftStore.getState().applyMergedRevision('ai-novel://draft/ch1', 1,
       'ai-novel://draft/11', 'ai-novel://revision/1', '合并正文', '原稿', projectPath, projectSession)
-    expect(result.error).toBeUndefined()
+    expect(result.failure).toBeUndefined()
     expect(result).toMatchObject({ success: true, receipt: { reviewCycle: { disposition: 'required' } } })
     expect(startWorkflow).toHaveBeenCalledTimes(1)
     expect(startWorkflow.mock.calls[0]?.[0]).toMatchObject({ projectPath, steps: [{ name: expect.any(String) }] })
