@@ -6,8 +6,7 @@ import * as stage from './pages/stage.mjs'
 import { seedStageSample } from './scenarios.mjs'
 import { STAGE_SAMPLE } from './stage-sample.mjs'
 
-// 英文界面导出时写文件失败，主进程只给 IPC_HANDLER_FAILED（handle() 换掉原文后的样子）：作者看到这处的兜底说明。
-// 失败由替换主进程 fs:grant-write-file 处理函数造出来（夹具），作品内容是 seedStageSample 的样书。
+// handle() 会把主进程原文换成 IPC_HANDLER_FAILED，这里直接回这个码，复现作者实际收到的失败。
 
 export const I897_SCENARIOS = {
   'i897-export-write-fallback-en': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ app, page, roots, shoot }) => {
