@@ -12,7 +12,6 @@ import type {
   ImportRunPrepareFromInspectionRequest,
   ImportRunSnapshot,
 } from '../../shared/import-run'
-import { AUTHOR_IMPORT_PREVIEW_STALE } from '../../shared/import-run'
 import type { AuthorManuscriptImportPreview } from '../../shared/author-manuscript-import'
 import {
   createImportWorkflow,
@@ -27,7 +26,9 @@ import { Input } from '../ui/Input'
 import { Label } from '../ui/Label'
 import { Check } from '../ui/Check'
 import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
-import { authorError, displayedErrorMessage, englishWithReason } from '../../i18n/app-errors'
+import { authorError, caughtFailure, displayedErrorMessage, englishWithReason, failureText, resultFailure } from '../../i18n/app-errors'
+import { errorLocaleForRun } from '../../i18n/core'
+import type { Locale } from '../../i18n/types'
 import { note } from '../../shared/failure'
 import { captureProjectSession, isProjectSessionCurrent } from '../project-session-gate'
 import { randomUUID } from '../../utils/id'
@@ -39,6 +40,9 @@ interface ImportNovelDialogProps {
 }
 
 const kTokens = (tokens: number) => `${(tokens / 1_000).toFixed(0)}K`
+
+const importFailureText = (runLocale: Locale, error: unknown) =>
+  failureText(errorLocaleForRun(runLocale, currentInterfaceLocale()), caughtFailure(error))
 
 const ESTIMATE_BOX_STYLE = {
   backgroundColor: 'color-mix(in srgb, var(--color-info) 6%, transparent)',
@@ -161,7 +165,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
     }).catch(error => {
       if (active && isProjectSessionCurrent(session)) {
         setAuthorPreview(null)
-        setSplitError(displayedErrorMessage(currentInterfaceLocale(), error))
+        setSplitError(failureText(currentInterfaceLocale(), caughtFailure(error)))
       }
     }).finally(() => {
       if (active && isProjectSessionCurrent(session)) setAuthorPreviewLoading(false)
@@ -383,8 +387,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
         project.path,
       )
       if (!prepared.success) {
-        if (prepared.errorCode === AUTHOR_IMPORT_PREVIEW_STALE) throw authorError(currentInterfaceLocale(), { note: note('项目或作者原稿清单已变化，请重新选择文件并确认预览。', 'The project or author manuscript changed. Select the files again and confirm the preview.') })
-        throw prepared.error ? new Error(prepared.error) : authorError(currentInterfaceLocale(), { note: note('无法创建导入运行', 'Could not create the import run.') })
+        throw authorError(currentInterfaceLocale(), resultFailure(prepared) ?? { note: note('无法创建导入运行', 'Could not create the import run.') })
       }
       setInspection(null)
       setSplitDone(false)
@@ -428,7 +431,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
         setAuthorPreview(null)
         setSplitDone(false)
       }
-      setSplitError(displayedErrorMessage(currentInterfaceLocale(), e))
+      setSplitError(importFailureText(locale, e))
     } finally {
       setImporting(false)
     }
@@ -460,11 +463,11 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
           project.path,
         )
         if (!isProjectSessionCurrent(projectSession)) return
-        if (!result.success || !result.preparation) throw result.error ? new Error(result.error) : authorError(currentInterfaceLocale(), { note: note('无法完成已解析的导入，请重试。', 'Could not finalize the parsed import. Please try again.') })
+        if (!result.success || !result.preparation) throw authorError(currentInterfaceLocale(), resultFailure(result) ?? { note: note('无法完成已解析的导入，请重试。', 'Could not finalize the parsed import. Please try again.') })
         await applyPreparation(result.preparation, projectSession, resumableRun.id)
       } catch (error) {
         if (!isProjectSessionCurrent(projectSession)) return
-        setSplitError(displayedErrorMessage(currentInterfaceLocale(), error))
+        setSplitError(importFailureText(resumableRun.locale, error))
       } finally {
         setImporting(false)
       }
@@ -489,7 +492,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
         project.path,
       )
       if (!isProjectSessionCurrent(session)) return
-      if (!result.success || !result.run) throw result.error ? new Error(result.error) : authorError(currentInterfaceLocale(), { note: note('无法重新开始导入', 'Could not restart the import.') })
+      if (!result.success || !result.run) throw authorError(currentInterfaceLocale(), resultFailure(result) ?? { note: note('无法重新开始导入', 'Could not restart the import.') })
       if (result.run.stage === 'parsing') {
         const restartedRun = result.run
         setResumableState(previous => {
@@ -509,7 +512,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
       await launchRun(result.run)
     } catch (error) {
       if (!isProjectSessionCurrent(session)) return
-      setSplitError(displayedErrorMessage(currentInterfaceLocale(), error))
+      setSplitError(importFailureText(resumableRun.locale, error))
     } finally {
       setImporting(false)
     }

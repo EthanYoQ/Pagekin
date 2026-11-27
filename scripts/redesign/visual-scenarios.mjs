@@ -351,7 +351,7 @@ export const VISUAL_SCENARIOS = {
     }
     const lease = { ...held.authority, expiresAt: Date.now() + 60_000 }
     const fenced = await invoke(page, 'db:import-run-cancel-at-boundary', held.runId, lease, held.session.projectPath, held.session)
-    assert.equal(fenced.success, true, fenced.error)
+    assert.equal(fenced.success, true, JSON.stringify(fenced.failure))
     await app.evaluate(() => globalThis.__driveReferenceGate.release())
 
     const failure = page.getByText('This import was taken over by another window', { exact: false }).first()

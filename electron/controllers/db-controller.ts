@@ -42,8 +42,7 @@ import type { FinalizedDraftImportRequest } from '../../src/shared/finalized-dra
 import { ImportGlobalFactsRepository } from '../repositories/import-global-facts-repository'
 import type { ImportGlobalFactsRequest } from '../../src/shared/import-global-facts'
 import { ImportRunRepository } from '../repositories/import-run-repository'
-import { explainImportRunFailure, importRunLocale, persistedImportRunFailure } from './import-run-failure'
-import type { Locale } from '../../src/i18n/types'
+import { importRunLocale, persistedImportRunFailure } from './import-run-failure'
 import type {
   ImportRunExecutionLease,
   ImportRunPrepareEffectReceiptRequest,
@@ -52,7 +51,6 @@ import type {
 } from '../../src/shared/import-run'
 import {
   AUTHOR_IMPORT_PREVIEW_STALE,
-  isAuthorImportPreviewStaleError,
   isImportRunDirectCheckpointStage,
 } from '../../src/shared/import-run'
 import { ImportSourceIdentityRepository } from '../repositories/import-source-identity-repository'
@@ -137,18 +135,6 @@ const MUTATING_DATABASE_CHANNELS = new Set([
   'db:plot-tree-clear',
 ])
 
-/** 导入对话框与导入运行卡片原样显示这些通道的报错（#474 B1），失败时按导入运行的语言写成说明。 */
-const IMPORT_CHANNEL = /^db:import-(?:run|global-facts)-/u
-
-function importChannelLocale(args: unknown[]): Locale {
-  const [first] = args
-  if (typeof first === 'object' && first !== null) {
-    const request = first as { runId?: unknown; locale?: unknown }
-    return importRunLocale(request.runId, request.locale)
-  }
-  return importRunLocale(first)
-}
-
 function withoutSessionContext(args: unknown[]): [ProjectSessionContext | undefined, unknown[]] {
   const candidate = args.at(-1)
   return isProjectSessionContext(candidate) ? [candidate, args.slice(0, -1)] : [undefined, args]
@@ -165,14 +151,7 @@ function registerProjectDatabaseHandler(channel: string, handler: ProjectDatabas
     try {
       return await inProjectSession(handler, event, context, args)
     } catch (error) {
-      const importFailure = IMPORT_CHANNEL.test(channel)
-        ? explainImportRunFailure(error, () => importChannelLocale(args))
-        : undefined
-      if (MUTATING_DATABASE_CHANNELS.has(channel)) {
-        return importFailure ? { success: false, ...importFailure } : { success: false, error: String(error) }
-      }
-      // 读通道的异常经 Electron 只带过去 message，说明直接写进 message。
-      if (importFailure) throw new Error(importFailure.error)
+      if (MUTATING_DATABASE_CHANNELS.has(channel)) return { success: false, error: String(error) }
       throw error
     }
   })
@@ -272,7 +251,14 @@ export function registerDatabaseController() {
     return { success: true }
   })
 
-  ipcMain.handle('db:import-global-facts-commit', async (
+  const importRuns = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
+      code: 'IMPORT_RUN_CHECK_FAILED',
+      note: wireNote('error.importRunCheckFailedUncoded'),
+    }),
+  }
+
+  importRuns.handle('db:import-global-facts-commit', async (
     _event,
     request: ImportGlobalFactsRequest,
     expectedProjectPath: string,
@@ -298,7 +284,7 @@ export function registerDatabaseController() {
     }
   })
 
-  ipcMain.handle('db:import-run-prepare-inspection', async (
+  importRuns.handle('db:import-run-prepare-inspection', async (
     event,
     request: ImportRunPrepareFromInspectionRequest,
     expectedProjectPath: string,
@@ -316,7 +302,7 @@ export function registerDatabaseController() {
       if (
         preview.authorityFingerprint !== request.authorityFingerprint
         || preview.manifestFingerprint !== request.manifestFingerprint
-      ) return { success: false as const, errorCode: AUTHOR_IMPORT_PREVIEW_STALE }
+      ) return { success: false as const, failure: { code: AUTHOR_IMPORT_PREVIEW_STALE } }
     }
     const inspection = importInspectionStore.consume(request.inspectionId, webContentsId)
     const sourceIdentity = ImportSourceIdentityRepository.resolveEncodedSources(
@@ -333,28 +319,21 @@ export function registerDatabaseController() {
       size: source.size,
     }))
     if (request.purpose === 'author-manuscript') {
-      try {
-        return {
-          success: true as const,
-          preparation: ImportRunRepository.prepare({
-            runId: request.runId,
-            purpose: request.purpose,
-            sourceFingerprint: sourceIdentity.sourceFingerprint,
-            sourceIds: sourceIdentity.sourceIds,
-            sourceFingerprints: sourceIdentity.sourceFingerprints,
-            sourceDisplay,
-            locale: request.locale,
-            authorityFingerprint: request.authorityFingerprint,
-            expectedManifestFingerprint: request.manifestFingerprint,
-            authorInference: request.authorInference === true,
-            chapters: inspection.chapters,
-          }),
-        }
-      } catch (error) {
-        if (isAuthorImportPreviewStaleError(error)) {
-          return { success: false as const, errorCode: AUTHOR_IMPORT_PREVIEW_STALE }
-        }
-        throw error
+      return {
+        success: true as const,
+        preparation: ImportRunRepository.prepare({
+          runId: request.runId,
+          purpose: request.purpose,
+          sourceFingerprint: sourceIdentity.sourceFingerprint,
+          sourceIds: sourceIdentity.sourceIds,
+          sourceFingerprints: sourceIdentity.sourceFingerprints,
+          sourceDisplay,
+          locale: request.locale,
+          authorityFingerprint: request.authorityFingerprint,
+          expectedManifestFingerprint: request.manifestFingerprint,
+          authorInference: request.authorInference === true,
+          chapters: inspection.chapters,
+        }),
       }
     }
     const parsingRun = ImportRunRepository.beginParsing({
@@ -394,7 +373,7 @@ export function registerDatabaseController() {
     return { success: true, preparation: ImportRunRepository.finalizeParsing(parsingRun.id) }
   })
 
-  ipcMain.handle('db:import-run-finalize-parsing', async (
+  importRuns.handle('db:import-run-finalize-parsing', async (
     _event,
     runId: string,
     expectedProjectPath: string,
@@ -403,7 +382,7 @@ export function registerDatabaseController() {
     return { success: true, preparation: ImportRunRepository.finalizeParsing(runId) }
   })
 
-  ipcMain.handle('db:import-run-author-preview', async (
+  importRuns.handle('db:import-run-author-preview', async (
     event,
     inspectionId: string,
     expectedProjectPath: string,
@@ -422,17 +401,17 @@ export function registerDatabaseController() {
     })))
   })
 
-  ipcMain.handle('db:import-run-get', async (_event, runId: string, expectedProjectPath: string) => {
+  importRuns.handle('db:import-run-get', async (_event, runId: string, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return ImportRunRepository.get(runId)
   })
 
-  ipcMain.handle('db:import-run-list-resumable', async (_event, expectedProjectPath: string) => {
+  importRuns.handle('db:import-run-list-resumable', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return ImportRunRepository.listResumable()
   })
 
-  ipcMain.handle('db:import-run-list-chapters', async (
+  importRuns.handle('db:import-run-list-chapters', async (
     _event,
     runId: string,
     afterChapterNumber: number,
@@ -443,7 +422,7 @@ export function registerDatabaseController() {
     return ImportRunRepository.listChapterBatch(runId, { afterChapterNumber, limit })
   })
 
-  ipcMain.handle('db:import-run-effect-receipt-get', async (
+  importRuns.handle('db:import-run-effect-receipt-get', async (
     _event,
     runId: string,
     stage: ImportRunStage,
@@ -454,7 +433,7 @@ export function registerDatabaseController() {
     return ImportRunRepository.getEffectReceipt(runId, stage, batchId)
   })
 
-  ipcMain.handle('db:import-run-effect-receipt-prepare', async (
+  importRuns.handle('db:import-run-effect-receipt-prepare', async (
     _event,
     request: ImportRunPrepareEffectReceiptRequest,
     execution: ImportRunExecutionLease,
@@ -464,7 +443,7 @@ export function registerDatabaseController() {
     return { success: true, receipt: ImportRunRepository.prepareEffectReceipt(request, execution, Date.now(), assertImportGenerationSourcesCurrent) }
   })
 
-  ipcMain.handle('db:import-run-effect-receipt-commit', async (
+  importRuns.handle('db:import-run-effect-receipt-commit', async (
     _event,
     runId: string,
     stage: ImportRunStage,
@@ -476,7 +455,7 @@ export function registerDatabaseController() {
     return { success: true, result: ImportRunRepository.commitEffectReceipt(runId, stage, batchId, execution, Date.now(), (handle, slot) => assertImportGenerationSourcesCurrent(handle, slot, true)) }
   })
 
-  ipcMain.handle('db:import-run-start-resume', async (
+  importRuns.handle('db:import-run-start-resume', async (
     _event,
     runId: string,
     owner: string,
@@ -486,7 +465,7 @@ export function registerDatabaseController() {
     return { success: true, start: ImportRunRepository.startOrResume(runId, owner) }
   })
 
-  ipcMain.handle('db:import-run-renew-execution', async (
+  importRuns.handle('db:import-run-renew-execution', async (
     _event,
     runId: string,
     execution: ImportRunExecutionLease,
@@ -496,7 +475,7 @@ export function registerDatabaseController() {
     return { success: true, execution: ImportRunRepository.renewExecution(runId, execution) }
   })
 
-  ipcMain.handle('db:import-run-restart', async (
+  importRuns.handle('db:import-run-restart', async (
     _event,
     runId: string,
     nextRunId: string,
@@ -506,7 +485,7 @@ export function registerDatabaseController() {
     return { success: true, run: ImportRunRepository.restart(runId, nextRunId) }
   })
 
-  ipcMain.handle('db:import-run-request-cancel', async (
+  importRuns.handle('db:import-run-request-cancel', async (
     _event,
     runId: string,
     execution: ImportRunExecutionLease,
@@ -516,7 +495,7 @@ export function registerDatabaseController() {
     return { success: true, run: ImportRunRepository.requestCancel(runId, execution) }
   })
 
-  ipcMain.handle('db:import-run-cancel-at-boundary', async (
+  importRuns.handle('db:import-run-cancel-at-boundary', async (
     _event,
     runId: string,
     execution: ImportRunExecutionLease,
@@ -526,7 +505,7 @@ export function registerDatabaseController() {
     return { success: true, run: ImportRunRepository.cancelAtBoundary(runId, execution) }
   })
 
-  ipcMain.handle('db:import-run-complete-batch', async (
+  importRuns.handle('db:import-run-complete-batch', async (
     _event,
     runId: string,
     stage: ImportRunStage,
@@ -539,7 +518,7 @@ export function registerDatabaseController() {
     return { success: true, ...ImportRunRepository.completeBatch(runId, stage, batchId, execution) }
   })
 
-  ipcMain.handle('db:import-run-advance-stage', async (
+  importRuns.handle('db:import-run-advance-stage', async (
     _event,
     runId: string,
     completedStage: ImportRunStage,
@@ -551,7 +530,7 @@ export function registerDatabaseController() {
     return { success: true, run: ImportRunRepository.advanceStage(runId, completedStage, nextStage, execution) }
   })
 
-  ipcMain.handle('db:import-run-fail', async (
+  importRuns.handle('db:import-run-fail', async (
     _event,
     runId: string,
     stage: ImportRunStage,
@@ -566,7 +545,7 @@ export function registerDatabaseController() {
     return { success: true, run: ImportRunRepository.fail(runId, stage, reason, execution) }
   })
 
-  ipcMain.handle('db:import-run-complete', async (
+  importRuns.handle('db:import-run-complete', async (
     _event,
     runId: string,
     execution: ImportRunExecutionLease,

@@ -876,7 +876,7 @@ export interface DatabaseChannels {
   }
   'db:import-global-facts-commit': {
     args: [request: ImportGlobalFactsRequest, expectedProjectPath: string]
-    return: { success: boolean; receipt?: ImportGlobalFactsReceipt; error?: string }
+    return: { success: boolean; receipt?: ImportGlobalFactsReceipt; failure?: Failure }
   }
   'db:project-clear-generated-data': { args: [options: ProjectClearOptions, expectedProjectPath: string]; return: { success: boolean; cleared?: ProjectClearScope[]; physicalFilesDeleted?: number; error?: string } }
   'db:import-run-prepare-inspection': {
@@ -889,7 +889,7 @@ export interface DatabaseChannels {
   }
   'db:import-run-finalize-parsing': {
     args: [runId: string, expectedProjectPath: string]
-    return: { success: boolean; preparation?: ImportRunPreparationResult; error?: string }
+    return: { success: boolean; preparation?: ImportRunPreparationResult; failure?: Failure }
   }
   'db:import-run-get': { args: [runId: string, expectedProjectPath: string]; return: ImportRunSnapshot | null }
   'db:import-run-list-resumable': { args: [expectedProjectPath: string]; return: ImportRunSnapshot[] }
@@ -903,30 +903,30 @@ export interface DatabaseChannels {
   }
   'db:import-run-effect-receipt-prepare': {
     args: [request: ImportRunPrepareEffectReceiptRequest, execution: ImportRunExecutionLease, expectedProjectPath: string]
-    return: { success: boolean; receipt?: ImportRunEffectReceipt; error?: string }
+    return: { success: boolean; receipt?: ImportRunEffectReceipt; failure?: Failure }
   }
   'db:import-run-effect-receipt-commit': {
     args: [runId: string, stage: ImportRunStage, batchId: string, execution: ImportRunExecutionLease, expectedProjectPath: string]
-    return: { success: boolean; result?: ImportRunEffectCommitResult; error?: string }
+    return: { success: boolean; result?: ImportRunEffectCommitResult; failure?: Failure }
   }
-  'db:import-run-start-resume': { args: [runId: string, owner: string, expectedProjectPath: string]; return: { success: boolean; start?: ImportRunStartResult; error?: string } }
-  'db:import-run-renew-execution': { args: [runId: string, execution: ImportRunExecutionLease, expectedProjectPath: string]; return: { success: boolean; execution?: ImportRunExecutionLease; error?: string } }
-  'db:import-run-restart': { args: [runId: string, nextRunId: string, expectedProjectPath: string]; return: { success: boolean; run?: ImportRunSnapshot; error?: string } }
-  'db:import-run-request-cancel': { args: [runId: string, execution: ImportRunExecutionLease, expectedProjectPath: string]; return: { success: boolean; run?: ImportRunSnapshot; error?: string } }
-  'db:import-run-cancel-at-boundary': { args: [runId: string, execution: ImportRunExecutionLease, expectedProjectPath: string]; return: { success: boolean; run?: ImportRunSnapshot; error?: string } }
+  'db:import-run-start-resume': { args: [runId: string, owner: string, expectedProjectPath: string]; return: { success: boolean; start?: ImportRunStartResult; failure?: Failure } }
+  'db:import-run-renew-execution': { args: [runId: string, execution: ImportRunExecutionLease, expectedProjectPath: string]; return: { success: boolean; execution?: ImportRunExecutionLease; failure?: Failure } }
+  'db:import-run-restart': { args: [runId: string, nextRunId: string, expectedProjectPath: string]; return: { success: boolean; run?: ImportRunSnapshot; failure?: Failure } }
+  'db:import-run-request-cancel': { args: [runId: string, execution: ImportRunExecutionLease, expectedProjectPath: string]; return: { success: boolean; run?: ImportRunSnapshot; failure?: Failure } }
+  'db:import-run-cancel-at-boundary': { args: [runId: string, execution: ImportRunExecutionLease, expectedProjectPath: string]; return: { success: boolean; run?: ImportRunSnapshot; failure?: Failure } }
   'db:import-run-complete-batch': {
     args: [runId: string, stage: ImportRunStage, batchId: string, execution: ImportRunExecutionLease, expectedProjectPath: string]
-    return: { success: boolean; newlyCompleted?: boolean; cancelApplied?: boolean; run?: ImportRunSnapshot; error?: string }
+    return: { success: boolean; newlyCompleted?: boolean; cancelApplied?: boolean; run?: ImportRunSnapshot; failure?: Failure }
   }
   'db:import-run-advance-stage': {
     args: [runId: string, completedStage: ImportRunStage, nextStage: ImportRunStage, execution: ImportRunExecutionLease, expectedProjectPath: string]
-    return: { success: boolean; run?: ImportRunSnapshot; error?: string }
+    return: { success: boolean; run?: ImportRunSnapshot; failure?: Failure }
   }
   'db:import-run-fail': {
     args: [runId: string, stage: ImportRunStage, errorMessage: string, execution: ImportRunExecutionLease, expectedProjectPath: string]
-    return: { success: boolean; run?: ImportRunSnapshot; error?: string }
+    return: { success: boolean; run?: ImportRunSnapshot; failure?: Failure }
   }
-  'db:import-run-complete': { args: [runId: string, execution: ImportRunExecutionLease, expectedProjectPath: string]; return: { success: boolean; run?: ImportRunSnapshot; error?: string } }
+  'db:import-run-complete': { args: [runId: string, execution: ImportRunExecutionLease, expectedProjectPath: string]; return: { success: boolean; run?: ImportRunSnapshot; failure?: Failure } }
 
   'db:blueprint-get-all': { args: [expectedProjectPath: string]; return: BlueprintData[] }
   'db:blueprint-get': { args: [chapterNumber: number, expectedProjectPath: string]; return: BlueprintData | null }
