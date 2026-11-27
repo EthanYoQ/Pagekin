@@ -59,10 +59,6 @@ import { loadApplicationImportSourceSecret } from '../services/import-source-ide
 import { RevisionRepository } from '../repositories/revision-repository'
 import { ReviewRepository } from '../repositories/review-repository'
 import { ReviewCycleRepository } from '../repositories/review-cycle-repository'
-import {
-  isSourceDraftChangedError,
-  SOURCE_DRAFT_CHANGED,
-} from '../repositories/draft-source-guard'
 import type { ExpectedDraftSource, ProjectSessionContext } from '../../src/shared/ipc-channels'
 import { PostProcessRepository } from '../repositories/post-process-repository'
 
@@ -118,6 +114,7 @@ const MUTATING_DATABASE_CHANNELS = new Set([
   'db:revision-create',
   'db:revision-replace-pending',
   'db:revision-mark-merged',
+  'db:revision-merge',
   'db:revision-mark-discarded',
   'db:review-create',
   'db:consistency-exemption-save',
@@ -969,7 +966,15 @@ export function registerDatabaseController() {
     }
   })
 
-  ipcMain.handle('db:annotation-history-list', async (_event, draftId: number, expectedProjectPath: string) => {
+  // 审稿与批注的写入都在一个事务里，失败时整次撤回，正文不变。
+  const reviews = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
+      code: 'REVIEW_WRITE_FAILED',
+      note: wireNote('error.reviewWriteFailed'),
+    }),
+  }
+
+  reviews.handle('db:annotation-history-list', async (_event, draftId: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     const db = getProjectDb()
     if (!db || !DraftRepository.getMeta(draftId)) throw new Error('DRAFT_NOT_FOUND')
@@ -979,7 +984,7 @@ export function registerDatabaseController() {
     return rows.map(({ annotationsJson, ...row }) => ({ ...row, annotations: JSON.parse(annotationsJson) }))
   })
 
-  ipcMain.handle('db:annotation-commit', async (_event, input: { draftId: number; expectedSaved: string; before: string; after: string; annotations: import('../../src/shared/editor-inline-generation').EditorInlineAnnotation[] }, expectedProjectPath: string) => {
+  reviews.handle('db:annotation-commit', async (_event, input: { draftId: number; expectedSaved: string; before: string; after: string; annotations: import('../../src/shared/editor-inline-generation').EditorInlineAnnotation[] }, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     const db = getProjectDb()
     if (!db || typeof input.expectedSaved !== 'string' || typeof input.before !== 'string' || typeof input.after !== 'string') throw new Error('ANNOTATION_COMMIT_INVALID')
@@ -1070,27 +1075,39 @@ export function registerDatabaseController() {
     return { success: true }
   })
 
-  ipcMain.handle('db:finalization-link-knowledge-document', async (
+  // 后处理只在定稿事务提交之后才跑（finalize-chapter.command.ts 先 commitFinalizationSnapshot），写失败不影响已保存的定稿。
+  const postProcess = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
+      code: 'POST_PROCESS_WRITE_FAILED',
+      note: wireNote('error.postProcessWriteFailed'),
+    }),
+  }
+
+  postProcess.handle('db:finalization-link-knowledge-document', async (
     _event,
     draftId: number,
     documentId: string,
     expectedProjectPath: string,
   ) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      return {
-        success: true,
-        finalization: FinalizationRepository.linkKnowledgeDocument(draftId, documentId),
-      }
-    } catch (err) {
-      return { success: false, error: String(err) }
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    return {
+      success: true,
+      finalization: FinalizationRepository.linkKnowledgeDocument(draftId, documentId),
     }
   })
 
   // ============================================================
   // 5. revisions — 修稿
   // ============================================================
-  ipcMain.handle('db:revision-create', async (_event, params: {
+  // 修稿的写入各在一个事务里（revision-repository.ts），失败时整次撤回，草稿正文不变。
+  const revisions = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
+      code: 'REVISION_WRITE_FAILED',
+      note: wireNote('error.revisionWriteFailed'),
+    }),
+  }
+
+  revisions.handle('db:revision-create', async (_event, params: {
     baseDraftId: number
     revisionType: 'refine' | 'review-fix'
     userPrompt?: string
@@ -1099,20 +1116,12 @@ export function registerDatabaseController() {
     wordCount: number
     expectedSource?: ExpectedDraftSource
   }, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      const created = RevisionRepository.create(params)
-      return { success: true, id: created.id, revisionIndex: created.revisionIndex }
-    } catch (err) {
-      return {
-        success: false,
-        ...(isSourceDraftChangedError(err) ? { errorCode: SOURCE_DRAFT_CHANGED } : {}),
-        error: String(err),
-      }
-    }
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    const created = RevisionRepository.create(params)
+    return { success: true, id: created.id, revisionIndex: created.revisionIndex }
   })
 
-  ipcMain.handle('db:revision-replace-pending', async (_event, params: {
+  revisions.handle('db:revision-replace-pending', async (_event, params: {
     baseDraftId: number
     revisionType: 'refine' | 'review-fix'
     userPrompt?: string
@@ -1121,124 +1130,96 @@ export function registerDatabaseController() {
     wordCount: number
     expectedSource?: ExpectedDraftSource
   }, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      const created = RevisionRepository.replacePending(params)
-      return { success: true, id: created.id, revisionIndex: created.revisionIndex }
-    } catch (err) {
-      return {
-        success: false,
-        ...(isSourceDraftChangedError(err) ? { errorCode: SOURCE_DRAFT_CHANGED } : {}),
-        error: String(err),
-      }
-    }
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    const created = RevisionRepository.replacePending(params)
+    return { success: true, id: created.id, revisionIndex: created.revisionIndex }
   })
 
-  ipcMain.handle('db:revision-list', async (_event, baseDraftId: number, expectedProjectPath: string) => {
+  revisions.handle('db:revision-list', async (_event, baseDraftId: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return RevisionRepository.listByDraft(baseDraftId)
   })
 
-  ipcMain.handle('db:revision-get-pending', async (_event, baseDraftId: number, expectedProjectPath: string) => {
+  revisions.handle('db:revision-get-pending', async (_event, baseDraftId: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return RevisionRepository.getPending(baseDraftId, projectAccess.captureCurrentSession()?.projectId)
   })
 
-  ipcMain.handle('db:revision-get-full', async (_event, id: number, expectedProjectPath: string) => {
+  revisions.handle('db:revision-get-full', async (_event, id: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return RevisionRepository.getFull(id)
   })
 
-  ipcMain.handle('db:revision-next-index', async (_event, baseDraftId: number, expectedProjectPath: string) => {
+  revisions.handle('db:revision-next-index', async (_event, baseDraftId: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return RevisionRepository.getNextIndex(baseDraftId)
   })
 
-  ipcMain.handle('db:revision-merge', async (_event, request: Parameters<typeof RevisionRepository.mergeIntoDraft>[0], expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      return { success: true, receipt: RevisionRepository.mergeIntoDraft(request, getProjectDb(), projectAccess.captureCurrentSession()?.projectId) }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  revisions.handle('db:revision-merge', async (_event, request: Parameters<typeof RevisionRepository.mergeIntoDraft>[0], expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    return { success: true, receipt: RevisionRepository.mergeIntoDraft(request, getProjectDb(), projectAccess.captureCurrentSession()?.projectId) }
   })
 
-  ipcMain.handle('db:revision-mark-merged', async (_event, id: number, mergedToDraftId: number, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      RevisionRepository.markMerged(id, mergedToDraftId)
-      return { success: true }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  revisions.handle('db:revision-mark-merged', async (_event, id: number, mergedToDraftId: number, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    RevisionRepository.markMerged(id, mergedToDraftId)
+    return { success: true }
   })
 
-  ipcMain.handle('db:revision-mark-discarded', async (_event, id: number, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      RevisionRepository.markDiscarded(id)
-      return { success: true }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  revisions.handle('db:revision-mark-discarded', async (_event, id: number, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    RevisionRepository.markDiscarded(id)
+    return { success: true }
   })
 
   // ============================================================
   // 6. reviews — 审稿
   // ============================================================
-  ipcMain.handle('db:review-create', async (_event, params: {
+  reviews.handle('db:review-create', async (_event, params: {
     baseDraftId: number
     reviewIndex?: number
     content: string
     expectedSource?: ExpectedDraftSource
     reviewCycleId?: string
   }, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      const db = getProjectDb()
-      if (!db) throw new Error('PROJECT_NOT_OPEN')
-      const created = db.transaction(() => {
-        const saved = ReviewRepository.create({ baseDraftId: params.baseDraftId, reviewIndex: params.reviewIndex,
-          content: params.content, expectedSource: params.expectedSource }, db)
-        if (params.reviewCycleId) ReviewCycleRepository.commitAuthorConfirmation({
-          cycleId: params.reviewCycleId,
-          confirmationReviewId: saved.id,
-        }, db)
-        return saved
-      })()
-      return { success: true, id: created.id, reviewIndex: created.reviewIndex }
-    } catch (err) {
-      return {
-        success: false,
-        ...(isSourceDraftChangedError(err) ? { errorCode: SOURCE_DRAFT_CHANGED } : {}),
-        error: String(err),
-      }
-    }
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    const db = getProjectDb()
+    if (!db) throw new Error('PROJECT_NOT_OPEN')
+    const created = db.transaction(() => {
+      const saved = ReviewRepository.create({ baseDraftId: params.baseDraftId, reviewIndex: params.reviewIndex,
+        content: params.content, expectedSource: params.expectedSource }, db)
+      if (params.reviewCycleId) ReviewCycleRepository.commitAuthorConfirmation({
+        cycleId: params.reviewCycleId,
+        confirmationReviewId: saved.id,
+      }, db)
+      return saved
+    })()
+    return { success: true, id: created.id, reviewIndex: created.reviewIndex }
   })
 
-  ipcMain.handle('db:review-list', async (_event, baseDraftId: number, expectedProjectPath: string) => {
+  reviews.handle('db:review-list', async (_event, baseDraftId: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return ReviewRepository.listByDraft(baseDraftId)
   })
 
-  ipcMain.handle('db:review-get-latest', async (_event, baseDraftId: number, expectedProjectPath: string) => {
+  reviews.handle('db:review-get-latest', async (_event, baseDraftId: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return ReviewRepository.getLatestByDraft(baseDraftId)
   })
 
-  ipcMain.handle('db:review-get-full', async (_event, id: number, expectedProjectPath: string) => {
+  reviews.handle('db:review-get-full', async (_event, id: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return ReviewRepository.getFull(id)
   })
 
-  ipcMain.handle('db:review-cycle-get', async (_event, reviewId: number, expectedProjectPath: string) => {
+  reviews.handle('db:review-cycle-get', async (_event, reviewId: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     const db = getProjectDb()
     if (!db) return null
     return ReviewCycleRepository.getByReviewId(reviewId, db, projectAccess.captureCurrentSession()?.projectId)
   })
 
-  ipcMain.handle('db:review-next-index', async (_event, baseDraftId: number, expectedProjectPath: string) => {
+  reviews.handle('db:review-next-index', async (_event, baseDraftId: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return ReviewRepository.getNextIndex(baseDraftId)
   })
@@ -1246,7 +1227,7 @@ export function registerDatabaseController() {
   // ============================================================
   // 7. post_process — 后处理跑批
   // ============================================================
-  ipcMain.handle('db:post-process-create-run', async (
+  postProcess.handle('db:post-process-create-run', async (
     _event,
     params: {
       triggerSourceType: string
@@ -1257,46 +1238,33 @@ export function registerDatabaseController() {
     },
     expectedProjectPath: string,
   ) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      const id = PostProcessRepository.createRun(params)
-      return { success: true, id }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    return { success: true, id: PostProcessRepository.createRun(params) }
   })
 
-  ipcMain.handle('db:post-process-get-latest-run', async (_event, sourceType: string, sourceId: string, expectedProjectPath: string) => {
+  postProcess.handle('db:post-process-get-latest-run', async (_event, sourceType: string, sourceId: string, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return PostProcessRepository.getLatestRun(sourceType, sourceId)
   })
 
-  ipcMain.handle('db:post-process-get-steps', async (_event, runId: string, expectedProjectPath: string) => {
+  postProcess.handle('db:post-process-get-steps', async (_event, runId: string, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return PostProcessRepository.getSteps(runId)
   })
 
-  ipcMain.handle('db:post-process-mark-step-ok', async (_event, runId: string, stepKey: string, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      PostProcessRepository.markStepOk(runId, stepKey)
-      return { success: true }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  postProcess.handle('db:post-process-mark-step-ok', async (_event, runId: string, stepKey: string, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    PostProcessRepository.markStepOk(runId, stepKey)
+    return { success: true }
   })
 
-  ipcMain.handle('db:post-process-mark-step-failed', async (_event, runId: string, stepKey: string, errorMsg: string, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      PostProcessRepository.markStepFailed(runId, stepKey, errorMsg)
-      return { success: true }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  postProcess.handle('db:post-process-mark-step-failed', async (_event, runId: string, stepKey: string, errorMsg: string, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    PostProcessRepository.markStepFailed(runId, stepKey, errorMsg)
+    return { success: true }
   })
 
-  ipcMain.handle('db:post-process-is-all-passed', async (_event, sourceType: string, sourceId: string, expectedProjectPath: string) => {
+  postProcess.handle('db:post-process-is-all-passed', async (_event, sourceType: string, sourceId: string, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return PostProcessRepository.isAllCriticalPassed(sourceType, sourceId)
   })

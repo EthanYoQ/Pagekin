@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { captureProjectSession, isProjectSessionCurrent, isProjectSessionPath } from '../project-session-gate'
 import { useProjectStore } from '../../stores/project-store'
 import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
-import { authorError, displayedErrorMessage } from '../../i18n/app-errors'
+import { authorError, displayedErrorMessage, resultFailure } from '../../i18n/app-errors'
 import { authorOwned, note } from '../../shared/failure'
 import { useLLMStore } from '../../stores/llm-store'
 import { ipc } from '../../services/ipc-client'
@@ -498,7 +498,7 @@ export function useReviewChecklist({
           expectedSource: sourceReview.sourceDraft,
           ...(cycle?.cycleId ? { reviewCycleId: cycle.cycleId } : {}),
         }, projectSession.projectPath)
-      if (createResponse.errorCode === 'SOURCE_DRAFT_CHANGED') {
+      if (resultFailure(createResponse)?.code === 'SOURCE_DRAFT_CHANGED') {
         throw authorError(currentInterfaceLocale(), { note: note('确认期间源草稿已变化，清单未保存；请重新运行 AI 审稿。', 'The source draft changed during confirmation, so the checklist was not saved. Run AI review again.') })
       }
       const createResult = requireIpcSuccess(

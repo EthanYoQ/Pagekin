@@ -202,14 +202,14 @@ describe('runPostProcessPipeline stopOnFailure', () => {
     const invoke = stubIpcInvoke()
     const original = invoke.getMockImplementation()!
     invoke.mockImplementation(async (channel: string) => channel === 'db:post-process-create-run'
-      ? { success: false, error: '数据库写入失败' }
+      ? { success: false, failure: { code: 'POST_PROCESS_WRITE_FAILED' } }
       : original(channel))
     const callbacks = { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() }
     const failure = await runPostProcessPipeline('C:/novel', 'chapter_2_finalize', 'Chapter 2 finalization', [
       { key: 'first', label: 'First step', critical: true, executor: async () => undefined },
     ], callbacks, { retryCount: 0, cancellation: englishContext(), projectSession }).then(() => undefined, (error: unknown) => error as Error)
     expect(failure?.message).not.toMatch(/\p{Script=Han}|[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+/u)
-    expect(failure?.message).toBe('Failed to create the post-processing run.')
+    expect(failure?.message).toBe('Failed to create the post-processing run. The finalized chapter text is saved. Post-processing progress could not be saved to the project. Try again.')
   })
 
   it('fails closed before IPC when no frozen project session is supplied', async () => {
