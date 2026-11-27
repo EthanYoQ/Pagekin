@@ -8,7 +8,7 @@ import { countDraftUnits } from '../../src/shared/draft-units'
 
 export function reopenWithContent(chapterNumber: number, content: string): number {
   const reopened = FinalizationRepository.reopen({ chapterNumber })
-  if (!reopened.success) throw new Error(reopened.error)
+  if (!reopened.success) throw new Error(reopened.failure?.code)
   DraftRepository.updateContent(reopened.draftId, content, countDraftUnits(content))
   return reopened.draftId
 }

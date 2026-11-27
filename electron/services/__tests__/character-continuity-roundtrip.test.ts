@@ -267,7 +267,7 @@ describe('#491 角色状态来源经过多次备份往返', () => {
 async function deleteFinalizedChapter(project: OpenProject, draftId: number, chapterNumber: number): Promise<void> {
   const service = new ChapterDeletionService({ cleaner: { removeManuscript: async () => undefined, removeKnowledgeDocument: async () => undefined } })
   let result = await service.delete(project.root, { draftId, chapterNumber })
-  if (result.error === 'CHAPTER_DELETE_LEGACY_KNOWLEDGE_CHECK_REQUIRED') result = await service.confirmLegacyKnowledgeAbsent(project.root, result.operation!.operationId)
+  if (result.failure?.code === 'CHAPTER_DELETE_LEGACY_KNOWLEDGE_CHECK_REQUIRED') result = await service.confirmLegacyKnowledgeAbsent(project.root, result.operation!.operationId)
   expect(result).toMatchObject({ success: true, committed: true })
   expect(getProjectDb()!.prepare('SELECT COUNT(*) FROM finalization_outbox WHERE draft_id=?').pluck().get(draftId)).toBe(0)
 }

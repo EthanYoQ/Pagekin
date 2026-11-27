@@ -11,6 +11,6 @@ export async function reopenFinalizedChapter(
     projectPath: session.projectPath,
     readResourceKeys: [workflowResourceKey('chapter', request.chapterNumber)],
   })
-  if (busy) return { success: false, error: 'CHAPTER_REOPEN_BUSY' }
+  if (busy) return { success: false, failure: { code: 'CHAPTER_REOPEN_BUSY' } }
   return ipc.invokeWithProjectSession(session, 'chapter:reopen', request, session.projectPath)
 }

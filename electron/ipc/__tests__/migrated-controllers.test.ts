@@ -5,6 +5,7 @@ import DIRECT_CHANNELS from '../direct-channels.json'
 import { REPO_ROOT, repoSourceFiles } from '../../../test/helpers/repo-source-files'
 
 const MIGRATED = [
+  'electron/controllers/chapter-lifecycle-controller.ts',
   'electron/controllers/character-avatar-controller.ts',
   'electron/controllers/config-controller.ts',
   'electron/controllers/external-file-grant-controller.ts',

@@ -1,4 +1,4 @@
-import { displayedErrorMessage } from '../../../i18n/app-errors'
+import { containsHan, failureText, resultFailure } from '../../../i18n/app-errors'
 import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { useIncompleteDeletions } from '../../panels/sidebar/use-incomplete-deletions'
 import { Button } from '../../ui/Button'
@@ -24,9 +24,9 @@ export default function DeletionCleanupNotices({ projectKey, chapterNumber }: { 
           </Button>
         )}
       >
-        {/* 主进程记下的是错误码或原始系统报错；旧版本记下的中文原文原样显示。 */}
-        {[operation.manuscriptStatus === 'failed' ? operation.manuscriptError : '', operation.knowledgeStatus === 'failed' ? operation.knowledgeError : '']
-          .filter(Boolean).map(reason => displayedErrorMessage(currentInterfaceLocale(), reason)).join(text('；', '; ')) || null}
+        {/* 主进程记下的是错误码或原始系统报错，系统原文不显示；旧版本记下的中文说明原样显示。 */}
+        {[...new Set([operation.manuscriptStatus === 'failed' ? operation.manuscriptError : '', operation.knowledgeStatus === 'failed' ? operation.knowledgeError : '']
+          .filter(Boolean).map(reason => containsHan(reason) ? reason : failureText(currentInterfaceLocale(), resultFailure({ error: reason }))))].join(text('；', '; ')) || null}
       </Notice>
     )
   })
