@@ -26,6 +26,17 @@ const MIGRATED_DATABASE_CHANNELS = [
   'db:recovery-candidate-list',
   'db:recovery-candidate-update',
   'db:recovery-candidate-resolve',
+  'db:narrative-thread-list',
+  'db:narrative-thread-list-relevant',
+  'db:narrative-thread-review-candidates',
+  'db:narrative-thread-plan-create',
+  'db:narrative-thread-plan-update',
+  'db:narrative-thread-plan-delete',
+  'db:narrative-thread-event-confirm',
+  'db:narrative-thread-assignment-set',
+  'db:narrative-thread-assignment-remove',
+  'db:plot-tree-read',
+  'db:plot-tree-clear',
 ]
 
 it('迁移后的数据库处理器不在直连基线里', () => {

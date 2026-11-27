@@ -73,7 +73,7 @@ beforeEach(() => {
     if (channel === 'db:narrative-thread-event-confirm') {
       const input = args[0] as { planId: number; draftId: number; type: 'planted'; evidence: string; reason: string }
       if (input.evidence === '定稿里没有这句') {
-        return { success: false, error: 'Error: NARRATIVE_THREAD_EVIDENCE_NOT_IN_SOURCE' }
+        return { success: false, failure: { code: 'NARRATIVE_THREAD_EVIDENCE_NOT_IN_SOURCE' } }
       }
       threads = threads.map(item => item.id === input.planId
         ? { ...item, status: 'planted', events: [...item.events, { id: 1, planId: input.planId, draftId: input.draftId, type: input.type, evidence: input.evidence, reason: input.reason, chapterNumber: 1, chapterTitle: '灰色的信', createdAt: '' }] }
@@ -219,6 +219,23 @@ describe('剧情与伏笔', () => {
     await vi.waitFor(() => expect(called('db:plot-tree-clear')).toHaveLength(1))
     await vi.waitFor(() => expect(document.querySelector('table[aria-label="剧情树"]')).toBeNull())
     expect(document.body.textContent).toContain('还没有剧情树')
+  })
+
+  it.each([
+    ['作品库没写进去，照旧说清除失败', 'PLOT_THREAD_WRITE_FAILED', '无法清除剧情树。'],
+    ['会话已换，说明换成会话的原因', 'PROJECT_SESSION_STALE', '项目已切换或重新打开，这次操作属于之前打开的项目，已拒绝执行。请在当前打开的项目里重新操作。'],
+  ])('清除剧情树失败：%s，剧情树仍在', async (_name, code, shown) => {
+    const plain = invoke.getMockImplementation()!
+    invoke.mockImplementation(async (channel, ...args) => channel === 'db:plot-tree-clear'
+      ? { success: false, failure: { code } }
+      : plain(channel, ...args))
+    await render('plot-tree')
+    await vi.waitFor(() => expect(document.querySelector('table[aria-label="剧情树"]')).toBeTruthy())
+    await click('剧情树的更多操作')
+    await click('清除剧情树…')
+    await click('清除剧情树')
+    await vi.waitFor(() => expect(document.querySelector('.pi-notice[role="status"]')?.textContent).toBe(shown))
+    expect(document.querySelector('table[aria-label="剧情树"]')).toBeTruthy()
   })
 
   it('英文界面里线索沉寂一章写 Quiet for 1 chapter', async () => {

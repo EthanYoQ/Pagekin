@@ -909,62 +909,67 @@ export function registerDatabaseController() {
     }
   })
 
-  ipcMain.handle('db:narrative-thread-list', async (_event, expectedProjectPath: string) => {
+  const plotThreads = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
+      code: 'PLOT_THREAD_WRITE_FAILED',
+      note: wireNote('error.plotThreadWriteFailed'),
+    }),
+  }
+
+  plotThreads.handle('db:narrative-thread-list', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return NarrativeThreadRepository.list()
   })
 
-  ipcMain.handle('db:narrative-thread-list-relevant', async (_event, context, expectedProjectPath: string) => {
+  plotThreads.handle('db:narrative-thread-list-relevant', async (_event, context, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return NarrativeThreadRepository.listRelevantActive(context)
   })
 
-  ipcMain.handle('db:narrative-thread-review-candidates', async (_event, expectedProjectPath: string) => {
+  plotThreads.handle('db:narrative-thread-review-candidates', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return NarrativeThreadRepository.listReviewCandidates()
   })
 
-  ipcMain.handle('db:narrative-thread-plan-create', async (_event, input, expectedProjectPath: string) => {
+  plotThreads.handle('db:narrative-thread-plan-create', async (_event, input, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return { success: true, plan: NarrativeThreadRepository.createPlan(input) }
   })
 
-  ipcMain.handle('db:narrative-thread-plan-update', async (_event, id: number, input, expectedProjectPath: string) => {
+  plotThreads.handle('db:narrative-thread-plan-update', async (_event, id: number, input, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return { success: true, plan: NarrativeThreadRepository.updatePlan(id, input) }
   })
 
-  ipcMain.handle('db:narrative-thread-plan-delete', async (_event, id: number, expectedProjectPath: string) => {
+  plotThreads.handle('db:narrative-thread-plan-delete', async (_event, id: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     NarrativeThreadRepository.deletePlan(id)
     return { success: true }
   })
 
-  ipcMain.handle('db:narrative-thread-event-confirm', async (_event, input, expectedProjectPath: string) => {
+  plotThreads.handle('db:narrative-thread-event-confirm', async (_event, input, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return { success: true, event: NarrativeThreadRepository.confirmEvent(input) }
   })
 
-  ipcMain.handle('db:narrative-thread-assignment-set', async (_event, input, expectedProjectPath: string) => {
+  plotThreads.handle('db:narrative-thread-assignment-set', async (_event, input, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-    NarrativeThreadRepository.setAssignment(input)
-    return { success: true, threads: NarrativeThreadRepository.list() }
+    return { success: true, threads: NarrativeThreadRepository.setAssignment(input) }
   })
 
-  ipcMain.handle('db:narrative-thread-assignment-remove', async (
+  plotThreads.handle('db:narrative-thread-assignment-remove', async (
     _event, planId: number, chapterNumber: number, restoreEndChapter: number | null, expectedProjectPath: string,
   ) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-    NarrativeThreadRepository.removeAssignment(planId, chapterNumber, restoreEndChapter)
-    return { success: true, threads: NarrativeThreadRepository.list() }
+    return { success: true, threads: NarrativeThreadRepository.removeAssignment(planId, chapterNumber, restoreEndChapter) }
   })
 
-  ipcMain.handle('db:plot-tree-read', async (_event, expectedProjectPath: string) => {
+  plotThreads.handle('db:plot-tree-read', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return PlotTreeRepository.read()
   })
 
-  ipcMain.handle('db:plot-tree-clear', async (_event, expectedProjectPath: string) => {
+  plotThreads.handle('db:plot-tree-clear', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     PlotTreeRepository.clear()
     return { success: true }

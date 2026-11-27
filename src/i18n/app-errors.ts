@@ -310,6 +310,7 @@ const ERROR_KEYS = {
   PROJECT_CORE_SYNOPSIS_CHANGED: 'error.generationSourceChanged',
   PROJECT_CORE_UPDATE_FAILED: 'error.projectCoreUpdateFailed',
   NARRATIVE_THREAD_EVIDENCE_NOT_IN_SOURCE: 'error.narrativeThreadEvidenceNotInSource',
+  PLOT_THREAD_WRITE_FAILED: 'error.plotThreadWriteFailed',
   DRAFT_NOT_FOUND: 'error.draftNotFound',
   DRAFT_NOT_WRITABLE: 'error.draftFinalizedReadOnly',
   DRAFT_FINALIZED_READ_ONLY: 'error.draftFinalizedReadOnly',
