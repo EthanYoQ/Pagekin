@@ -1,3 +1,4 @@
+import type { Failure } from './failure'
 export type ImportRunLocale = 'zh-CN' | 'en-US'
 export type ImportPurpose = 'reference' | 'author-manuscript'
 export const AUTHOR_IMPORT_PREVIEW_STALE = 'AUTHOR_IMPORT_PREVIEW_STALE' as const
@@ -9,14 +10,6 @@ export class AuthorImportPreviewStaleError extends Error {
     super(message)
     this.name = 'AuthorImportPreviewStaleError'
   }
-}
-
-export function isAuthorImportPreviewStaleError(error: unknown): boolean {
-  return error instanceof AuthorImportPreviewStaleError
-    || (!!error
-      && typeof error === 'object'
-      && 'code' in error
-      && (error as { code?: unknown }).code === AUTHOR_IMPORT_PREVIEW_STALE)
 }
 
 export type ImportRunStage =
@@ -347,6 +340,5 @@ export type ImportRunPrepareFromInspectionResult = {
   preparation: ImportRunPreparationResult
 } | {
   success: false
-  errorCode?: typeof AUTHOR_IMPORT_PREVIEW_STALE
-  error?: string
+  failure?: Failure
 }

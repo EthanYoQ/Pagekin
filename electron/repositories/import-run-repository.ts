@@ -1376,9 +1376,7 @@ function authorManuscriptConflictGuidance(preview: AuthorManuscriptImportPreview
 
 function fenceUncommittedAuthorRun(run: ImportRunRow, now = Date.now()): void {
   if (run.status === 'running' && run.execution_owner && run.lease_expires_at > now) {
-    throw new Error(run.locale === 'en-US'
-      ? 'The previous author import is still running. Wait for it to stop, then confirm the latest preview again.'
-      : '之前的作者原稿导入仍在运行，请等待其停止后重新确认最新预览')
+    throw new Error('IMPORT_RUN_AUTHOR_PREVIOUS_RUNNING')
   }
   const guidance = run.locale === 'en-US'
     ? 'Author manuscript authority changed. Confirm the latest preview to create a new import run.'
@@ -1398,9 +1396,7 @@ function fenceUncommittedAuthorRun(run: ImportRunRow, now = Date.now()): void {
       )
   `).run(guidance, run.id, now)
   if (fenced.changes !== 1) {
-    throw new Error(run.locale === 'en-US'
-      ? 'The author import state changed. Confirm the latest preview again.'
-      : '作者原稿导入状态已变化，请重新确认最新预览')
+    throw new Error('IMPORT_RUN_AUTHOR_STATE_CHANGED')
   }
 }
 
@@ -1921,9 +1917,7 @@ export class ImportRunRepository {
         }
       }
       if (overlappingResumableSourceRun(runId, run.purpose)) {
-        throw new Error(run.locale === 'en-US'
-          ? 'Another resumable import already contains the same source. Complete or cancel that import, then try again.'
-          : '另一个可恢复导入已包含相同来源，请先完成或取消该导入后重试')
+        throw new Error('IMPORT_RUN_SOURCE_OVERLAP')
       }
       const sourceIds = sources.map(source => source.source_id)
       const completed = latestCompletedRun(run.purpose, run.source_fingerprint)
@@ -2539,9 +2533,7 @@ export class ImportRunRepository {
     return db().transaction(() => {
       const row = readRunRow(runId)
       if (!row || row.resumable !== 1 || !['ready', 'running', 'failed', 'cancelled'].includes(row.status)) {
-        throw new Error(row?.resumable === 0 && row.last_error
-          ? row.last_error
-          : 'IMPORT_RUN_NOT_STARTABLE')
+        throw new Error('IMPORT_RUN_NOT_STARTABLE')
       }
       if (row.stage === 'parsing') {
         throw new Error('IMPORT_RUN_PARSING_INCOMPLETE')

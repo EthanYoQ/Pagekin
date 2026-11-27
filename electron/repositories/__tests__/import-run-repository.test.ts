@@ -450,7 +450,7 @@ describe('ImportRunRepository', () => {
         manifestWordCount: 0,
       })
       expect(() => ImportRunRepository.startOrResume('legacy-run', 'renderer-a'))
-        .toThrow(/cannot be resumed|不可恢复/i)
+        .toThrow('IMPORT_RUN_NOT_STARTABLE')
     })
   })
 
@@ -765,7 +765,7 @@ describe('ImportRunRepository', () => {
         run: { id: freshRunId, totalChapters: 1 },
       })
       expect(() => ImportRunRepository.startOrResume(oldRunId, 'stale-old-runner'))
-        .toThrow(/authority changed|权威状态已变化|重新确认/i)
+        .toThrow('IMPORT_RUN_NOT_STARTABLE')
 
       const freshExecution = ImportRunRepository.startOrResume(freshRunId, 'fresh-author-runner').execution
       ImportRunRepository.prepareEffectReceipt({
@@ -1211,9 +1211,7 @@ describe('ImportRunRepository', () => {
     ])
 
     expect(finalizeA()).toMatchObject({ classification: 'new', newChapterNumbers: [1] })
-    expect(() => finalizeAPlusB()).toThrow(
-      'Another resumable import already contains the same source. Complete or cancel that import, then try again.',
-    )
+    expect(() => finalizeAPlusB()).toThrow('IMPORT_RUN_SOURCE_OVERLAP')
     expect(ImportRunRepository.get('run-a-plus-b')).toMatchObject({ stage: 'parsing', status: 'ready' })
     expect(ImportRunRepository.listChapterBatch('run-a-plus-b', { afterChapterNumber: 0, limit: 10 }))
       .toEqual([])
@@ -1251,9 +1249,7 @@ describe('ImportRunRepository', () => {
     const finalizeOverlap = prepareParsedRun('overlapping-source', [
       { id: SOURCE_A, fingerprint: 'a'.repeat(64), content: 'changed A chapter' },
     ])
-    expect(() => finalizeOverlap()).toThrow(
-      'Another resumable import already contains the same source. Complete or cancel that import, then try again.',
-    )
+    expect(() => finalizeOverlap()).toThrow('IMPORT_RUN_SOURCE_OVERLAP')
     expect(ImportRunRepository.get('overlapping-source')).toMatchObject({ stage: 'parsing', status: 'ready' })
   })
 

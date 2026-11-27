@@ -23,7 +23,6 @@ let invoke: ReturnType<typeof vi.fn>
 let startWorkflow: ReturnType<typeof vi.fn>
 let preparation: ImportRunPreparationResult
 let authorPreview: AuthorManuscriptImportPreview
-let prepareError = ''
 let prepareErrorCode = ''
 let durableAuthorChapters: Record<string, number[]>
 
@@ -103,7 +102,6 @@ beforeEach(async () => {
     classification: 'new', run: importRun(), newChapterNumbers: [1],
     conflictChapterNumbers: [], duplicateChapterNumbers: [],
   }
-  prepareError = ''
   prepareErrorCode = ''
   durableAuthorChapters = { 'persisted-import': [1] }
   authorPreview = {
@@ -128,8 +126,8 @@ beforeEach(async () => {
       }
       return { success: true, preparation }
     }
-    if (channel === 'db:import-run-prepare-inspection') return prepareError || prepareErrorCode
-      ? { success: false, error: prepareError || undefined, errorCode: prepareErrorCode || undefined }
+    if (channel === 'db:import-run-prepare-inspection') return prepareErrorCode
+      ? { success: false, failure: { code: prepareErrorCode } }
       : { success: true, preparation }
     if (channel === 'db:import-run-author-preview') return authorPreview
     if (channel === 'db:import-run-list-chapters') return durableAuthorChapterPage(args)
@@ -976,10 +974,7 @@ describe('current-project reference import', () => {
         finalizeAttempts += 1
         expect(args[0]).toBe(parsing.id)
         if (finalizeAttempts === 1) {
-          return {
-            success: false,
-            error: '另一个可恢复导入已包含相同来源，请先完成或取消该导入后重试',
-          }
+          return { success: false, failure: { code: 'IMPORT_RUN_SOURCE_OVERLAP' } }
         }
         return {
           success: true,
@@ -1034,7 +1029,7 @@ describe('current-project reference import', () => {
     })
     invoke.mockImplementation(async (channel: string) => {
       if (channel === 'db:import-run-list-resumable') return [parsing]
-      if (channel === 'db:import-run-finalize-parsing') return { success: false, error: guidance }
+      if (channel === 'db:import-run-finalize-parsing') return { success: false, failure: { code: 'IMPORT_RUN_SOURCE_OVERLAP' } }
       if (channel === 'db:project-core-get') return null
       if (channel === 'db:blueprint-get-all') return []
       return { success: true }
