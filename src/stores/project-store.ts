@@ -515,7 +515,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
           detachRenderer: () => set({ currentProject: null }),
           message: joinProjectNotices(
             '\n',
-            () => projectError(result.errorCode ? result : result.error),
+            () => failureText(currentInterfaceLocale(), resultFailure(result)),
             ...closedBookNotices(rendererProject?.name),
           ),
           title: projectNotice(...CREATE_FAILED_TITLE),
@@ -526,7 +526,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       if (!result.success) {
         console.error('[Project] 创建失败:', result.error)
         alertError(
-          projectError(result.errorCode ? result : result.error),
+          failureText(currentInterfaceLocale(), resultFailure(result)),
           { title: projectText(...CREATE_FAILED_TITLE) },
         )
         return false
@@ -572,7 +572,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     const requestToken = `${Date.now()}-${requestSequence}-${Math.random().toString(36).slice(2)}`
     const isLatestRequest = () => requestSequence === openProjectRequestSequence
     const openFailureMessage = (result: { errorCode?: string, error?: string }) => {
-      const failure = result.errorCode ? result : result.error
+      const failure = resultFailure(result)
       if (!failure) return projectError(failure)
       const title = get().recentProjects.find(project => sameProjectPathKey(project.path, projectPath))?.name
       return projectOpenFailureMessage(currentInterfaceLocale(), failure, title)
@@ -644,7 +644,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
           detachRenderer: () => set({ currentProject: null }),
           message: joinProjectNotices(
             '\n',
-            result.error
+            resultFailure(result)
               ? () => openFailureMessage(result)
               : projectErrorNotice(
                 undefined,
@@ -1104,13 +1104,13 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
             console.error('[project-store.deleteProject] 数据库恢复失败后的界面清理失败:', cleanupError)
           }
           alertError(
-            projectDeleteFailureMessage(currentInterfaceLocale(), result.error, activeProject.name),
+            projectDeleteFailureMessage(currentInterfaceLocale(), resultFailure(result), activeProject.name),
             { title: projectText(...DELETE_FAILED_TITLE) },
           )
           return false
         }
         alertError(
-          projectDeleteFailureMessage(currentInterfaceLocale(), result.error),
+          projectDeleteFailureMessage(currentInterfaceLocale(), resultFailure(result)),
           { title: projectText(...DELETE_FAILED_TITLE) },
         )
         return false

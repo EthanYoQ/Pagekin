@@ -1,0 +1,31 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`作品、归档、更新与云备份失败的说明与 master 逐字相同 > en-US 1`] = `
+{
+  "exportDamagedCycle": "Your book is unchanged. A review record in Chapter 2 "沉船" is damaged, so no archive was made. Please report this message to us.",
+  "exportSqlite": "Your book is unchanged. Something unexpected went wrong during export, so no archive was created. Click Export local archive again; if it still fails, please report this message to us.",
+  "exportStale": "The project was switched or reopened, and this action belonged to the earlier session, so it was rejected. Repeat it in the project that is open now.",
+  "exportUnverified": "Your book is unchanged. One piece of data could not be packaged safely, so no archive was created. Please report this message to us.",
+  "exportUnwritable": "Your book is unchanged. The chosen location cannot be written to; you may lack permission or the disk may be full. Click Export local archive again and choose another location.",
+  "restoreGrantInvalid": "No copy was created. The archive or folder you chose is no longer valid. Click Restore a copy from local archive and choose again.",
+  "restoreNewer": "No copy was created. This archive was made by a newer version of Pagekin. Update Pagekin, then click Restore a copy from local archive again.",
+  "restoreRaw": "Something unexpected went wrong during restore. An unfinished copy folder may be left in the chosen folder; you can delete it. Click Restore a copy from local archive again. If it still fails, please report this message to us.",
+  "restoreTargetExists": "Something unexpected went wrong. Try again.",
+  "restoreUnwritable": "The chosen folder cannot be written to; you may lack permission or the disk may be full. An unfinished copy folder may be left in it; you can delete it. Choose another folder, then click Restore a copy from local archive again.",
+}
+`;
+
+exports[`作品、归档、更新与云备份失败的说明与 master 逐字相同 > zh-CN 1`] = `
+{
+  "exportDamagedCycle": "作品没有改动。第 2 章「沉船」有条审稿记录损坏，存档没生成。请把这条提示反馈给我们。",
+  "exportSqlite": "作品没有改动。导出时出了意外错误，存档没有生成。请再点「导出本地存档」；还不行，请把这条提示反馈给我们。",
+  "exportStale": "项目已切换或重新打开，这次操作属于之前打开的项目，已拒绝执行。请在当前打开的项目里重新操作。",
+  "exportUnverified": "作品没有改动。有一项数据无法安全打包，存档没有生成。请把这条提示反馈给我们。",
+  "exportUnwritable": "作品没有改动。所选位置写不进去，可能没有权限或磁盘满了。请再点「导出本地存档」，换一个位置。",
+  "restoreGrantInvalid": "没有新建副本。选好的存档或文件夹已失效。请再点「从本地存档恢复副本」重新选。",
+  "restoreNewer": "没有新建副本。这个存档来自更新版本的书童。请先升级书童，再点「从本地存档恢复副本」。",
+  "restoreRaw": "恢复时出了意外错误，所选文件夹里可能留下没恢复完的副本文件夹，可以删掉。请再点「从本地存档恢复副本」；还不行，请把这条提示反馈给我们。",
+  "restoreTargetExists": "出了意外问题，暂时说不清原因。请再试一次。",
+  "restoreUnwritable": "所选文件夹写不进去，可能没有权限或磁盘满了，里面可能留下没恢复完的副本文件夹，可以删掉。请换一个文件夹，再点「从本地存档恢复副本」。",
+}
+`;

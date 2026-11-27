@@ -1,4 +1,4 @@
-import { app, ipcMain, dialog } from 'electron'
+import { app, dialog } from 'electron'
 import { showOpenDialogInLastDirectory } from '../utils/remembered-dialog'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -39,7 +39,8 @@ import type { LedgerAdmission } from '../repositories/generation-ledger-admissio
 import { projectPeekService } from '../services/project-peek'
 import { probeProjectSqlite } from '../services/sqlite-project-migration'
 import { mainText } from '../i18n'
-import { isRegisteredErrorCode } from '../../src/i18n/app-errors'
+import { registeredErrorCode } from '../../src/i18n/app-errors'
+import { handle } from '../ipc/handle'
 import { adoptTransferredCharacterContinuityOnOpen } from '../services/transferred-character-continuity'
 import { FinalizationRepository } from '../repositories/finalization-repository'
 import type { FinalizationRepairOnOpen } from '../../src/shared/finalization-repair'
@@ -64,10 +65,19 @@ function text(zhCNText: string, enUSText: string): string {
 
 /** 新建失败交给界面的码：登记过的码原样交出，其余系统报错按作者能做的事归成两类，原文只进日志。 */
 function projectCreateFailure(error: unknown): string {
-  if (isRegisteredErrorCode(error)) return String(error)
+  const registered = registeredErrorCode(error)
+  if (registered) return registered
   console.error('[Project] 新建失败:', error)
   const code = systemCode(error)
   return code === 'EPERM' || code === 'EACCES' ? 'PROJECT_CREATE_ACCESS_DENIED' : 'PROJECT_CREATE_FAILED'
+}
+
+const codeFailure = (code: string) => ({ error: code, failure: { code } })
+
+function projectFailure(error: unknown, label: string) {
+  const code = registeredErrorCode(error)
+  if (!code) console.error(`[Project] ${label}:`, error)
+  return codeFailure(code ?? 'PROJECT_OPERATION_FAILED')
 }
 
 /**
@@ -406,7 +416,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
     event.sender.once('destroyed', () => externalFileGrants.revokeWebContents(event.sender.id))
     return { grantId: grant.grantId, displayName: path.basename(directoryPath) }
   }
-  ipcMain.handle('dialog:select-legacy-project', async (event) => {
+  handle('dialog:select-legacy-project', async (event) => {
     const result = await showOpenDialogInLastDirectory('legacy-project', {
       title: text('选择旧版小说项目文件夹', 'Choose the legacy novel project folder'),
       properties: ['openDirectory'],
@@ -415,7 +425,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
       : issueDirectoryGrant(event, result.filePaths[0], 'legacy-import')
   })
 
-  ipcMain.handle('project:import-legacy-copy', async (
+  handle('project:import-legacy-copy', async (
     event: { sender: { id: number } },
     sourceGrantId: string,
     targetGrantId: string,
@@ -470,7 +480,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
     return result
   })
 
-  ipcMain.handle('project:get-runtime-context', async () => {
+  handle('project:get-runtime-context', async () => {
     const activeProjectPath = getCurrentProjectPath()
     const database = getProjectDb()
     return {
@@ -479,39 +489,34 @@ export function registerProjectController(options: ProjectControllerOptions = {}
     }
   })
 
-  ipcMain.handle('project:smoke-open-request', async () => {
+  handle('project:smoke-open-request', async () => {
     const projectPath = process.env.AI_NOVEL_SMOKE_OPEN_PROJECT?.trim()
     const markerPath = process.env.AI_NOVEL_SMOKE_PROJECT_MARKER?.trim()
     return projectPath && markerPath ? { projectPath, markerPath } : null
   })
 
-  ipcMain.handle('project:smoke-open-confirm', async (_event, projectPath: string) => {
-    try {
-      const requestedProjectPath = process.env.AI_NOVEL_SMOKE_OPEN_PROJECT?.trim()
-      const markerPath = process.env.AI_NOVEL_SMOKE_PROJECT_MARKER?.trim()
-      const currentProjectPath = getCurrentProjectPath()
-      if (
-        !requestedProjectPath
-        || !markerPath
-        || !currentProjectPath
-        || path.resolve(projectPath) !== path.resolve(requestedProjectPath)
-        || path.resolve(currentProjectPath) !== path.resolve(requestedProjectPath)
-      ) {
-        // i18n-exempt: 只供打包烟测脚本确认项目已打开，不进界面
-        return { success: false, error: '烟测项目未在应用中成功打开' }
-      }
-      fs.writeFileSync(markerPath, JSON.stringify({
-        projectPath: path.resolve(currentProjectPath),
-        openedAt: new Date().toISOString(),
-      }), 'utf8')
-      return { success: true }
-    } catch (error) {
-      return { success: false, error: String(error) }
+  handle('project:smoke-open-confirm', async (_event, projectPath: string) => {
+    const requestedProjectPath = process.env.AI_NOVEL_SMOKE_OPEN_PROJECT?.trim()
+    const markerPath = process.env.AI_NOVEL_SMOKE_PROJECT_MARKER?.trim()
+    const currentProjectPath = getCurrentProjectPath()
+    if (
+      !requestedProjectPath
+      || !markerPath
+      || !currentProjectPath
+      || path.resolve(projectPath) !== path.resolve(requestedProjectPath)
+      || path.resolve(currentProjectPath) !== path.resolve(requestedProjectPath)
+    ) {
+      return { success: false }
     }
+    fs.writeFileSync(markerPath, JSON.stringify({
+      projectPath: path.resolve(currentProjectPath),
+      openedAt: new Date().toISOString(),
+    }), 'utf8')
+    return { success: true }
   })
 
   // 创建新项目
-  ipcMain.handle('project:create', async (
+  handle('project:create', async (
     event,
     config: CreateProjectConfig,
     requestToken: string,
@@ -567,7 +572,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
               requestToken,
               stale: true,
               ...databaseState,
-              error: String(restoreError),
+              ...projectFailure(restoreError, '作废的请求没能回到原来的作品'),
             }
           }
           return {
@@ -609,20 +614,23 @@ export function registerProjectController(options: ProjectControllerOptions = {}
           console.error('[Project] 新建失败后没能回到原来的作品:', restoreError)
           databaseState = failedDatabaseState()
         }
+        const preflight = projectStoragePreflightFailure(error)
+        const createFailure = projectCreateFailure(error)
         return {
           success: false,
           projectId: '',
           requestToken,
           ...databaseState,
-          ...(projectStoragePreflightFailure(error) ?? {}),
-          error: projectCreateFailure(error),
+          ...(preflight ?? {}),
+          error: createFailure,
+          failure: preflight?.failure ?? { code: createFailure },
         }
       }
     })
   })
 
   // 打开现有项目
-  ipcMain.handle('project:open', async (
+  handle('project:open', async (
     event,
     target: ProjectOpenTarget,
     requestToken: string,
@@ -770,7 +778,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
               requestToken,
               stale: true,
               ...databaseState,
-              error: String(restoreError),
+              ...projectFailure(restoreError, '作废的请求没能回到原来的作品'),
             }
           }
           return {
@@ -827,7 +835,8 @@ export function registerProjectController(options: ProjectControllerOptions = {}
           ...databaseState,
           ...(selectionFailure ?? {}),
           ...(legacyImportSource ? { legacyImportSource } : {}),
-          error: selectionFailure?.error ?? String(error),
+          ...(selectionFailure ? codeFailure(selectionFailure.errorCode) : projectFailure(error, '打开失败的原因没登记')),
+          ...(selectionFailure && 'failure' in selectionFailure ? { failure: selectionFailure.failure } : {}),
         }
       }
     })
@@ -835,7 +844,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
 
   // 保存/更新项目配置
   // 注意：这个接口前端可能还传入许多小说配置字段，需要映射到数据库。
-  ipcMain.handle('project:save', async (
+  handle('project:save', async (
     _event,
     _projectId: string,
     data: Partial<ProjectData>,
@@ -843,7 +852,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
     context?: ProjectSessionContext,
   ) => {
     try {
-      if (!data.path) return { success: false, error: 'PROJECT_CONTEXT_REQUIRED' }
+      if (!data.path) return { success: false, ...codeFailure('PROJECT_CONTEXT_REQUIRED') }
       assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
       assertExpectedProjectPath(data.path, expectedProjectPath)
       assertRequiredProjectSession(_projectId, data, getCurrentProjectPath(), context)
@@ -907,12 +916,12 @@ export function registerProjectController(options: ProjectControllerOptions = {}
         }
       }
     } catch (error) {
-      return { success: false, error: String(error) }
+      return { success: false, ...projectFailure(error, '保存作品失败') }
     }
   })
 
   // 项目配置更新遵循相同规则。
-  ipcMain.handle('project:update-config', async (
+  handle('project:update-config', async (
     _event,
     _projectId: string,
     data: Partial<ProjectData>,
@@ -944,11 +953,11 @@ export function registerProjectController(options: ProjectControllerOptions = {}
       }
       return { success: true }
     } catch (error) {
-      return { success: false, error: String(error) }
+      return { success: false, ...projectFailure(error, '更新小说配置失败') }
     }
   })
 
-  ipcMain.handle('project:recent-list', async () => {
+  handle('project:recent-list', async () => {
     revokeRecentPreviewCapabilities()
     return loadRecentProjects().map(project => {
       const capability = projectPeekService.issueCapability(project.path)
@@ -962,12 +971,12 @@ export function registerProjectController(options: ProjectControllerOptions = {}
     })
   })
 
-  ipcMain.handle('project:peek-overview', async (_event, capabilityId: string) => {
+  handle('project:peek-overview', async (_event, capabilityId: string) => {
     if (!recentPreviewCapabilities.has(capabilityId)) return { state: 'unavailable' as const }
     return projectPeekService.peek(capabilityId)
   })
 
-  ipcMain.handle('project:overview-current', async (_event, context?: ProjectSessionContext) => {
+  handle('project:overview-current', async (_event, context?: ProjectSessionContext) => {
     try {
       const active = projectAccess.assertCurrentProjectContext(context, getCurrentProjectPath())
       const database = getProjectDb()
@@ -978,17 +987,17 @@ export function registerProjectController(options: ProjectControllerOptions = {}
     }
   })
 
-  ipcMain.handle('project:recent-remove', async (_event, projectPath: string) => {
+  handle('project:recent-remove', async (_event, projectPath: string) => {
     try {
       removeRecentProject(projectPath)
       revokeRecentPreviewCapabilities(projectPath)
       return { success: true }
     } catch (error) {
-      return { success: false, error: String(error) }
+      return { success: false, ...projectFailure(error, '移出最近项目失败') }
     }
   })
 
-  ipcMain.handle(
+  handle(
     'project:delete',
     async (
       _event,
@@ -1039,7 +1048,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
         success: false,
         directoryDeleted: false,
         databaseRestored: true,
-        error: String(error),
+        ...projectFailure(error, '删除前的核对没通过'),
       }
     }
 
@@ -1065,17 +1074,14 @@ export function registerProjectController(options: ProjectControllerOptions = {}
           databaseRestored = false
         }
       }
-      return { success: false, directoryDeleted: false, databaseRestored, error: DELETE_FAILURE_CODES[systemCode(deletionError) ?? ''] ?? 'PROJECT_DELETE_FAILED' }
+      return { success: false, directoryDeleted: false, databaseRestored, ...codeFailure(DELETE_FAILURE_CODES[systemCode(deletionError) ?? ''] ?? 'PROJECT_DELETE_FAILED') }
     }
 
-    let bindingCleanupWarning: string | undefined
+    let bindingCleared = true
     try {
       options.removeDeletedProjectBinding?.(deletedProjectId)
     } catch {
-      bindingCleanupWarning = text(
-        '项目目录已删除，但本机云备份绑定暂未清理',
-        'The project folder was deleted, but its local cloud backup binding was not cleaned up yet',
-      )
+      bindingCleared = false
     }
     // 删目录时没占着打开队列，期间可能已经开了另一本书。
     if (projectAccess.captureCurrentSession()?.leaseId === deletedLeaseId) projectAccess.invalidateCurrentSession()
@@ -1085,7 +1091,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
         success: true,
         directoryDeleted: true,
         databaseRestored: false,
-        ...(bindingCleanupWarning ? { warning: bindingCleanupWarning } : {}),
+        ...(bindingCleared ? {} : { warning: 'PROJECT_DELETE_BINDING_NOT_CLEARED' }),
       }
     } catch (recentProjectError) {
       console.error('[Project] 作品已删除，但最近项目列表更新失败:', recentProjectError)
@@ -1093,19 +1099,13 @@ export function registerProjectController(options: ProjectControllerOptions = {}
         success: true,
         directoryDeleted: true,
         databaseRestored: false,
-        warning: [
-          bindingCleanupWarning,
-          text(
-            '项目目录已删除，但最近项目列表更新失败',
-            'The project folder was deleted, but the recent project list could not be updated',
-          ),
-        ].filter(Boolean).join(text('；', '; ')),
+        warning: bindingCleared ? 'PROJECT_DELETE_RECENT_LIST_FAILED' : 'PROJECT_DELETE_BINDING_AND_RECENT_LIST_FAILED',
       }
     }
     },
   )
 
-  ipcMain.handle('dialog:select-folder', async (event, purpose: 'project-create' | 'project-open') => {
+  handle('dialog:select-folder', async (event, purpose: 'project-create' | 'project-open') => {
     if (purpose !== 'project-create' && purpose !== 'project-open') throw new Error('PROJECT_DIRECTORY_GRANT_PURPOSE_INVALID')
     const result = await showOpenDialogInLastDirectory(purpose, {
       properties: ['openDirectory', 'createDirectory'],

@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { appErrorMessage, projectOpenFailureMessage } from '../../../src/i18n/app-errors'
+import { appErrorMessage, displayedErrorMessage, failureText, projectDeleteFailureMessage, projectOpenFailureMessage, receivedIpcResult, resultFailure } from '../../../src/i18n/app-errors'
 
 type IpcHandler = (...args: unknown[]) => Promise<unknown>
 
@@ -411,7 +411,7 @@ describe('project controller project identity', () => {
     await expect(handler('dialog:select-folder')({ sender }, 'project-open')).resolves.toBeNull()
     await expect(handler('dialog:select-legacy-project')({ sender })).resolves.toBeNull()
     expect(mocks.issueDirectory).not.toHaveBeenCalled()
-    await expect(handler('dialog:select-folder')({ sender }, 'write')).rejects.toThrow('PROJECT_DIRECTORY_GRANT_PURPOSE_INVALID')
+    await expect(handler('dialog:select-folder')({ sender }, 'write')).rejects.toThrow('IPC_HANDLER_FAILED')
   })
 
   it('rejects an unselected, unregistered raw project path before probing it', async () => {
@@ -789,12 +789,30 @@ describe('project controller project identity', () => {
     )).resolves.toMatchObject({
       success: false,
       errorCode: 'PROJECT_STORAGE_PATH_UNSUPPORTED',
+      error: 'PROJECT_STORAGE_PATH_UNSUPPORTED',
       databaseRestored: true,
       dbReady: true,
     })
 
     expect(mocks.initCalls).toEqual([projectA])
     expect(mocks.initCalls).not.toContain(projectC)
+  })
+
+  it('新建时报错只在 code 上带登记码、message 是说明文字：回这个码，说明文字不过 IPC', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    mocks.projectAccess.createProject.mockImplementationOnce(() => {
+      throw Object.assign(new Error('所选文件夹不是作品根目录'), { code: 'PROJECT_ROOT_REQUIRED' })
+    })
+
+    const result = await handler('project:create')(
+      { sender: { id: 17 } },
+      { name: 'C', parentGrantId: `selected:${path.resolve('C:/projects')}`, genre: 'fantasy', targetAudience: 'all' },
+      'request-create-C-code-only-on-property',
+      projectA,
+    )
+
+    expect(result).toMatchObject({ success: false, error: 'PROJECT_ROOT_REQUIRED', failure: { code: 'PROJECT_ROOT_REQUIRED' } })
+    expect(JSON.stringify(result)).not.toContain('所选文件夹不是作品根目录')
   })
 
   it('returns an actionable typed error when the selected folder is not a project root', async () => {
@@ -1072,7 +1090,7 @@ describe('project controller project identity', () => {
       activeProjectPath: null,
       databaseRestored: false,
       dbReady: false,
-      error: expect.stringContaining('cannot read'),
+      error: 'PROJECT_OPERATION_FAILED', failure: { code: 'PROJECT_OPERATION_FAILED' },
     })
     expect((result as { error: string }).error).not.toMatch(/PROJECT_ROLLBACK/)
 
@@ -1126,7 +1144,7 @@ describe('project controller project identity', () => {
       activeProjectPath: null,
       databaseRestored: false,
       dbReady: false,
-      error: expect.stringMatching(/cannot read/),
+      error: 'PROJECT_OPERATION_FAILED', failure: { code: 'PROJECT_OPERATION_FAILED' },
     })
     expect((result as { error: string }).error).not.toMatch(/cannot initialize/)
     expect(mocks.projectAccess.beginSession).not.toHaveBeenCalled()
@@ -1206,7 +1224,7 @@ describe('project controller project identity', () => {
 
     expect(result).toMatchObject({
       success: false,
-      error: 'Error: PROJECT_SESSION_REQUIRED',
+      error: 'PROJECT_SESSION_REQUIRED', failure: { code: 'PROJECT_SESSION_REQUIRED' },
     })
     expect(mocks.projectCoreUpdate).not.toHaveBeenCalled()
   })
@@ -1304,7 +1322,7 @@ describe('project controller project identity', () => {
     await expect(handler('project:save')({}, 'project-A', data, projectA, projectSession('project-A', projectA, 'stale-lease')))
       .resolves.toMatchObject({
         success: false,
-        error: 'Error: PROJECT_SESSION_STALE',
+        error: 'PROJECT_SESSION_STALE', failure: { code: 'PROJECT_SESSION_STALE' },
       })
     expect(mocks.projectCoreUpdate).not.toHaveBeenCalled()
   })
@@ -1354,7 +1372,7 @@ describe('project controller project identity', () => {
     await expect(handler('project:delete')({}, projectA, 'project-A', 'lease-project-A', projectSession())).resolves.toMatchObject({
       success: false,
       directoryDeleted: false,
-      error: expect.stringContaining('PROJECT_IDENTITY_CHANGED'),
+      error: 'PROJECT_OPERATION_FAILED', failure: { code: 'PROJECT_OPERATION_FAILED' },
     })
     expect(mocks.removeDirectoryWithWindowsRetry).not.toHaveBeenCalled()
     expect(mocks.closeProjectDatabase).not.toHaveBeenCalled()
@@ -1403,7 +1421,7 @@ describe('project controller project identity', () => {
       success: true,
       directoryDeleted: true,
       databaseRestored: false,
-      warning: expect.stringContaining('最近项目列表更新失败'),
+      warning: 'PROJECT_DELETE_RECENT_LIST_FAILED',
     })
     expect(mocks.currentProjectPath).toBe('')
     expect(mocks.projectAccess.invalidateCurrentSession).toHaveBeenCalledOnce()
@@ -1428,7 +1446,7 @@ describe('project controller project identity', () => {
     await expect(handler('project:delete')({}, projectA)).resolves.toMatchObject({
       success: false,
       directoryDeleted: false,
-      error: 'Error: PROJECT_SESSION_REQUIRED',
+      error: 'PROJECT_SESSION_REQUIRED', failure: { code: 'PROJECT_SESSION_REQUIRED' },
     })
     expect(mocks.removeDirectoryWithWindowsRetry).not.toHaveBeenCalled()
   })
@@ -1447,7 +1465,7 @@ describe('project controller project identity', () => {
     )).resolves.toMatchObject({
       success: false,
       directoryDeleted: false,
-      error: 'Error: PROJECT_SESSION_STALE',
+      error: 'PROJECT_SESSION_STALE', failure: { code: 'PROJECT_SESSION_STALE' },
     })
     expect(mocks.removeDirectoryWithWindowsRetry).not.toHaveBeenCalled()
   })
@@ -1893,7 +1911,84 @@ describe('新建、删除作品失败时，说真正的原因和办法，不露�
     const result = await deleteBook()
 
     expect(result).toMatchObject({ success: true, directoryDeleted: true })
-    expect(result.warning).toMatch(/最近项目/u)
-    expect(result.warning).not.toMatch(RAW_CREATE_DELETE_TEXT)
+    expect(displayedErrorMessage(shown('zh-CN'), result.warning!)).toMatch(/最近项目/u)
+    expect(displayedErrorMessage(shown('zh-CN'), result.warning!)).not.toMatch(RAW_CREATE_DELETE_TEXT)
+  })
+})
+
+type ProjectResult = { success: boolean, error?: string, errorCode?: string, warning?: string, failure?: Parameters<typeof failureText>[1] }
+
+const received = async (raw: unknown) => receivedIpcResult(await raw) as ProjectResult
+const projectFailure = (result: ProjectResult) => resultFailure(result) ?? (result.errorCode ? result : result.error)
+const LOCALES = ['zh-CN', 'en-US'] as const
+
+describe('作品与备份控制器失败时作者看不到主进程原文', () => {
+  it('保存作品设置时 SQLite 报错：作者看到的说明里没有原文', async () => {
+    mocks.projectCoreUpdate.mockImplementationOnce(() => { throw systemError('SqliteError', 'SQLITE_CORRUPT', 'database disk image is malformed') })
+    const result = await received(handler('project:save')({}, 'project-A', { path: projectA, characterStates: 'x' }, projectA, projectSession()))
+
+    expect(result.success).toBe(false)
+    const failure = resultFailure(result)
+    for (const locale of LOCALES) {
+      const text = failure ? failureText(shown(locale), failure) : appErrorMessage(shown(locale), result.error)
+      expect(text).not.toMatch(/SqliteError|malformed|SQLITE_/u)
+    }
+  })
+
+  it('日文界面：删除作品后两条提醒说日文', async () => {
+    registerProjectController({ removeDeletedProjectBinding: () => { throw new Error('binding store locked') } })
+    mocks.systemLocale = 'ja-JP'
+    mocks.removeDirectoryWithWindowsRetry.mockImplementationOnce((target: string) => { mocks.existingPaths.delete(path.resolve(target)) })
+    mocks.writeJsonFile.mockImplementationOnce(() => { throw new Error('recent list locked') })
+    try {
+      const result = await received(handler('project:delete')({}, projectA, 'project-A', 'lease-project-A', projectSession()))
+      expect(result).toMatchObject({ success: true, directoryDeleted: true })
+      expect(displayedErrorMessage(shown('ja-JP'), result.warning)).toMatch(/[\p{Script=Hiragana}\p{Script=Katakana}]/u)
+    } finally {
+      registerProjectController()
+    }
+  })
+})
+
+describe('作品、归档、更新与云备份失败的说明与 master 逐字相同', () => {
+  const createBook = (token: string) => handler('project:create')(
+    { sender: { id: 17 } },
+    { name: 'C', parentGrantId: `selected:${path.resolve('C:/projects')}`, genre: 'fantasy', targetAudience: 'all' },
+    token,
+    projectA,
+  )
+  const deleteBook = () => handler('project:delete')({}, projectA, 'project-A', 'lease-project-A', projectSession())
+
+  it.each(LOCALES)('%s', async locale => {
+    const shownText: Record<string, string> = {}
+
+    mocks.verifyCanonicalProjectData.mockResolvedValueOnce({ verifiedIn: 'worker', projectPath: projectD })
+    vi.mocked(initProjectDatabase).mockImplementationOnce(() => { throw new Error('cannot open the book for an unknown reason') })
+    shownText.openUnknown = projectOpenFailureMessage(shown(locale), projectFailure(await received(
+      handler('project:open')({ sender: { id: 17 } }, selectedProject(projectD), `open-unknown-${locale}`, projectA))))
+
+    mocks.projectAccess.createProject.mockImplementationOnce(() => { throw systemError('Error', 'EPERM', 'EPERM: operation not permitted') })
+    const created = await received(createBook(`create-denied-${locale}`))
+    shownText.createDenied = created.failure ? failureText(shown(locale), created.failure) : appErrorMessage(shown(locale), projectFailure(created))
+
+    mocks.removeDirectoryWithWindowsRetry.mockImplementationOnce(() => { throw systemError('Error', 'EBUSY', 'EBUSY: resource busy or locked') })
+    shownText.deleteBusy = projectDeleteFailureMessage(shown(locale), projectFailure(await received(deleteBook())))
+
+    mocks.projectAccess.authorizeDeletion.mockImplementationOnce(() => { throw new Error('PROJECT_DELETE_TARGET_MISMATCH') })
+    shownText.deleteTargetMismatch = projectDeleteFailureMessage(shown(locale), projectFailure(await received(deleteBook())))
+
+    shownText.saveWithoutPath = appErrorMessage(shown(locale), projectFailure(await received(handler('project:save')({}, 'project-A', {}, projectA, projectSession()))))
+
+    mocks.storedLocale = locale
+    registerProjectController({ removeDeletedProjectBinding: () => { throw new Error('binding store locked') } })
+    mocks.removeDirectoryWithWindowsRetry.mockImplementationOnce((target: string) => { mocks.existingPaths.delete(path.resolve(target)) })
+    mocks.writeJsonFile.mockImplementationOnce(() => { throw new Error('recent list locked') })
+    try {
+      shownText.deleteWarnings = displayedErrorMessage(shown(locale), (await received(deleteBook())).warning)
+    } finally {
+      registerProjectController()
+    }
+
+    expect(shownText).toMatchSnapshot()
   })
 })

@@ -1,0 +1,23 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`作品、归档、更新与云备份失败的说明与 master 逐字相同 > en-US 1`] = `
+{
+  "createDenied": "There is no permission to create a book in the chosen location. Choose another location.",
+  "deleteBusy": "The book folder was not fully deleted because another program is using a file in it. Close that program first. The book is still open, so you can delete it again afterward.",
+  "deleteTargetMismatch": "Something unexpected went wrong. Try again.",
+  "deleteWarnings": "The project folder was deleted, but its local cloud backup binding was not cleaned up yet; The project folder was deleted, but the recent project list could not be updated",
+  "openUnknown": "Something unexpected went wrong. Try again.",
+  "saveWithoutPath": "This action did not carry the session of the open project, so it was rejected. Reopen the project and try again.",
+}
+`;
+
+exports[`作品、归档、更新与云备份失败的说明与 master 逐字相同 > zh-CN 1`] = `
+{
+  "createDenied": "没有权限在所选位置新建作品。请换一个保存位置。",
+  "deleteBusy": "作品文件夹没删完，有文件正被别的程序占用，请先关掉那个程序。作品还开着，之后可以再删除一次。",
+  "deleteTargetMismatch": "出了意外问题，暂时说不清原因。请再试一次。",
+  "deleteWarnings": "项目目录已删除，但本机云备份绑定暂未清理；项目目录已删除，但最近项目列表更新失败",
+  "openUnknown": "出了意外问题，暂时说不清原因。请再试一次。",
+  "saveWithoutPath": "这次操作没有带上当前项目的会话，已拒绝执行。请重新打开项目后再试。",
+}
+`;

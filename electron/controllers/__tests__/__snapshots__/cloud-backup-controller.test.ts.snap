@@ -1,0 +1,21 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`作品、归档、更新与云备份失败的说明与 master 逐字相同 > en-US 1`] = `
+{
+  "backupWithoutDisclosure": "Something unexpected went wrong. Try again.",
+  "cancelInputInvalid": "Something unexpected went wrong. Try again.",
+  "connectAuth": "Your book is unchanged. WebDAV did not accept this username and password. Check them, enter them again, then click Connect and bind.",
+  "connectInputInvalid": "Something unexpected went wrong. Try again.",
+  "listCredentialUnavailable": "Your book is unchanged. The password for this WebDAV account is not saved on this computer. Enter the password again, then click Connect and bind.",
+}
+`;
+
+exports[`作品、归档、更新与云备份失败的说明与 master 逐字相同 > zh-CN 1`] = `
+{
+  "backupWithoutDisclosure": "出了意外问题，暂时说不清原因。请再试一次。",
+  "cancelInputInvalid": "出了意外问题，暂时说不清原因。请再试一次。",
+  "connectAuth": "作品没有改动。WebDAV 没接受这组用户名和密码。请核对后重新填写，再点「连接并绑定」。",
+  "connectInputInvalid": "出了意外问题，暂时说不清原因。请再试一次。",
+  "listCredentialUnavailable": "作品没有改动。本机没存这个 WebDAV 账号的密码。请重新填写密码，再点「连接并绑定」。",
+}
+`;
