@@ -359,7 +359,7 @@ async function verifyV3Graph(page, db, setStep) {
 }
 async function verifyV3AvatarBatch(page, app, db, avatarFixture, projectId, oversizedRejected, setStep) {
   setStep('U10.A08-graph-batch-read')
-  assert.deepEqual(oversizedRejected, { requestedIds: 257, errorCode: 'INVALID_CHARACTER_ID' })
+  assert.deepEqual(oversizedRejected, { requestedIds: 257, errorCode: 'CHARACTER_AVATAR_ID_INVALID' })
   assert.equal(db.prepare('SELECT count(*) FROM characters WHERE retired=0').pluck().get(), 1000)
   assert.equal(new Set(avatarFixture.map(avatar => avatar.characterId)).size, 2)
   const before = rosterFacts(db)
@@ -825,7 +825,7 @@ async function main() {
           return canvas.toDataURL('image/png').split(',')[1]
         }, color)
         const committed = await invoke(page, 'character-avatar:commit', row.character_id, base64, session)
-        assert.equal(committed.success, true, JSON.stringify(committed.error))
+        assert.equal(committed.success, true, JSON.stringify(committed.failure))
         avatarFixture.push({ characterId: row.character_id, name: row.name, color,
           assetRevision: committed.avatar.assetRevision, sha256: createHash('sha256').update(Buffer.from(committed.avatar.base64, 'base64')).digest('hex') })
       }
@@ -835,9 +835,9 @@ async function main() {
         const oversized = await invoke(page, 'character-avatar:read-batch',
           Array.from({ length: 257 }, (_, index) => `character-${index}`), session)
         assert.equal(oversized.success, false, 'oversized avatar batch was accepted')
-        assert.equal(oversized.error.code, 'INVALID_CHARACTER_ID')
+        assert.equal(oversized.failure?.code, 'CHARACTER_AVATAR_ID_INVALID')
         assert.equal(rosterFacts(beforeOversized), facts, 'oversized avatar batch wrote roster facts')
-        avatarOversized = { requestedIds: 257, errorCode: oversized.error.code }
+        avatarOversized = { requestedIds: 257, errorCode: oversized.failure.code }
       } finally { beforeOversized.close() }
     }
     if (a08Only) {
