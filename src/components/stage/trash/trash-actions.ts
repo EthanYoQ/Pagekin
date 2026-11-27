@@ -3,6 +3,7 @@ import { globalEventBus } from '../../../shared/event-bus'
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
 import { ipc } from '../../../services/ipc-client'
 import { failureText, resultFailure } from '../../../i18n/app-errors'
+import type { Failure } from '../../../shared/failure'
 import { pluralEn } from '../../../shared/plural-en'
 import { useDraftStore } from '../../../stores/draft-store'
 import { recordRestoredPublication } from '../../../stores/restored-publication-store'
@@ -65,22 +66,22 @@ function currentSession(): ProjectSessionContext | null {
   return captureProjectSession(useProjectStore.getState().currentProject)
 }
 
-const INTERRUPTED = 'interrupted'
+type Interrupted = { success: false; interrupted: true }
 
 /** IPC 调用 reject（主进程没回话）时当作一次失败，原文可能带本机路径，不给作者看。 */
-async function settled<T>(call: Promise<T>): Promise<T | { success: false; error: typeof INTERRUPTED }> {
+async function settled<T>(call: Promise<T>): Promise<T | Interrupted> {
   try {
     return await call
   } catch {
-    return { success: false, error: INTERRUPTED }
+    return { success: false, interrupted: true }
   }
 }
 
-const reasonOf = (error: string | undefined) => {
+const reasonOf = (result: Interrupted | { failure?: Failure }) => {
   const { text } = useLocaleStore.getState()
-  return error === INTERRUPTED
+  return 'interrupted' in result
     ? text('操作中断了，回收站已刷新，请看清现状后再试。', 'The action was interrupted. The trash was reloaded; check it and try again.')
-    : failureText(currentInterfaceLocale(), resultFailure({ error }))
+    : failureText(currentInterfaceLocale(), resultFailure(result))
 }
 
 /** 按列表给的恢复方式恢复回收站里的一项。返回是否恢复成功。 */
@@ -93,8 +94,8 @@ export async function restoreTrashedChapter(entry: TrashedChapter): Promise<bool
   if (!isProjectSessionCurrent(session)) return false
   refreshAfterTrashChange(session)
   if (!result.success) {
-    toast.error(text(`${trashEntryName(entry, text)}没有恢复\n\n${reasonOf(result.error)}`,
-      `${trashEntryName(entry, text)} was not restored\n\n${reasonOf(result.error)}`), 10000)
+    toast.error(text(`${trashEntryName(entry, text)}没有恢复\n\n${reasonOf(result)}`,
+      `${trashEntryName(entry, text)} was not restored\n\n${reasonOf(result)}`), 10000)
     return false
   }
   if (result.outcome === 'restored') recordRestoredPublication(session, result.draftId, result.finalizationId, result.publicationStatus)
@@ -119,7 +120,7 @@ export async function purgeTrash(
   if (!isProjectSessionCurrent(session)) return false
   refreshAfterTrashChange(session)
   if (!result.success) {
-    toast.error(text(`彻底删除没有完成\n\n${reasonOf(result.error)}`, `Permanent deletion did not finish\n\n${reasonOf(result.error)}`))
+    toast.error(text(`彻底删除没有完成\n\n${reasonOf(result)}`, `Permanent deletion did not finish\n\n${reasonOf(result)}`))
     return false
   }
   if ('emptying' in target) {
@@ -155,6 +156,6 @@ export async function retryTrashCleanup(entry: TrashedChapter): Promise<void> {
   if (result.success) {
     toast.success(text(`${trashEntryName(entry, text)}的清理完成了，现在可以恢复。`, `Cleanup for ${trashEntryName(entry, text)} is done. It can be restored now.`))
   } else {
-    toast.error(text(`重试清理没有完成\n\n${reasonOf(result.error)}`, `Cleanup retry did not finish\n\n${reasonOf(result.error)}`))
+    toast.error(text(`重试清理没有完成\n\n${reasonOf(result)}`, `Cleanup retry did not finish\n\n${reasonOf(result)}`))
   }
 }

@@ -3176,8 +3176,8 @@ describe('main draft persistence and batch lineage', () => {
     expect(() => f.owner.readBatch(batch.batchId)).toThrow('GENERATION_DRAFT_RECEIPT_INVALID')
     const before = everyRow(f.db)
 
-    expect(await s.restore(f.root, 'project', { deletionId: 'trash-1', draftId: saved.id, expectedMode: 'into-gap' }))
-      .toEqual({ success: false, error: 'CHAPTER_RESTORE_BATCH_UNFINISHED' })
+    await expect(s.restore(f.root, 'project', { deletionId: 'trash-1', draftId: saved.id, expectedMode: 'into-gap' }))
+      .rejects.toThrow(/^CHAPTER_RESTORE_BATCH_UNFINISHED$/u)
     expect(everyRow(f.db)).toEqual(before)
     expect(() => f.owner.readBatch(batch.batchId)).toThrow('GENERATION_DRAFT_RECEIPT_INVALID')
   })
@@ -3189,8 +3189,8 @@ describe('main draft persistence and batch lineage', () => {
     expect(await s.delete(f.root, { draftId: saved.id, chapterNumber: 1 })).toMatchObject({ success: true, committed: true })
     const before = everyRow(f.db)
 
-    expect(await s.restore(f.root, 'project', { deletionId: 'trash-1', draftId: saved.id, expectedMode: 'into-gap' }))
-      .toEqual({ success: false, error: 'CHAPTER_RESTORE_BATCH_UNFINISHED' })
+    await expect(s.restore(f.root, 'project', { deletionId: 'trash-1', draftId: saved.id, expectedMode: 'into-gap' }))
+      .rejects.toThrow(/^CHAPTER_RESTORE_BATCH_UNFINISHED$/u)
     expect(everyRow(f.db)).toEqual(before)
   })
   it('restores a trashed chapter once its auto-finalize batch has finished', async () => {

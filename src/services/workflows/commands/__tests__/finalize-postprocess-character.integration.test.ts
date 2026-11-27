@@ -235,7 +235,7 @@ function installRealRepositoryIpc(): void {
           case 'chapter:remove-replaced-manuscripts':
             cleanupRequests.push([channel, args[0]])
             return channel === 'chapter:remove-replaced-manuscripts' && replacedManuscriptEdited
-              ? { success: false, error: 'FINALIZATION_REPLACED_MANUSCRIPT_KEPT:["第3章.txt"]' }
+              ? { success: false, stepError: 'FINALIZATION_REPLACED_MANUSCRIPT_KEPT:["第3章.txt"]' }
               : { success: true }
           case 'kb:import-text':
             return { success: true, chunkCount: 1, docId: 'doc-1' }

@@ -406,7 +406,7 @@ async function deleteShelfChapter({ page, invoke }, sample, { path, session }) {
   assert.equal(imported.success, true, imported.error)
   const draft = (await invoke(page, 'db:draft-list', chapterNumber, path, session)).find(item => item.status === 'finalized')
   const asked = await invoke(page, 'chapter:delete-finalized', { draftId: draft.id, chapterNumber }, path, session)
-  assert.equal(asked.error, 'CHAPTER_DELETE_LEGACY_KNOWLEDGE_CHECK_REQUIRED', JSON.stringify(asked))
+  assert.equal(asked.failure?.code, 'CHAPTER_DELETE_LEGACY_KNOWLEDGE_CHECK_REQUIRED', JSON.stringify(asked))
   const deleted = await invoke(page, 'chapter:confirm-legacy-knowledge-absent', asked.operation.operationId, path, session)
   assert.equal(deleted.success, true, JSON.stringify(deleted))
 }

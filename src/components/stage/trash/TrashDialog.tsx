@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { RotateCcw } from 'lucide-react'
 import type { TrashedChapter } from '../../../shared/chapter-deletion'
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
-import { displayedErrorMessage } from '../../../i18n/app-errors'
+import { failureText, resultFailure } from '../../../i18n/app-errors'
 import { pluralEn } from '../../../shared/plural-en'
 import { sqliteTime } from '../../../shared/sqlite-time'
 import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
@@ -139,7 +139,7 @@ export default function TrashDialog({ open, onOpenChange, trash }: {
                 <li key={item.deletionId} className="stage-trash-item" data-damaged="true">
                   <div className="stage-trash-main">
                     <p className="stage-trash-name">{text('有一项读不全', 'An item could not be read')}</p>
-                    <p className="stage-trash-meta">{displayedErrorMessage(currentInterfaceLocale(), item.error)}</p>
+                    <p className="stage-trash-meta">{failureText(currentInterfaceLocale(), resultFailure(item))}</p>
                   </div>
                   <div className="stage-trash-actions">
                     <Button variant="danger" size="sm" disabled={busy} onClick={() => askPurge({ kind: 'damaged', deletionId: item.deletionId })}>

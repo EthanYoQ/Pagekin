@@ -978,7 +978,7 @@ it.each(['v100', 'v110'] as const)('%s 无 manifest 的旧历史启用新 lineag
     .toBe(oldCandidateProjectId)
   expect(targetDb.prepare('SELECT status FROM chapter_deletion_operations WHERE operation_id=?').pluck().get('old-deletion'))
     .toBe('pending')
-  const frozenRefusal = { success: false, committed: false, error: 'CHAPTER_DELETE_LEGACY_OPERATION_FROZEN' }
+  const frozenRefusal = { success: false, committed: false, failure: { code: 'CHAPTER_DELETE_LEGACY_OPERATION_FROZEN' } }
   const calls: string[] = []
   const service = new ChapterDeletionService({ cleaner: {
     async removeManuscript() { calls.push('manuscript') },

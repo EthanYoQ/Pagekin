@@ -37,7 +37,7 @@ describe('重开再定稿后的清理步骤（ADR-0024）', () => {
 
   it('主进程报出的清理结果原样记进步骤，界面再按当时的语言说明；清理完成时写进日志', async () => {
     const invoke = vi.fn(async (channel: string) => channel === 'chapter:remove-replaced-manuscripts'
-      ? { success: false, error: 'FINALIZATION_REPLACED_MANUSCRIPT_KEPT:["第1章 雾钟.txt"]' }
+      ? { success: false, stepError: 'FINALIZATION_REPLACED_MANUSCRIPT_KEPT:["第1章 雾钟.txt"]' }
       : { success: true })
     vi.stubGlobal('window', { aiNovelAPI: { invoke } })
     const [knowledge, manuscripts] = steps(true).filter(step => step.key.startsWith('remove_replaced_'))

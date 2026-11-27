@@ -412,6 +412,9 @@ const ERROR_KEYS = {
   RECOVERY_CANDIDATE_WRITE_FAILED: 'error.recoveryCandidateWriteFailed',
   CONSISTENCY_EXEMPTION_REASON_INVALID: 'error.consistencyExemptionReasonInvalid',
   POST_PROCESS_FINALIZATION_SOURCE_CHANGED: 'error.postProcessSourceChanged',
+  POST_PROCESS_WRITE_FAILED: 'error.postProcessWriteFailed',
+  REVIEW_WRITE_FAILED: 'error.reviewWriteFailed',
+  REVISION_WRITE_FAILED: 'error.revisionWriteFailed',
   // 知识库与检索索引（#474 B3）：知识库页、设置里的检索索引检查、导入创作资料与定稿收入知识库按码说明。
   EMBEDDING_REQUEST_FAILED: 'error.embeddingRequestFailed',
   EMBEDDING_OLLAMA_NATIVE_URL: 'error.embeddingOllamaNativeUrl',

@@ -127,7 +127,7 @@ describe('chapter lifecycle deletion IPC', () => {
       success: boolean
       committed: boolean
       operation?: { status: string }
-      error?: string
+      failure?: { code: string }
     }
 
     expect(result).toMatchObject({
@@ -195,7 +195,7 @@ describe('chapter lifecycle deletion IPC', () => {
       const service=new ChapterDeletionService()
       expect(service.listIncomplete(projectRoot)).toEqual([])
       const result=await service.retry(projectRoot,stored.operationId)
-      expect(result).toMatchObject({success:false,committed:false,error:'CHAPTER_DELETE_LEGACY_OPERATION_FROZEN'})
+      expect(result).toMatchObject({success:false,committed:false,failure: { code: 'CHAPTER_DELETE_LEGACY_OPERATION_FROZEN' }})
       expect(result.operation).toBeUndefined()
       expect(ChapterDeletionRepository.get(stored.operationId)).toEqual(stored)
     } finally { guard.mockRestore() }
@@ -220,7 +220,7 @@ describe('chapter lifecycle deletion IPC', () => {
       success: boolean
       committed: boolean
       operation: { operationId: string; status: string; knowledgeStatus: string; knowledgeError: string }
-      error?: string
+      failure?: { code: string }
     }
 
     expect(first).toMatchObject({
@@ -232,7 +232,7 @@ describe('chapter lifecycle deletion IPC', () => {
         knowledgeStatus: 'failed',
         knowledgeError: 'simulated knowledge cleanup outage',
       },
-      error: 'CHAPTER_DELETE_CLEANUP_INCOMPLETE',
+      failure: { code: 'CHAPTER_DELETE_CLEANUP_INCOMPLETE' },
     })
     expect(DraftRepository.getFull(draftId)).toBeNull()
     expect(fs.existsSync(path.join(projectRoot, targetFileName))).toBe(false)
@@ -246,7 +246,7 @@ describe('chapter lifecycle deletion IPC', () => {
     )).resolves.toMatchObject({
       success: false,
       committed: false,
-      error: 'CHAPTER_DELETE_LEGACY_CONFIRMATION_CONSUMED',
+      failure: { code: 'CHAPTER_DELETE_LEGACY_CONFIRMATION_CONSUMED' },
     })
 
     closeProjectDatabase()
@@ -370,7 +370,7 @@ describe('chapter lifecycle deletion IPC', () => {
     )).resolves.toMatchObject({
       success: false,
       committed: false,
-      error: 'PROJECT_SESSION_STALE',
+      failure: { code: 'PROJECT_SESSION_STALE' },
     })
     await expect(handler(
       {},
@@ -380,7 +380,7 @@ describe('chapter lifecycle deletion IPC', () => {
     )).resolves.toMatchObject({
       success: false,
       committed: false,
-      error: 'CHAPTER_DELETE_TARGET_MISMATCH',
+      failure: { code: 'IPC_HANDLER_FAILED' },
     })
     expect(DraftRepository.getFull(draftId)).not.toBeNull()
     expect(fs.existsSync(path.join(projectRoot, targetFileName))).toBe(true)
@@ -433,7 +433,7 @@ describe('chapter lifecycle deletion IPC', () => {
     )).resolves.toMatchObject({
       success: false,
       committed: false,
-      error: 'CHAPTER_DELETE_REQUEST_MISMATCH',
+      failure: { code: 'IPC_HANDLER_FAILED' },
     })
   })
 
@@ -459,7 +459,7 @@ describe('chapter lifecycle deletion IPC', () => {
       success: boolean
       committed: boolean
       operation?: { operationId: string; status: string; legacyKnowledgeAuthorization: string }
-      error?: string
+      failure?: { code: string }
     }
 
     expect(result).toMatchObject({
@@ -469,7 +469,7 @@ describe('chapter lifecycle deletion IPC', () => {
         status: 'authorization_required',
         legacyKnowledgeAuthorization: 'required',
       },
-      error: 'CHAPTER_DELETE_LEGACY_KNOWLEDGE_CHECK_REQUIRED',
+      failure: { code: 'CHAPTER_DELETE_LEGACY_KNOWLEDGE_CHECK_REQUIRED' },
     })
     const listed = await handlers.get('chapter:list-incomplete-deletions')!(
       {},
@@ -557,7 +557,7 @@ describe('chapter lifecycle deletion IPC', () => {
     )).resolves.toMatchObject({
       success: false,
       committed: false,
-      error: 'CHAPTER_DELETE_LEGACY_CONFIRMATION_CONSUMED',
+      failure: { code: 'CHAPTER_DELETE_LEGACY_CONFIRMATION_CONSUMED' },
     })
   })
 
@@ -611,7 +611,7 @@ describe('chapter lifecycle deletion IPC', () => {
     )).resolves.toMatchObject({
       success: false,
       committed: false,
-      error: 'CHAPTER_DELETE_LEGACY_KNOWLEDGE_CHECK_REQUIRED',
+      failure: { code: 'CHAPTER_DELETE_LEGACY_KNOWLEDGE_CHECK_REQUIRED' },
     })
     expect(DraftRepository.getFull(draftId)).not.toBeNull()
     expect(fs.existsSync(path.join(projectRoot, targetFileName))).toBe(true)

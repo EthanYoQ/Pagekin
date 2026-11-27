@@ -342,7 +342,7 @@ async function main() {
       status: full.status, content: full.content }
     const saved = await invoke(page, 'db:review-create', { baseDraftId: draftId, content: report,
       expectedSource: sourceDraft }, projectPath, session)
-    assert.equal(saved.success, true, saved.error)
+    assert.equal(saved.success, true, saved.failure?.code)
     sourceReviewId = saved.id
     assert(Number.isSafeInteger(sourceReviewId) && sourceReviewId > 0)
     assert.deepEqual(reviewRows(projectPath).map(row => row.content), [report])

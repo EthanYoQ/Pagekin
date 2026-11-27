@@ -160,7 +160,7 @@ export async function seedHarbor(context) {
   const full = await invoke(page, 'db:draft-get-full', finalized.id, harbor, session)
   const review = await invoke(page, 'db:review-create', { baseDraftId: full.id, content: STAGE_SAMPLE.drafts[3].review,
     expectedSource: { id: full.id, chapterNumber: 3, version: full.version, status: full.status, content: full.content } }, harbor, session)
-  assert.equal(review.success, true, review.error)
+  assert.equal(review.success, true, review.failure?.code)
   context.harbor = { path: harbor, chapter3DraftId: full.id }
 }
 
@@ -432,7 +432,8 @@ export const X1_SCENARIOS = {
       const onDraft = await chapterView.versionButton(page).innerText()
       assert.match(onDraft, /草稿 v1/, '落在第 3 章的未定稿 v1 上')
       const failure = await chapterView.view(page).locator('[role="alert"], [role="status"]').filter({ hasText: '删除正文后的清理没有完成' }).innerText()
-      assert.match(failure, /EBUSY/, '清理失败的原因是正文文件被占用')
+      assert.match(failure, /出了意外问题，暂时说不清原因/u, '清理失败的系统原文换成通用说明')
+      assert.doesNotMatch(failure, /EBUSY|resource busy/u, '提示里不露系统原文')
       await shoot('x1-cleanup-retry-notice')
       await release()
       await chapterView.view(page).getByRole('button', { name: '重试清理' }).click()

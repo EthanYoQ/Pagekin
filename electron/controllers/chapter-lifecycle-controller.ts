@@ -1,5 +1,4 @@
-import { ipcMain } from 'electron'
-
+import { handle } from '../ipc/handle'
 import { isProjectSessionContext } from '../../src/shared/project-session-context'
 import type {
   DeleteFinalizedChapterRequest,
@@ -17,14 +16,29 @@ import { ReplacementImpactRepository } from '../repositories/replacement-impact-
 import { removeReplacedKnowledge, removeReplacedManuscripts } from '../services/replaced-final-cleanup'
 import { projectAccess } from '../services/project-access'
 import { assertRequiredExpectedProjectPath } from '../utils/project-context'
+import { finalizationStepErrorCode } from '../../src/shared/finalization-step-error'
+import { IPC_HANDLER_FAILED, registeredErrorCode } from '../../src/i18n/app-errors'
+import type { FailureCode } from '../../src/shared/failure'
 
 type ChapterLifecycleHandler = (event: unknown, ...args: never[]) => unknown
+
+const REPLACED_CLEANUP_CHANNELS = new Set(['chapter:remove-replaced-knowledge', 'chapter:remove-replaced-manuscripts'])
+
+/** 被替换旧定稿的清理码（含 :[文件名]）原样记进定稿步骤，重试规则按它判，所以单独带回，不当作失败说明。 */
+function failureFields(channel: string, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  const stepError = REPLACED_CLEANUP_CHANNELS.has(channel) ? finalizationStepErrorCode(message) : undefined
+  if (stepError) return { stepError }
+  const code = registeredErrorCode(error) as FailureCode | undefined
+  if (!code) console.error(`[AI Novel IPC] ${channel} 失败：`, error)
+  return { failure: { code: code ?? IPC_HANDLER_FAILED } }
+}
 
 export function registerChapterLifecycleController(
   service: ChapterDeletionService = chapterDeletionService,
 ): void {
   const register = (channel: string, handler: ChapterLifecycleHandler) => {
-    ipcMain.handle(channel, async (event, ...args: unknown[]) => {
+    handle(channel, async (event, ...args: unknown[]) => {
       const candidate = args.at(-1)
       const context = isProjectSessionContext(candidate) ? candidate : undefined
       if (context) args.pop()
@@ -37,11 +51,7 @@ export function registerChapterLifecycleController(
           lease.projectId,
         )
       } catch (error) {
-        return {
-          success: false,
-          committed: false,
-          error: error instanceof Error ? error.message : String(error),
-        }
+        return { success: false, committed: false, ...failureFields(channel, error) }
       }
     })
   }

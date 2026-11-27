@@ -26,7 +26,7 @@ describe('渲染端重开入口', () => {
   it('本章还有工作流在写：不请求主进程，直接报 CHAPTER_REOPEN_BUSY', async () => {
     useWorkflowStore.setState({ activeRuns: [runWriting(session.projectPath, ['chapter:3'])] })
 
-    await expect(reopenFinalizedChapter(session, { chapterNumber: 3 })).resolves.toEqual({ success: false, error: 'CHAPTER_REOPEN_BUSY' })
+    await expect(reopenFinalizedChapter(session, { chapterNumber: 3 })).resolves.toEqual({ success: false, failure: { code: 'CHAPTER_REOPEN_BUSY' } })
     expect(ipc.invokeWithProjectSession).not.toHaveBeenCalled()
   })
 
