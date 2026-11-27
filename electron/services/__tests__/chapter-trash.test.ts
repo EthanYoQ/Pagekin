@@ -184,6 +184,22 @@ describe('恢复', () => {
     expect(again.failure).toBeUndefined()
   })
 
+  it('恢复已提交后重发实体稿返回失败：原因记进主进程控制台，渲染端只拿到标记', async () => {
+    const { current } = threeChapters()
+    const { service: s, retry } = service()
+    await s.delete(projectRoot, { draftId: current, chapterNumber: 2 })
+    retry.mockResolvedValueOnce({ success: false, committed: true, finalizationId: 'x', publicationStatus: 'pending', error: 'EBUSY: manuscript locked' } as never)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const restored = await s.restore(projectRoot, 'project', { deletionId: 'delete-a', draftId: current, expectedMode: 'into-gap' })
+      expect(restored).toMatchObject({ outcome: 'restored', publicationStatus: 'pending', publicationFailed: true })
+      expect(JSON.stringify(restored)).not.toContain('EBUSY')
+      expect(warn.mock.calls.some(call => JSON.stringify(call).includes('EBUSY: manuscript locked'))).toBe(true)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it('恢复已提交后重发实体稿抛错：仍报恢复成功，实体稿停在待发布，留给章节页的「重试发布」', async () => {
     const { old, current, currentRecord } = threeChapters()
     const { service: s, retry } = service()
@@ -193,7 +209,7 @@ describe('恢复', () => {
     const restored = await s.restore(projectRoot, 'project', { deletionId: 'delete-a', draftId: current, expectedMode: 'into-gap' })
 
     expect(restored).toEqual({ success: true, outcome: 'restored', chapterNumber: 2, draftId: current,
-      finalizationId: currentRecord.finalizationId, publicationStatus: 'pending', publicationError: 'PROJECT_CONTEXT_CHANGED' })
+      finalizationId: currentRecord.finalizationId, publicationStatus: 'pending', publicationFailed: true })
     expect(statuses(old, current)).toEqual(['superseded', 'finalized'])
     expect(FinalizationRepository.getByDraftId(current)).toMatchObject({ publicationStatus: 'pending' })
   })
@@ -661,7 +677,7 @@ describe('排队的回收站操作跨作品切换', () => {
     publish.release()
 
     expect(await restoring).toMatchObject({ success: true, outcome: 'restored', publicationStatus: 'pending',
-      publicationError: expect.stringContaining('PROJECT_CONTEXT_CHANGED') })
+      publicationFailed: true })
     expect(FinalizationRepository.get(record.finalizationId)).toEqual(otherBefore)
     initProjectDatabase(projectRoot)
     expect(FinalizationRepository.get(record.finalizationId)).toMatchObject({ publicationStatus: 'pending' })

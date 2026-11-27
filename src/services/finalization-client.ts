@@ -1,10 +1,10 @@
 import type { FinalizationIpcResult } from '../../electron/services/finalization-service'
-import { IPC_HANDLER_FAILED, receivedIpcResult } from '../i18n/app-errors'
-import type { Failure } from '../shared/failure'
+import { authorError, IPC_HANDLER_FAILED, receivedIpcResult } from '../i18n/app-errors'
+import { note, type Failure } from '../shared/failure'
 import { getActiveProjectSessionContext, sameProjectSessionContext } from '../shared/project-session-context'
 import type { ProjectSessionContext } from '../shared/ipc-channels'
 import type { FinalizationSnapshot } from './finalization-snapshot'
-import { useLocaleStore } from '../stores/locale-store'
+import { currentInterfaceLocale } from '../stores/locale-store'
 
 interface AiNovelInvokeApi {
   invoke(channel: string, ...args: unknown[]): Promise<unknown>
@@ -28,7 +28,7 @@ export async function commitFinalizationSnapshot(
 ): Promise<FinalizationIpcResult> {
   const currentSession = getActiveProjectSessionContext()
   if (!sameProjectSessionContext(snapshot.projectSession, currentSession)) {
-    throw new Error(useLocaleStore.getState().text('项目会话已变化，已拒绝提交旧定稿快照', 'The book session changed, so the earlier finalization was not submitted.'))
+    throw authorError(currentInterfaceLocale(), { note: note('项目会话已变化，已拒绝提交旧定稿快照', 'The book session changed, so the earlier finalization was not submitted.') })
   }
   return receivedIpcResult(await getAiNovelApi().invoke(
     'finalization:commit',
@@ -43,7 +43,7 @@ export async function retryFinalizationPublication(
 ): Promise<FinalizationIpcResult> {
   const currentSession = getActiveProjectSessionContext()
   if (!sameProjectSessionContext(projectSession, currentSession)) {
-    throw new Error(useLocaleStore.getState().text('项目会话已变化，已拒绝实体稿重试', 'The book session changed, so the manuscript file was not written again.'))
+    throw authorError(currentInterfaceLocale(), { note: note('项目会话已变化，已拒绝实体稿重试', 'The book session changed, so the manuscript file was not written again.') })
   }
   return receivedIpcResult(await getAiNovelApi().invoke(
     'finalization:retry',

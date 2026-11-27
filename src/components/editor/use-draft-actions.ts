@@ -8,7 +8,7 @@ import { navigate } from '../../stores/navigation/navigation-intents'
 import { toast } from '../ui/Toast'
 import { actionToast, type ActionToastAction } from '../ui/ActionToast'
 import { chapterLabel } from '../../shared/chapter-label'
-import { authorError, displayedErrorMessage, englishWithReason, failureText, resultFailure } from '../../i18n/app-errors'
+import { authorError, caughtFailure, displayedErrorMessage, failureText, resultFailure } from '../../i18n/app-errors'
 import { failureOr } from '../../services/failure-reason'
 import { draftWriteFailure } from '../../services/draft-write-failure'
 import { reasonOf } from '../../services/workflows/commands/architecture.command'
@@ -515,8 +515,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
       useWorkflowStore.getState().startWorkflow(definition, false)
     } catch (e) {
       if (!isProjectSessionCurrent(projectSession)) return
-      const reason = displayedErrorMessage(currentInterfaceLocale(), e)
-      toast.error(text(`定稿启动失败：${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not start finalization.', reason)))
+      toast.error(failureText(currentInterfaceLocale(), { note: note('定稿启动失败', 'Could not start finalization.'), because: caughtFailure(e) }))
     }
   }
 
@@ -545,8 +544,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
       toast.success(text('实体稿已发布', 'Manuscript published'))
     } catch (error) {
       if (!isProjectSessionCurrent(projectSession)) return
-      const reason = displayedErrorMessage(currentInterfaceLocale(), error)
-      toast.error(text(`实体稿发布失败：${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not publish the manuscript.', reason)))
+      toast.error(failureText(currentInterfaceLocale(), { note: note('实体稿发布失败', 'Could not publish the manuscript.'), because: caughtFailure(error) }))
     }
   }, [currentProject, meta, projectKey, restored, tabId, text])
 
@@ -569,8 +567,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
       )
     } catch (e) {
       if (!isProjectSessionCurrent(projectSession)) return
-      const reason = displayedErrorMessage(currentInterfaceLocale(), e)
-      toast.error(text(`修复启动失败：${reason}`, englishWithReason(currentInterfaceLocale(), 'Could not start the repair.', reason)))
+      toast.error(failureText(currentInterfaceLocale(), { note: note('修复启动失败', 'Could not start the repair.'), because: caughtFailure(e) }))
     }
   }, [currentProject, isChapterBusy, meta, projectKey, projectMatches, text])
 
@@ -698,7 +695,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
         reload()
         return true
       }
-      toast.error(failureText(currentInterfaceLocale(), { note: note('合并失败', 'Could not merge the revision.'), because: reasonOf(currentInterfaceLocale(), result.error) }))
+      toast.error(failureText(currentInterfaceLocale(), { note: note('合并失败', 'Could not merge the revision.'), because: result.failure }))
     } catch (e) {
       if (!isProjectSessionCurrent(projectSession)) return false
       toast.error(failureText(currentInterfaceLocale(), { note: note('合并出错', 'An error occurred while merging the revision.'), because: reasonOf(currentInterfaceLocale(), e) }))

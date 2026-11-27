@@ -12,8 +12,8 @@ import type { StepCallbacks, WorkflowContext } from '../../stores/workflow-store
 import type { AllInvokeChannels, InvokeChannel, ProjectSessionContext } from '../../shared/ipc-channels'
 import { ipc } from '../ipc-client'
 import { copyLocale, errorLocaleForRun, localize } from '../../i18n/core'
-import { authorError, displayedErrorMessage, resultFailure } from '../../i18n/app-errors'
-import { note } from '../../shared/failure'
+import { authorError, caughtFailure, displayedErrorMessage, failureText, resultFailure } from '../../i18n/app-errors'
+import { authorOwned, note, type Failure } from '../../shared/failure'
 import type { ErrorDisplayLocale } from '../../i18n/types'
 import { currentInterfaceLocale } from '../../stores/locale-store'
 import { isWorkflowCancellation, WorkflowCancelledError } from './workflow-cancellation'
@@ -67,7 +67,7 @@ export async function withRetry(
   callbacks: StepCallbacks,
   isCancelled: (() => boolean) | undefined,
   interfaceLocale: ErrorDisplayLocale,
-): Promise<{ ok: boolean; error?: string; attempts: number }> {
+): Promise<{ ok: boolean; error?: string; failure?: Failure; attempts: number }> {
   const text = (zhCNText: string, enUSText: string) => localize(copyLocale(interfaceLocale), zhCNText, enUSText)
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (isCancelled?.()) throw new WorkflowCancelledError(text('工作流已取消', 'Workflow was cancelled.'))
@@ -87,7 +87,7 @@ export async function withRetry(
           `  ${label} failed on attempt ${attempt + 1}; retrying...${reason && ` (${reason})`}`,
         ))
       } else {
-        return { ok: false, error: errMsg, attempts: attempt + 1 }
+        return { ok: false, error: errMsg, failure: caughtFailure(err), attempts: attempt + 1 }
       }
     }
   }
@@ -361,11 +361,8 @@ export async function runPostProcessPipeline(
           throw workflowMainProcessError(interfaceLocale, resultFailure(markResult), '记录后处理失败状态失败', 'Failed to record the failed post-processing state.')
         }
         if (stopOnFailure) {
-          const reason = finalizationStepErrorMessage(interfaceLocale, stepError)
-          throw new Error(text(
-            `后处理步骤失败：${step.label} — ${reason}`,
-            `Post-processing step failed: ${step.label} — ${reason}`,
-          ))
+          const reason = describeFinalizationStepError(stepError, text) ?? failureText(interfaceLocale, result.failure)
+          throw authorError(interfaceLocale, { note: note('后处理步骤失败：{label} — {reason}', 'Post-processing step failed: {label} — {reason}', { label: authorOwned(step.label), reason: authorOwned(reason) }) })
         }
       }
     }

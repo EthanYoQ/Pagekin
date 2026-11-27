@@ -6,6 +6,8 @@ import { useProjectStore } from '../project-store'
 import { useLocaleStore } from '../locale-store'
 import { createBoundedCompletionError } from '../../services/workflows/bounded-completion'
 import { shown } from '../../i18n/__tests__/shown-locale'
+import { authorError } from '../../i18n/app-errors'
+import { note } from '../../shared/failure'
 import { PromptBudgetExceededError } from '../../services/generation/generation-harness'
 import { SourceDraftChangedError } from '../../services/workflows/source-draft-changed'
 import { WorkflowCancelledError } from '../../services/workflows/workflow-cancellation'
@@ -1075,7 +1077,7 @@ describe('写作 Skill 快照还在读取时作者点了取消', () => {
   })
 
   it('快照读取本身失败了：即使作者点了取消，也记失败并写明原因', async () => {
-    const finished = await startAndCancelDuringSnapshot(holdSkillSnapshot(new Error('写作 Skill 绑定文件已损坏')))
+    const finished = await startAndCancelDuringSnapshot(holdSkillSnapshot(authorError(shown('zh-CN'), { note: note('写作 Skill 绑定文件已损坏', 'The writing Skill binding file is damaged.') })))
 
     expect(finished).toMatchObject({ id: 'snapshot-cancel', status: 'failed' })
     expect(finished.error).toContain('写作 Skill 绑定文件已损坏')

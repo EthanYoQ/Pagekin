@@ -41,7 +41,7 @@
   },
   "src/components/editor/review-checklist.ts": {
     "authorOwned": 1,
-    "displayedErrorMessage": 3
+    "displayedErrorMessage": 1
   },
   "src/components/editor/use-architecture-overview.ts": {
     "displayedErrorMessage": 3
@@ -55,8 +55,7 @@
     "englishWithReason": 1
   },
   "src/components/editor/use-draft-actions.ts": {
-    "displayedErrorMessage": 4,
-    "englishWithReason": 3
+    "displayedErrorMessage": 1
   },
   "src/components/editor/use-novel-config-form.ts": {
     "displayedErrorMessage": 2
@@ -142,12 +141,12 @@
   "src/components/stage/write/WriteChapterPopover.tsx": {
     "displayedErrorMessage": 3
   },
-  "src/components/ui/ToastStack.tsx": {
-    "displayedErrorMessage": 1
-  },
   "src/i18n/app-errors.ts": {
     "displayedErrorMessage": 1,
     "knownAppErrorMessage": 6
+  },
+  "src/services/agent/writing-skill-bindings.ts": {
+    "authorOwned": 3
   },
   "src/services/generation/prompt-budget-failure.ts": {
     "knownAppErrorMessage": 1
@@ -184,7 +183,8 @@
     "{ legacy:": 1
   },
   "src/services/workflows/workflow-utils.ts": {
-    "displayedErrorMessage": 2
+    "displayedErrorMessage": 2,
+    "authorOwned": 2
   },
   "src/stores/character-store.ts": {
     "displayedErrorMessage": 1
@@ -201,7 +201,10 @@
     "englishWithReason": 1
   },
   "src/stores/workflow-store.ts": {
-    "displayedErrorMessage": 13
+    "displayedErrorMessage": 12
+  },
+  "electron/controllers/app-data-controller.ts": {
+    "authorOwned": 3
   },
   "electron/controllers/import-controller.ts": {
     "knownAppErrorMessage": 1
@@ -210,9 +213,6 @@
     "knownAppErrorMessage": 1
   },
   "electron/controllers/llm-controller.ts": {
-    "authorOwned": 3
-  },
-  "electron/controllers/app-data-controller.ts": {
     "authorOwned": 3
   }
 }

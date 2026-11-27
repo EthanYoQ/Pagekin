@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { freezeWritingSkillsSnapshot } = vi.hoisted(() => ({ freezeWritingSkillsSnapshot: vi.fn() }))
 vi.mock('../../services/agent/writing-skill-bindings', () => ({ freezeWritingSkillsSnapshot }))
 
+import { authorError } from '../../i18n/app-errors'
+import { shown } from '../../i18n/__tests__/shown-locale'
+import { authorOwned, note } from '../../shared/failure'
 import { useLocaleStore } from '../locale-store'
 import { useProjectStore } from '../project-store'
 import { useWorkflowStore, type WorkflowContext } from '../workflow-store'
@@ -35,7 +38,7 @@ beforeEach(() => {
 
 describe('workflow writing skill snapshot', () => {
   it('fails before step execution when configured writing skills cannot be frozen', async () => {
-    freezeWritingSkillsSnapshot.mockRejectedValue(new Error('Writing skill binding target is missing: user:gone'))
+    freezeWritingSkillsSnapshot.mockRejectedValue(authorError(shown('en-US'), { note: note('写作 Skill 绑定目标不存在：{skillId}', 'The bound writing Skill is missing: {skillId}', { skillId: authorOwned('user:gone') }) }))
     const executor = vi.fn().mockResolvedValue(undefined)
 
     await useWorkflowStore.getState().startWorkflow({

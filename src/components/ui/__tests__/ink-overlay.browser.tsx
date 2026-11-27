@@ -466,15 +466,15 @@ describe('提示栈', () => {
     expect(liveToasts()).toHaveLength(0)
   })
 
-  it('动作回调失败时通知照样关闭，失败原因报成一条出错通知', async () => {
+  it('渲染端余下的显示点不把原文交给作者：动作回调失败时通知照样关闭，原因报成通用说明', async () => {
     await act(async () => {
-      actionToast.show({ message: '发现新版本 v1.3', duration: 0, actions: [{ label: '查看更新', onClick: () => Promise.reject(new Error('更新服务不可用')) }] })
+      actionToast.show({ message: '发现新版本 v1.3', duration: 0, actions: [{ label: '查看更新', onClick: () => Promise.reject(new TypeError("Cannot read properties of undefined (reading 'version')")) }] })
     })
     await userEvent.click(page.getByRole('button', { name: '查看更新' }))
     await wait(200)
     expect(toastTitles()).toEqual(['操作失败'])
     const [item] = liveToasts()
-    expect(item.querySelector('.pi-toast-text')!.textContent).toBe('更新服务不可用')
+    expect(item.querySelector('.pi-toast-text')!.textContent).toBe('出了意外问题，暂时说不清原因。请再试一次。')
     expect(item.dataset.tone).toBe('danger')
   })
 
