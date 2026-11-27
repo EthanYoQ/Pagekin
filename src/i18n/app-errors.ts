@@ -401,6 +401,7 @@ const ERROR_KEYS = {
   LLM_DEFAULT_MODEL_ROLLBACK_FAILED: 'error.defaultModelRollbackFailed',
   LLM_STAGE_MODEL_UNAVAILABLE: 'error.stageModelUnavailable',
   LLM_STAGE_MODEL_REQUEST_INVALID: 'error.stageModelRequestInvalid',
+  LLM_CONNECTION_TEST_FAILED: 'error.connectionFailed',
   MODEL_ENDPOINT_INVALID: 'error.modelEndpointInvalid',
   NETWORK_PROXY_INVALID: 'error.networkProxyInvalid',
   CONFIG_FILE_DAMAGED: 'error.configFileDamaged',

@@ -1,4 +1,3 @@
-import { app, ipcMain } from 'electron'
 import {
   readJsonFile,
   tryReadJsonFile,
@@ -8,7 +7,9 @@ import {
   DEFAULT_GLOBAL_CONFIG,
 } from '../utils/config-utils'
 import type { GlobalConfig, LLMRequest, LLMResponse, LocalContextWindowRequest, ModelDiscoveryRequest, ModelProfile } from '../../src/shared/ipc-channels'
-import { knownAppErrorMessage } from '../../src/i18n/app-errors'
+import { IPC_HANDLER_FAILED, registeredErrorCode, wireNote } from '../../src/i18n/app-errors'
+import type { MessageKey } from '../../src/i18n/messages/en-US'
+import { authorOwned, failureCode, type FailureCode, type WireFailure, type WireNote } from '../../src/shared/failure'
 import { isReasoningMapping, reasoningAdapterFitsProtocol } from '../../src/shared/reasoning-types'
 import { isLocalModelEndpoint } from '../../src/shared/provider-presets'
 import { connectionFailureCode } from '../../src/shared/connection-failure'
@@ -17,12 +18,11 @@ import { assignStageModel, availableGenerationModelId, isModelStage, parseStageM
 import type { RerankFailure } from '../../src/shared/knowledge-ranking'
 import { RerankError, requestOrder } from '../rerank'
 import { LLMFactory } from '../llm/llm-factory'
-import { mainErrorDisplayLocale } from '../i18n'
-import { localize, translate } from '../../src/i18n/core'
 import { resolveGenerationParameters } from '../llm/generation-parameter-policy'
 import { ModelExecutionLeaseRegistry } from '../services/model-execution-lease'
 import { ModelDiscoveryService } from '../services/model-discovery-service'
 import { failedAtProxy } from '../network-proxy'
+import { handle } from '../ipc/handle'
 
 const CONNECTION_TEST_MAX_TOKENS = 1024
 const LOCAL_CONNECTION_TEST_TIMEOUT_MS = 120_000
@@ -33,22 +33,33 @@ function connectionTestTimeoutMs(model: ModelProfile): number {
   return isLocalModelEndpoint(model) ? LOCAL_CONNECTION_TEST_TIMEOUT_MS : CLOUD_CONNECTION_TEST_TIMEOUT_MS
 }
 
-const RERANK_TEST_FAILURES: Record<RerankFailure, readonly [string, string]> = {
-  timeout: ['重排服务响应超时，请稍后再试。', 'The reranking service timed out. Try again later.'],
-  'request-failed': ['连不上重排服务，请检查 base_url 和网络。', 'Could not reach the reranking service. Check the base_url and your network.'],
-  'http-error': ['重排服务拒绝了请求，请检查 API Key 和模型名称。', 'The reranking service refused the request. Check the API key and model name.'],
-  'invalid-response': ['服务的返回不是重排结果，请确认这个模型支持重排。', 'The service did not return reranking results. Check that this model supports reranking.'],
+const RERANK_TEST_NOTES = {
+  timeout: 'error.rerankTestTimeout',
+  'request-failed': 'error.rerankTestRequestFailed',
+  'http-error': 'error.rerankTestHttpError',
+  'invalid-response': 'error.rerankTestInvalidResponse',
+} as const satisfies Record<RerankFailure, MessageKey>
+
+const CONNECTION_TEST_FAILED = 'LLM_CONNECTION_TEST_FAILED'
+const testFailure = (note: WireNote) => ({ success: false as const, failure: { code: CONNECTION_TEST_FAILED, note } satisfies WireFailure })
+const registered = (error: unknown): FailureCode | undefined => failureCode(registeredErrorCode(error))
+
+/** 设置写盘失败：已登记的码照传，其余原文只进日志。 */
+function settingsFailure(error: unknown) {
+  const code = registered(error)
+  if (!code) console.error('[AI Novel Writer] 模型设置没有写进去:', error)
+  return { success: false as const, failure: { code: code ?? IPC_HANDLER_FAILED } satisfies WireFailure }
 }
 
 async function testRerankConnection({ baseUrl, apiKey, modelName }: ModelProfile) {
   try {
     await requestOrder('hello', ['hello', 'world'], { baseUrl, apiKey, modelName }, 2)
-    return { success: true, error: undefined }
+    return { success: true as const }
   } catch (error) {
     if (!(error instanceof RerankError)) throw error
-    return { success: false, error: failedAtProxy(error.cause)
-      ? translate(failureLocale(), 'error.proxyUnreachable')
-      : localize(failureLocale(), ...RERANK_TEST_FAILURES[error.reason]) }
+    return failedAtProxy(error.cause)
+      ? { success: false as const, failure: { code: 'PROXY_UNREACHABLE' } satisfies WireFailure }
+      : testFailure(wireNote(RERANK_TEST_NOTES[error.reason]))
   }
 }
 
@@ -100,53 +111,30 @@ function rememberContextWindow(snapshot: ModelProfile, windowTokens: number): vo
   }
 }
 
-const failureLocale = () => mainErrorDisplayLocale(app.getLocale())
-
 /**
- * 连接测试的结果由模型表单原样显示，主进程在这里按界面语言写成说明（#474）：要带上 HTTP 状态、
- * 供应商返回或建议地址的单独写，其余登记过的码复用 app-errors 的文案，网络失败按 cause.code 说明原因。
+ * 连接测试的结果由模型表单显示（#474）：要带上 HTTP 状态、供应商返回或建议地址的单独登记说明，
+ * 其余登记过的码照传，网络失败按 cause.code 换成连接码。
+ * 供应商返回、结束原因与建议地址出自作者自己配置的端点，master 上就逐字给作者看，所以作参数带过 IPC。
  */
-function connectionTestFailure(failure: unknown): string {
+function connectionTestFailure(failure: unknown) {
   const detail = failure as { code?: unknown; status?: unknown; suggestedBaseUrl?: unknown } | null
-  if (detail?.code === 'EMBEDDING_REQUEST_FAILED') {
-    return localize(
-      failureLocale(),
-      `检索模型请求失败（HTTP ${String(detail.status)}）。请检查 Base URL、网关与 API Key。`,
-      `Retrieval model request failed (HTTP ${String(detail.status)}). Check the Base URL, gateway, and API key.`,
-    )
+  if (detail?.code === 'EMBEDDING_REQUEST_FAILED') return testFailure(wireNote('error.connectionTestEmbeddingHttp', { status: Number(detail.status) }))
+  if (detail?.code === 'EMBEDDING_OLLAMA_NATIVE_URL' && typeof detail.suggestedBaseUrl === 'string') {
+    return testFailure(wireNote('error.connectionTestOllamaNativeUrl', { baseUrl: authorOwned(detail.suggestedBaseUrl) }))
   }
-  if (detail?.code === 'EMBEDDING_OLLAMA_NATIVE_URL') {
-    return localize(
-      failureLocale(),
-      `这是 Ollama 原生的 /api 地址。请把 Base URL 改为 ${String(detail.suggestedBaseUrl)}。`,
-      `This is Ollama’s native /api address. Change the Base URL to ${String(detail.suggestedBaseUrl)}.`,
-    )
-  }
-  const known = knownAppErrorMessage(failureLocale(), failure)
-  if (known) return known
-  if (failedAtProxy(failure)) return translate(failureLocale(), 'error.proxyUnreachable')
-  return knownAppErrorMessage(failureLocale(), connectionFailureCode(failure))
-    ?? translate(failureLocale(), 'error.connectionFailed')
+  const code = registered(failure) ?? (failedAtProxy(failure) ? 'PROXY_UNREACHABLE' : registered(connectionFailureCode(failure)))
+  return { success: false as const, failure: { code: code ?? CONNECTION_TEST_FAILED } satisfies WireFailure }
 }
 
-function providerConnectionFailure(response: Extract<LLMResponse, { success: false }>): string {
+function providerConnectionFailure(response: Extract<LLMResponse, { success: false }>) {
   if (response.error === 'LLM_REQUEST_FAILED' && response.httpFailure) {
     const { status, body } = response.httpFailure
-    const advice = localize(
-      failureLocale(),
-      `模型请求失败（HTTP ${status}）。请检查 Base URL、API Key 与模型名。`,
-      `Model request failed (HTTP ${status}). Check the Base URL, API key, and model name.`,
-    )
-    return body.trim()
-      ? `${advice}${localize(failureLocale(), `服务返回：${body.trim()}`, ` The service returned: ${body.trim()}`)}`
-      : advice
+    return testFailure(body.trim()
+      ? wireNote('error.modelRequestHttpReturned', { status, body: authorOwned(body.trim()) })
+      : wireNote('error.modelRequestHttp', { status }))
   }
   if (response.error === 'LLM_RESPONSE_INCOMPLETE') {
-    return localize(
-      failureLocale(),
-      `模型没有正常完成回复（结束原因：${response.finishReason}）。`,
-      `The model did not finish its reply (finish reason: ${response.finishReason}).`,
-    )
+    return testFailure(wireNote('error.modelResponseIncomplete', { finishReason: authorOwned(response.finishReason) }))
   }
   return connectionTestFailure(response.error)
 }
@@ -155,9 +143,9 @@ export function registerLLMController() {
   const modelExecutionLeases = new ModelExecutionLeaseRegistry({ loadModel: getModelConfig })
   const modelDiscovery = new ModelDiscoveryService()
 
-  ipcMain.handle('llm:list-models', async () => loadModelConfigs())
+  handle('llm:list-models', async () => loadModelConfigs())
 
-  ipcMain.handle('llm:discover-local-context-window', async (_event, request: LocalContextWindowRequest) => {
+  handle('llm:discover-local-context-window', async (_event, request: LocalContextWindowRequest) => {
     try {
       return await modelDiscovery.discoverLocalContextWindow(request)
     } catch {
@@ -165,15 +153,15 @@ export function registerLLMController() {
     }
   })
 
-  ipcMain.handle('llm:discover-models', async (_event, request: ModelDiscoveryRequest) => {
+  handle('llm:discover-models', async (_event, request: ModelDiscoveryRequest) => {
     try {
       return await modelDiscovery.discoverModels(request)
     } catch {
-      return { success: false, errorCode: 'invalid_response' as const }
+      return { success: false, reason: 'invalid_response' as const }
     }
   })
 
-  ipcMain.handle('llm:save-model', async (_event, model: ModelProfile) => {
+  handle('llm:save-model', async (_event, model: ModelProfile) => {
     try {
       if (model.reasoningMapping !== undefined && (!isReasoningMapping(model.reasoningMapping)
         || !reasoningAdapterFitsProtocol(model.protocol, model.reasoningMapping.adapter))) {
@@ -186,11 +174,11 @@ export function registerLLMController() {
       saveModelConfigs(models)
       return { success: true }
     } catch (error) {
-      return { success: false, error: String(error) }
+      return settingsFailure(error)
     }
   })
 
-  ipcMain.handle('llm:delete-model', async (_event, modelId: string) => {
+  handle('llm:delete-model', async (_event, modelId: string) => {
     let originalConfig: GlobalConfig | undefined
     let configChanged = false
     try {
@@ -246,16 +234,16 @@ export function registerLLMController() {
         stageModelIds: parseStageModelIds(nextConfig.stageModelIds),
       }
     } catch (error) {
-      return { success: false, error: String(error) }
+      return settingsFailure(error)
     }
   })
 
-  ipcMain.handle('llm:get-stage-models', async () => {
+  handle('llm:get-stage-models', async () => {
     const config = readJsonFile<GlobalConfig>(GLOBAL_CONFIG_PATH, DEFAULT_GLOBAL_CONFIG)
     return parseStageModelIds(config.stageModelIds)
   })
 
-  ipcMain.handle('llm:set-stage-model', async (_event, request: unknown) => {
+  handle('llm:set-stage-model', async (_event, request: unknown) => {
     try {
       const { stage, modelId } = (request && typeof request === 'object' ? request : {}) as Record<string, unknown>
       if (!isModelStage(stage) || (modelId !== null && typeof modelId !== 'string')) throw new Error('LLM_STAGE_MODEL_REQUEST_INVALID')
@@ -266,59 +254,59 @@ export function registerLLMController() {
       writeJsonFile(GLOBAL_CONFIG_PATH, config)
       return { success: true as const, stageModelIds: config.stageModelIds }
     } catch (error) {
-      return { success: false as const, error: String(error) }
+      return settingsFailure(error)
     }
   })
 
-  ipcMain.handle('llm:set-default-model', async (_event, modelId: string | null) => {
+  handle('llm:set-default-model', async (_event, modelId: string | null) => {
     try {
       const config = loadGlobalConfigForUpdate()
       config.defaultModelId = modelId
       writeJsonFile(GLOBAL_CONFIG_PATH, config)
       return { success: true }
     } catch (error) {
-      return { success: false, error: String(error) }
+      return settingsFailure(error)
     }
   })
 
-  ipcMain.handle('llm:get-default-model', async () => {
+  handle('llm:get-default-model', async () => {
     const config = readJsonFile<GlobalConfig>(GLOBAL_CONFIG_PATH, DEFAULT_GLOBAL_CONFIG)
     return config.defaultModelId
   })
 
-  ipcMain.handle('llm:set-default-embedding-model', async (_event, modelId: string | null) => {
+  handle('llm:set-default-embedding-model', async (_event, modelId: string | null) => {
     try {
       const config = loadGlobalConfigForUpdate()
       config.defaultEmbeddingModelId = modelId
       writeJsonFile(GLOBAL_CONFIG_PATH, config)
       return { success: true }
     } catch (error) {
-      return { success: false, error: String(error) }
+      return settingsFailure(error)
     }
   })
 
-  ipcMain.handle('llm:get-default-embedding-model', async () => {
+  handle('llm:get-default-embedding-model', async () => {
     const config = readJsonFile<GlobalConfig>(GLOBAL_CONFIG_PATH, DEFAULT_GLOBAL_CONFIG)
     return config.defaultEmbeddingModelId ?? null
   })
 
-  ipcMain.handle('llm:set-default-rerank-model', async (_event, modelId: string | null) => {
+  handle('llm:set-default-rerank-model', async (_event, modelId: string | null) => {
     try {
       const config = loadGlobalConfigForUpdate()
       config.defaultRerankModelId = modelId
       writeJsonFile(GLOBAL_CONFIG_PATH, config)
       return { success: true }
     } catch (error) {
-      return { success: false, error: String(error) }
+      return settingsFailure(error)
     }
   })
 
-  ipcMain.handle('llm:get-default-rerank-model', async () => {
+  handle('llm:get-default-rerank-model', async () => {
     const config = readJsonFile<GlobalConfig>(GLOBAL_CONFIG_PATH, DEFAULT_GLOBAL_CONFIG)
     return config.defaultRerankModelId ?? null
   })
 
-  ipcMain.handle('llm:test-connection', async (
+  handle('llm:test-connection', async (
     _event,
     model: ModelProfile,
     creativeStrategy: LLMRequest['creativeStrategy'] = 'auto',
@@ -327,24 +315,15 @@ export function registerLLMController() {
     const timeoutMs = connectionTestTimeoutMs(model)
     const deadline = new AbortController()
     const timer = setTimeout(() => deadline.abort(), timeoutMs)
-    const timedOut = () => ({ success: false, error: translate(failureLocale(), 'error.connectionTestTimeout', { seconds: timeoutMs / 1000 }) })
+    const timedOut = () => testFailure(wireNote('error.connectionTestTimeout', { seconds: timeoutMs / 1000 }))
     try {
       if (model.purposes?.includes('rerank')) return await testRerankConnection(model)
 
       const messages = [{ role: 'user', content: 'Say "hello" and nothing else.' }]
       const provider = LLMFactory.getProvider(model)
 
-      let result = { success: true, error: undefined as undefined | string }
       if (model.purposes?.includes('embedding')) {
-        if (model.protocol === 'anthropic') {
-          return {
-            success: false,
-            error: localize(
-              failureLocale(),
-              'Anthropic 协议没有向量接口，测不了向量连接。请改用 OpenAI 兼容或 Gemini 协议的向量模型。',
-              'The Anthropic protocol has no embedding endpoint, so the embedding connection cannot be tested. Use an OpenAI-compatible or Gemini embedding model.'),
-          }
-        }
+        if (model.protocol === 'anthropic') return testFailure(wireNote('error.connectionTestEmbeddingUnsupported'))
         const { generateEmbeddings } = await import('../embedding')
         await generateEmbeddings(['hello'], model.protocol, model, undefined, undefined, deadline.signal)
       } else {
@@ -362,12 +341,11 @@ export function registerLLMController() {
           },
         )
         if (deadline.signal.aborted) return timedOut()
-        result = res.success ? { success: true, error: undefined } : { success: false, error: providerConnectionFailure(res) }
+        if (!res.success) return providerConnectionFailure(res)
       }
-
-      return { success: result.success, error: result.error }
+      return { success: true as const }
     } catch (error) {
-      return deadline.signal.aborted ? timedOut() : { success: false, error: connectionTestFailure(error) }
+      return deadline.signal.aborted ? timedOut() : connectionTestFailure(error)
     } finally {
       clearTimeout(timer)
     }

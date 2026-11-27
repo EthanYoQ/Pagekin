@@ -92,7 +92,6 @@
     "displayedErrorMessage": 6
   },
   "src/components/settings/ModelForm.tsx": {
-    "displayedErrorMessage": 1,
     "englishWithReason": 1
   },
   "src/components/settings/SkillSettings.tsx": {
@@ -232,6 +231,6 @@
     "knownAppErrorMessage": 1
   },
   "electron/controllers/llm-controller.ts": {
-    "knownAppErrorMessage": 2
+    "authorOwned": 3
   }
 }

@@ -545,7 +545,7 @@ export type ModelDiscoveryErrorCode =
 
 export type ModelDiscoveryResult =
   | { success: true; models: DiscoveredModel[] }
-  | { success: false; errorCode: ModelDiscoveryErrorCode }
+  | { success: false; reason: ModelDiscoveryErrorCode }
 
 export type ModelDiscoveryRequest = Pick<
   ModelProfile,
@@ -572,13 +572,13 @@ export interface LLMChannels {
   }
   'llm:save-model': {
     args: [model: ModelProfile]
-    return: { success: boolean }
+    return: { success: boolean; failure?: Failure }
   }
   'llm:delete-model': {
     args: [modelId: string]
     return: {
       success: boolean
-      error?: string
+      failure?: Failure
       defaultModelId?: string | null
       defaultEmbeddingModelId?: string | null
       defaultRerankModelId?: string | null
@@ -591,11 +591,11 @@ export interface LLMChannels {
   }
   'llm:set-stage-model': {
     args: [request: { stage: ModelStage; modelId: string | null }]
-    return: { success: true; stageModelIds: StageModelIds } | { success: false; error: string }
+    return: { success: true; stageModelIds: StageModelIds } | { success: false; failure: Failure }
   }
   'llm:set-default-model': {
     args: [modelId: string | null]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'llm:get-default-model': {
     args: []
@@ -603,7 +603,7 @@ export interface LLMChannels {
   }
   'llm:set-default-embedding-model': {
     args: [modelId: string | null]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'llm:get-default-embedding-model': {
     args: []
@@ -611,7 +611,7 @@ export interface LLMChannels {
   }
   'llm:set-default-rerank-model': {
     args: [modelId: string | null]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'llm:get-default-rerank-model': {
     args: []
@@ -619,7 +619,7 @@ export interface LLMChannels {
   }
   'llm:test-connection': {
     args: [model: ModelProfile, creativeStrategy?: CreativeStrategy]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
 }
 
