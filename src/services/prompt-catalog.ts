@@ -3,18 +3,27 @@ import type { PromptLoadDiagnostic, ProjectSessionContext } from '../shared/ipc-
 import { sameProjectSessionContext } from '../shared/project-session-context'
 import { ipc } from './ipc-client'
 import { requireIpcSuccess } from './ipc-result'
-import { useLocaleStore } from '../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../stores/locale-store'
+import { catalogNote, caughtFailure, failureText } from '../i18n/app-errors'
+import type { MessageKey } from '../i18n/core'
+import { codeOf, failureOf } from '../shared/failure'
 import type { PromptTemplate } from './prompt-templates'
 import { resolveWritingLanguage, type WritingLanguage } from '../shared/writing-language'
 
-const DIAGNOSTIC_TEXT: Record<string, readonly [zhCN: string, enUS: string]> = {
-  PROMPT_TEMPLATE_INVALID: ['提示词内容结构无效', 'The prompt file has an invalid structure.'],
-  PROMPT_FILENAME_MISMATCH: ['提示词标识或语言与文件名不一致', 'The prompt key or language does not match its file name.'],
-  PROMPT_FILE_UNREADABLE: ['提示词文件读不出来，或者内容格式不对', 'The prompt file cannot be read, or its content is malformed.'],
+const PROMPT_FILE_UNREADABLE = 'PROMPT_FILE_UNREADABLE'
+const DIAGNOSTIC_KEYS: Readonly<Record<string, MessageKey>> = {
+  PROMPT_TEMPLATE_INVALID: 'error.promptTemplateInvalid',
+  PROMPT_FILENAME_MISMATCH: 'error.promptFilenameMismatch',
+  [PROMPT_FILE_UNREADABLE]: 'error.promptFileUnreadable',
 }
-const diagnosticText = (error: string) => Object.hasOwn(DIAGNOSTIC_TEXT, error)
-  ? useLocaleStore.getState().text(...DIAGNOSTIC_TEXT[error]!)
-  : error
+const diagnosticText = (error: string) => {
+  const key = Object.hasOwn(DIAGNOSTIC_KEYS, error) ? DIAGNOSTIC_KEYS[error] : undefined
+  return failureText(currentInterfaceLocale(), key ? { note: catalogNote(key) } : failureOf(error), { fallback: catalogNote('error.promptFileUnreadable') })
+}
+const diagnosticCode = (error: unknown) => {
+  const failure = caughtFailure(error)
+  return (failure && codeOf(failure)) ?? PROMPT_FILE_UNREADABLE
+}
 
 const sessionChangedError = () => new Error(useLocaleStore.getState().text('项目会话已变化，已拒绝读取项目提示词', 'The book session changed, so project prompts were not read.'))
 
@@ -391,7 +400,7 @@ export const ipcPromptPersistence: PromptPersistence = {
             ? { writingLanguage: promptLanguageFromFilename(file.name) }
             : {}),
           path: file.path,
-          error: error instanceof Error ? error.message : String(error),
+          error: diagnosticCode(error),
         })
       }
     }
