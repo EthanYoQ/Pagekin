@@ -50,6 +50,14 @@ const UNEXPLAINED_FAILURE_KEYS = {
   CLOUD_BACKUP_OPERATION_CONFLICT: 'error.unregisteredCode',
   // 恢复大纲任务时渲染端按这个码换成专用说明，码要过 handle()；别处抛出时原因各不相同，只说不清原因。
   GENERATION_PLOT_OUTLINE_PREFIX_INVALID: 'error.unregisteredCode',
+  // 下面几个码渲染端各有读者：定稿后处理按码定重试（finalization-step-error.ts），剧情树与蓝图检查按码给专用说明。码要过 handle()。
+  GENERATION_FINALIZATION_PREDECESSOR_REQUIRED: 'error.unregisteredCode',
+  GENERATION_FINALIZATION_IDENTITY_CHANGED: 'error.unregisteredCode',
+  GENERATION_FINALIZATION_ARTIFACT_INVALID: 'error.unregisteredCode',
+  GENERATION_GRAPH_BLUEPRINT_REQUIRED: 'error.unregisteredCode',
+  NO_EVENT_SOURCES: 'error.unregisteredCode',
+  SOURCE_LIMIT_EXCEEDED: 'error.unregisteredCode',
+  SOURCE_INPUT_TOO_LARGE: 'error.unregisteredCode',
 } as const
 
 /**
@@ -900,6 +908,7 @@ export function displayedErrorMessage(locale: ErrorDisplayLocale, error: unknown
   const raw = strippedRaw(error)
   return unregisteredCodeMessage(locale, raw, fallback) ?? (raw || fallback || unknownErrorText(locale))
 }
+
 
 const strippedRaw = (error: unknown) => displayedRaw(error).trim().replace(DISPLAY_PREFIX, '')
 const unknownErrorText = (locale: InterfaceLocale) => localize(copyLocale(locale), '未知错误', 'Unknown error')

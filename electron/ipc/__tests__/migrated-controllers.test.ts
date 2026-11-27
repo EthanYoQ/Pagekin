@@ -141,11 +141,10 @@ it('迁移后的数据库处理器不在直连基线里', () => {
   expect(MIGRATED_DATABASE_CHANNELS.filter(channel => (DIRECT_CHANNELS as string[]).includes(channel))).toEqual([])
 })
 
-const MIGRATED_GENERATION_FAMILIES = ['generation', 'character-proposal', 'character-identity', 'finalized-character', 'legacy-roster', 'review-revision']
-
 it('迁移后的生成通道不在直连基线里', () => {
   const source = readFileSync(join(REPO_ROOT, 'electron/controllers/generation-controller.ts'), 'utf8')
-  const channels = [...source.matchAll(/register\('([a-z-]+):([a-z-]+)'/gu)].filter(match => MIGRATED_GENERATION_FAMILIES.includes(match[1]))
-  expect(channels).toHaveLength(49)
+  const channels = [...source.matchAll(/register\('([a-z-]+):([a-z-]+)'/gu)]
+  expect(channels).toHaveLength(77)
+  expect(source).not.toMatch(/ipcMain/u)
   expect(channels.map(match => `${match[1]}:${match[2]}`).filter(channel => (DIRECT_CHANNELS as string[]).includes(channel))).toEqual([])
 })
