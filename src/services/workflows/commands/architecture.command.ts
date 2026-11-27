@@ -50,7 +50,7 @@ import {
   isGeneratedGlobalGuidanceValid,
   mergeExpandedNovelConfig,
 } from '../novel-config-expansion'
-import { authorError, errorCodeOf, failureText, reasonOf, writtenNote } from '../../../i18n/app-errors'
+import { authorError, catalogNote, errorCodeOf, failureText, reasonOf, writtenNote } from '../../../i18n/app-errors'
 import { AuthorError, authorOwned, failureCode, note, type AuthorNote, type Failure, type FailureCode } from '../../../shared/failure'
 import type { ErrorDisplayLocale } from '../../../i18n/types'
 import { pluralEn } from '../../../shared/plural-en'
@@ -655,7 +655,7 @@ export async function savePartialData(
   data: PartialArchData,
   projectSession: ProjectSessionContext,
   operationLabel: string,
-  fallbackMessage?: string,
+  fallbackMessage?: string | AuthorNote,
 ): Promise<void> {
   const result = await ipc.invokeWithProjectSession(
     projectSession,
@@ -1289,7 +1289,7 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
         const partial = (params.context.data.partial as PartialArchData) || await loadPartialData(this.snapshot.expectedProjectPath, session)
         partial.world_building_generation_handle = handle
         await savePartialData(this.snapshot.expectedProjectPath, partial, session, 'Save generation run navigation',
-          workflowUiText(params.context, '保存生成运行记录失败，请重试。', 'Could not save the generation run record. Try again.'))
+          catalogNote('error.generationRunRecordSaveFailed'))
         params.context.data.partial = partial
       },
     })
@@ -1595,7 +1595,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
         const partial = (params.context.data.partial as PartialArchData) || await loadPartialData(this.snapshot.expectedProjectPath, session)
         partial.synopsis_generation_handle = handle
         await savePartialData(this.snapshot.expectedProjectPath, partial, session, 'Save generation run navigation',
-          workflowUiText(params.context, '保存生成运行记录失败，请重试。', 'Could not save the generation run record. Try again.'))
+          catalogNote('error.generationRunRecordSaveFailed'))
         params.context.data.partial = partial
       },
     })

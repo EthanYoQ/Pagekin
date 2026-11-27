@@ -31,17 +31,17 @@ it('requireIpcSuccess 遇到没有码的失败时作者看到调用点的兜底�
   ]
   for (const [name, result] of cases) {
     const withFallback = thrownBy(() => requireIpcSuccess(result, '保存草稿', '草稿没有保存，请再试一次。'))
-    expect(displayedErrorMessage('zh-CN', withFallback), name).toBe('草稿没有保存，请再试一次。')
-    expect(failureText('zh-CN', caughtFailure(withFallback)), name).toBe('草稿没有保存，请再试一次。')
+    expect(displayedErrorMessage(shown('zh-CN'), withFallback), name).toBe('草稿没有保存，请再试一次。')
+    expect(failureText(shown('zh-CN'), caughtFailure(withFallback)), name).toBe('草稿没有保存，请再试一次。')
     const withoutFallback = thrownBy(() => requireIpcSuccess(result, '保存草稿'))
-    expect(displayedErrorMessage('zh-CN', withoutFallback), name).toBe('保存草稿失败，请再试一次。')
+    expect(displayedErrorMessage(shown('zh-CN'), withoutFallback), name).toBe('保存草稿失败，请再试一次。')
     expect(withoutFallback.message, name).not.toContain('ECONNREFUSED')
   }
   expect(warn.mock.calls.flat().some(arg => String(arg).includes(raw))).toBe(true)
 
   useLocaleStore.setState({ interfaceLocale: 'en-US', locale: 'en-US' })
   const english = thrownBy(() => requireIpcSuccess({ success: false }, '保存草稿'))
-  expect(displayedErrorMessage('en-US', english)).toBe('The operation did not finish. Try again.')
+  expect(displayedErrorMessage(shown('en-US'), english)).toBe('The operation did not finish. Try again.')
   expect(displayedErrorMessage(shown('ja-JP'), english)).toBe('操作は完了しませんでした。もう一度お試しください。')
 })
 
@@ -63,7 +63,7 @@ it('原来能看到的具体说明逐字保留', () => {
   for (const [name, value, expected] of cases) {
     const thrown = thrownBy(() => requireIpcSuccess(overIpc(value), '保存', '调用点兜底说明。'))
     expect(thrown.message, name).toBe(expected)
-    expect(displayedErrorMessage('zh-CN', thrown), name).toBe(expected)
+    expect(displayedErrorMessage(shown('zh-CN'), thrown), name).toBe(expected)
   }
 })
 
