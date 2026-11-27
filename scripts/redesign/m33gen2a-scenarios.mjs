@@ -10,7 +10,7 @@ export const M33GEN2A_SCENARIOS = {
     assert.equal((await invoke(page, 'config:set', { locale: 'en-US' })).success, true)
     await reload()
     await stage.openFromLibraryEn(page, STAGE_SAMPLE.name)
-    // 改的是交给真实处理器的句柄，不是报错：主进程的 owner 自己拒绝，失败照常经 handle() 出去。
+    // 只伪造入参，让主进程 owner 真实拒绝，失败仍走 handle()。
     assert.ok(await app.evaluate(({ ipcMain }) => {
       const handlers = ipcMain._invokeHandlers
       const original = handlers.get('generation:execute')

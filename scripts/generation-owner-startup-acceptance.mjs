@@ -19,7 +19,7 @@ const model = { id: 'synthetic-owner', name: '合成模型', provider: 'openai',
 async function invoke(page, channel, ...args) {
   return page.evaluate(({ channel, args }) => window.aiNovelAPI.invoke(channel, ...args), { channel, args })
 }
-/** handle() 把没登记的码换成通用码，原码只进主进程日志；从日志核对是哪条门禁拒绝的。 */
+// 作者端只收到通用码，原码要从主进程日志核对。
 async function rejectsWithMainCode(session, promise, code) {
   await assert.rejects(promise, /IPC_HANDLER_FAILED/)
   assert.equal(await session.app.evaluate(() => globalThis.__ipcLoggedCodes.at(-1)), code)

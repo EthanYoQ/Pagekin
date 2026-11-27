@@ -97,7 +97,6 @@ const receipt = (attempt: number): GenerationAttemptReceipt => ({
   finishReason: 'stop',
 })
 
-/** 作者在工作流失败卡片和内联提示里看到的两种说明。 */
 function authorTexts(message: string): string[] {
   return (['zh-CN', 'en-US'] as const).flatMap(locale => [
     presentWorkflowFailure(undefined, message, shown(locale), false).reason,
