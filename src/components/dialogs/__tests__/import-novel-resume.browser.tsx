@@ -335,7 +335,7 @@ describe('current-project reference import', () => {
     expect(container.textContent).not.toContain('C:\\Users\\Private')
   })
 
-  // #845 PR-H2 修复轮 1：取消的运行不写「上次失败」；新记录存的是带标记、可以给作者看的说明，旧记录分不清就显示通用说明。
+  // #845 PR-H2：旧记录没有标记，分不清是不是报错原文，所以只显示通用说明。
   describe('续导入面板里的上次失败', () => {
     async function openWith(run: ImportRunSnapshot) {
       invoke.mockImplementation(async (channel: string) => {

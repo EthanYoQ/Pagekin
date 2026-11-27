@@ -597,7 +597,6 @@ describe('database controller project context guard', () => {
   })
 
   describe('import run failures shown in the import dialog and run card (#474)', () => {
-    // #845 PR-H2：渲染端只交写好的说明，主进程加上标记存下，对话框认标记才显示。
     it('stores the written sentence from the renderer with the author-safe mark', async () => {
       const execution = { owner: 'renderer', epoch: 1, expiresAt: 1 }
       await handler('db:import-run-fail')({}, 'run', 'knowledge', 'Chapter 3 could not be written.', execution, 'C:/projects/A')

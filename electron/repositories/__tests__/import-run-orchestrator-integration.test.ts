@@ -355,7 +355,6 @@ describe('ImportRunOrchestrator with the real import repository', () => {
     expect(failedRun).toMatchObject({
       stage: 'blueprints',
       status: 'failed',
-      // #845 PR-H2：认不出的报错只存通用说明，原文不进记录。
       lastError: failureText(shown('zh-CN'), undefined),
       completedBatches: { blueprints: [expect.stringMatching(/^1-2-[a-f0-9]{8}\.[a-f0-9]{8}$/u)] },
     })
@@ -456,7 +455,6 @@ describe('ImportRunOrchestrator with the real import repository', () => {
       id: runId,
       stage: 'blueprints',
       status: 'failed',
-      // #845 PR-H2：认不出的报错只存通用说明，原文不进记录。
       lastError: failureText(shown('zh-CN'), undefined),
       completedBatches: {
         knowledge: [expect.any(String)],

@@ -194,7 +194,6 @@ describe('仓储写好的导入说明登记成目录文案后逐字不变', () =
   })
 })
 
-// #845 PR-H2：主进程自己捕获的失败存进 last_error 前换成带标记的说明，原文只进日志。
 describe('主进程存进导入运行的失败原因', () => {
   it('SQLite 原文换成通用说明', () => {
     const stored = persistedImportRunFailure(sqliteFailure(), 'en-US')

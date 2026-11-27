@@ -1072,7 +1072,6 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
     expect(log).toHaveBeenCalledWith('Import stop reason: ROOT_BUDGET_EXHAUSTED')
   })
 
-  // #845 PR-H2：抛出的报错照原样交出，存进运行的只有可以给作者看的说明，原文不进记录。
   it.each([
     ['an unrelated provider failure', new Error('provider unavailable'), undefined],
     ['a step explanation that carries a stop code', Object.assign(new Error('蓝图推演失败：活动时长用完（ROOT_BUDGET_EXHAUSTED）'), { code: 'ROOT_BUDGET_EXHAUSTED' }), { code: 'ROOT_BUDGET_EXHAUSTED' }],
