@@ -355,7 +355,7 @@ describe('Agent registered IPC, actual SQLite and intercepted provider boundary'
     await expect(invoke('character-proposal:approve', { ...approveRequest, selections: approveRequest.selections.map(item => ({ ...item, action: 'keep-unresolved' })) }))
       .rejects.toThrow('CHARACTER_APPROVAL_NONCE_CONFLICT')
     await expect(mocks.handlers.get('character-proposal:approve')!({ sender }, { ...approveRequest, handle: { ...child.handle, rootActionId: 'forged-root' } }, session))
-      .rejects.toThrow('CHARACTER_APPROVAL_INVALID')
+      .rejects.toThrow('IPC_HANDLER_FAILED')
     expect(getProjectDb()!.prepare('SELECT total_changes()').pluck().get()).toBe(beforeReplay)
     expect(getProjectDb()!.prepare('SELECT COUNT(*) FROM characters').pluck().get()).toBe(3)
   })

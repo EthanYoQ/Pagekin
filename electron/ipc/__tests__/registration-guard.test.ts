@@ -63,7 +63,7 @@ describe('应用启动时的整套 IPC 注册经过守卫', () => {
       getGlobalGeneration: () => null, getBlockedCode: () => undefined })
     registerIPCHandlers()
     registerMCPHandlers()
-    registerUpdateController({ subscribe: () => () => undefined } as never, { ipc: ipcMain as never, publish: () => undefined })
+    registerUpdateController({ subscribe: () => () => undefined } as never, { ipc: { handle }, publish: () => undefined })
 
     expect(fake.registrations.filter(channel => !fake.throughHandle.has(channel)).sort()).toEqual(DIRECT_CHANNELS)
     expect(fake.throughHandle.size).toBeGreaterThan(0)

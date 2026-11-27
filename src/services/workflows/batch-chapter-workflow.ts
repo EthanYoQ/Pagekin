@@ -10,7 +10,7 @@ import type { ChapterBlueprint } from './directory-workflow'
 import { GenerateDraftCommand } from './commands/generate-draft.command'
 import type { SelectedCandidateDraft } from './chapter-materials'
 import { FinalizeChapterCommand, RunFinalizePostProcessCommand } from './commands/finalize-chapter.command'
-import { retryFinalizationPublication } from '../finalization-client'
+import { finalizationFailure, retryFinalizationPublication } from '../finalization-client'
 import type { Locale } from '../../i18n/types'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { sameProjectPathKey } from '../../shared/project-session-context'
@@ -316,8 +316,8 @@ async function runOneBatchChapter(
       if (!publication.success) {
         // committed 为 false 时重试根本没执行（定稿记录已不在、会话不对），不能说定稿已提交。
         throw publication.committed
-          ? workflowMainProcessError(context.interfaceLocale, publication.error, '定稿已提交、实体稿待发布', 'Finalization was committed, but manuscript publication is still pending.')
-          : workflowMainProcessError(context.interfaceLocale, publication.error, '实体稿没有重新发布', 'The manuscript was not published again.')
+          ? workflowMainProcessError(context.interfaceLocale, finalizationFailure(publication), '定稿已提交、实体稿待发布', 'Finalization was committed, but manuscript publication is still pending.')
+          : workflowMainProcessError(context.interfaceLocale, finalizationFailure(publication), '实体稿没有重新发布', 'The manuscript was not published again.')
       }
     }
     if (!saved?.postProcessComplete) {

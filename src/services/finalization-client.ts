@@ -1,4 +1,6 @@
-import type { FinalizationResult } from '../../electron/services/finalization-service'
+import type { FinalizationIpcResult } from '../../electron/services/finalization-service'
+import { IPC_HANDLER_FAILED, receivedIpcResult } from '../i18n/app-errors'
+import type { Failure } from '../shared/failure'
 import { getActiveProjectSessionContext, sameProjectSessionContext } from '../shared/project-session-context'
 import type { ProjectSessionContext } from '../shared/ipc-channels'
 import type { FinalizationSnapshot } from './finalization-snapshot'
@@ -6,6 +8,11 @@ import { useLocaleStore } from '../stores/locale-store'
 
 interface AiNovelInvokeApi {
   invoke(channel: string, ...args: unknown[]): Promise<unknown>
+}
+
+/** 通用失败码说不出具体原因，让给各显示处自己的那句。 */
+export function finalizationFailure(result: FinalizationIpcResult): Failure | undefined {
+  return result.failure?.code === IPC_HANDLER_FAILED ? undefined : result.failure
 }
 
 function getAiNovelApi(): AiNovelInvokeApi {
@@ -18,29 +25,29 @@ function getAiNovelApi(): AiNovelInvokeApi {
 
 export async function commitFinalizationSnapshot(
   snapshot: FinalizationSnapshot,
-): Promise<FinalizationResult> {
+): Promise<FinalizationIpcResult> {
   const currentSession = getActiveProjectSessionContext()
   if (!sameProjectSessionContext(snapshot.projectSession, currentSession)) {
     throw new Error(useLocaleStore.getState().text('项目会话已变化，已拒绝提交旧定稿快照', 'The book session changed, so the earlier finalization was not submitted.'))
   }
-  return getAiNovelApi().invoke(
+  return receivedIpcResult(await getAiNovelApi().invoke(
     'finalization:commit',
     snapshot,
     snapshot.projectSession,
-  ) as Promise<FinalizationResult>
+  ) as FinalizationIpcResult)
 }
 
 export async function retryFinalizationPublication(
   finalizationId: string,
   projectSession: ProjectSessionContext,
-): Promise<FinalizationResult> {
+): Promise<FinalizationIpcResult> {
   const currentSession = getActiveProjectSessionContext()
   if (!sameProjectSessionContext(projectSession, currentSession)) {
     throw new Error(useLocaleStore.getState().text('项目会话已变化，已拒绝实体稿重试', 'The book session changed, so the manuscript file was not written again.'))
   }
-  return getAiNovelApi().invoke(
+  return receivedIpcResult(await getAiNovelApi().invoke(
     'finalization:retry',
     finalizationId,
     projectSession,
-  ) as Promise<FinalizationResult>
+  ) as FinalizationIpcResult)
 }

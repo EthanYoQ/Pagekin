@@ -16,7 +16,7 @@ import { resolvePromptTemplate } from '../../prompt-templates'
 import { PostProcessPromptBuilder } from '../../prompts/prompt-builder'
 import { ipc } from '../../ipc-client'
 import { requireIpcSuccess } from '../../ipc-result'
-import { commitFinalizationSnapshot } from '../../finalization-client'
+import { commitFinalizationSnapshot, finalizationFailure } from '../../finalization-client'
 import { finalizationContentRevision, type FinalizationSnapshot } from '../../finalization-snapshot'
 import {
   projectSessionContextFromProject,
@@ -518,7 +518,7 @@ export class FinalizeChapterCommand extends BaseWorkflowCommand<PostProcessStatu
     this.assertNotCancelled(context)
     const commit = await commitFinalizationSnapshot(snapshot)
     if (!commit.committed || !commit.finalizationId || !commit.contentHash || commit.draftId === undefined) {
-      throw workflowMainProcessError(context.interfaceLocale, commit.error, '定稿事务未提交', 'The finalization transaction was not committed.')
+      throw workflowMainProcessError(context.interfaceLocale, finalizationFailure(commit), '定稿事务未提交', 'The finalization transaction was not committed.')
     }
 
     // 事实已提交就立即通知 reconciliation；即使实体稿或后处理随后失败，也绝不
@@ -541,7 +541,7 @@ export class FinalizeChapterCommand extends BaseWorkflowCommand<PostProcessStatu
     if (!commit.success) {
       const publicationError = workflowMainProcessError(
         context.interfaceLocale,
-        commit.error,
+        finalizationFailure(commit),
         '定稿已提交、实体稿待发布',
         'Finalization was committed, but manuscript publication is still pending.',
       )

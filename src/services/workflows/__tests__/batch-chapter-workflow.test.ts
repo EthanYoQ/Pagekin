@@ -109,7 +109,7 @@ vi.mock('../commands/finalize-chapter.command', () => ({
     }
   },
 }))
-vi.mock('../../finalization-client', () => ({ retryFinalizationPublication: doubles.retryPublication }))
+vi.mock('../../finalization-client', async importOriginal => ({ ...await importOriginal<object>(), retryFinalizationPublication: doubles.retryPublication }))
 
 const projectPath = 'C:\\test-project'
 
@@ -485,7 +485,7 @@ describe('batch chapter workflow completion mode', () => {
       completedChapters: [{ chapterNumber: 1, draftId: 101, version: 1,
         contentHash: createHash('sha256').update('generated draft').digest('hex'), sourceRunHandle: root,
         pendingFinalizationId: '原定稿', postProcessComplete: false }] }
-    doubles.retryPublication.mockResolvedValueOnce({ success: false, committed: true, error: 'Error: MANUSCRIPT_TARGET_CONFLICT' })
+    doubles.retryPublication.mockResolvedValueOnce({ success: false, committed: true, failure: { code: 'MANUSCRIPT_TARGET_CONFLICT' } })
     await useWorkflowStore.getState().startWorkflow(createBatchChapterWorkflow({ projectPath, projectSession: projectSession(), startChapterNumber: 1,
       chapterCount: 1, chapterWordsTarget: 2000, generationModelId: '原模型', completionMode: 'auto_finalize', resumeBatchId: '原批次', locale }))
     expect(useWorkflowStore.getState().history[0]).toMatchObject({ status: 'failed', error })
@@ -502,7 +502,7 @@ describe('batch chapter workflow completion mode', () => {
       completedChapters: [{ chapterNumber: 1, draftId: 101, version: 1,
         contentHash: createHash('sha256').update('generated draft').digest('hex'), sourceRunHandle: root,
         pendingFinalizationId: '原定稿', postProcessComplete: false }] }
-    doubles.retryPublication.mockResolvedValueOnce({ success: false, committed: false, error: 'FINALIZATION_COMMIT_NOT_FOUND' })
+    doubles.retryPublication.mockResolvedValueOnce({ success: false, committed: false, failure: { code: 'FINALIZATION_COMMIT_NOT_FOUND' } })
     await useWorkflowStore.getState().startWorkflow(createBatchChapterWorkflow({ projectPath, projectSession: projectSession(), startChapterNumber: 1,
       chapterCount: 1, chapterWordsTarget: 2000, generationModelId: '原模型', completionMode: 'auto_finalize', resumeBatchId: '原批次', locale }))
     expect(useWorkflowStore.getState().history[0]).toMatchObject({ status: 'failed', error })

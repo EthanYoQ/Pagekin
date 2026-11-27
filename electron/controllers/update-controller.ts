@@ -4,6 +4,7 @@ import type {
   UpdateReminderDelay,
   UpdateState,
 } from '../services/update-service'
+import { updateWireFailure } from '../../src/i18n/update-failure'
 
 /** 可替换的 IPC 注册边界，便于独立验证，不把 Electron 对象传入服务层。 */
 export interface UpdateIpcRegistrar {
@@ -34,6 +35,10 @@ function toRendererState(state: UpdateState): UpdateState {
   }
 }
 
+function toWire<T extends UpdateActionResponse>({ error, ...rest }: T) {
+  return error ? { ...rest, failure: updateWireFailure(error), retryable: error.retryable } : rest
+}
+
 /**
  * 注册更新功能的 IPC 通道。
  * 更新器只存在于主进程；渲染进程只能读取普通数据、请求检查、延后提示和显式安装。
@@ -43,14 +48,14 @@ export function registerUpdateController(
   { ipc, publish }: UpdateControllerDependencies,
 ): () => void {
   ipc.handle('update:get-state', async () => service.getState())
-  ipc.handle('update:check', async () => service.checkManually())
-  ipc.handle('update:download', async () => service.downloadUpdate())
-  ipc.handle('update:open-release', async () => service.openRelease())
+  ipc.handle('update:check', async () => toWire(await service.checkManually()))
+  ipc.handle('update:download', async () => toWire(await service.downloadUpdate()))
+  ipc.handle('update:open-release', async () => toWire(await service.openRelease()))
   ipc.handle('update:defer-reminder', async (_event, days: unknown) => {
     const delay = typeof days === 'number' ? days : Number.NaN
-    return service.deferReminder(delay as UpdateReminderDelay)
+    return toWire(await service.deferReminder(delay as UpdateReminderDelay))
   })
-  ipc.handle('update:quit-and-install', async () => service.requestInstall())
+  ipc.handle('update:quit-and-install', async () => toWire(await service.requestInstall()))
 
   return service.subscribe((state) => publish(toRendererState(state)))
 }
