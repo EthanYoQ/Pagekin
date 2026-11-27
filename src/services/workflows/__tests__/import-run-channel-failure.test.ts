@@ -101,3 +101,17 @@ describe('导入取消判定不变', () => {
     expect(channels).not.toContain('db:import-run-cancel-at-boundary')
   })
 })
+
+describe('迁移后只回 failure 的写通道保留登记原因', () => {
+  it.each([
+    ['en-US', 'zh-CN', 'This import was taken over by another window, or it paused after going unresponsive, so this window can no longer write to it. Resume the import from the import dialog.'],
+    ['zh-CN', 'en-US', '这次导入已由别的窗口接手，或长时间没有响应已暂停，这个窗口不能再写入。请在导入对话框里继续。'],
+  ] as const)('%s 运行在 %s 界面下检查点保存失败', async (runLocale, interfaceLocale, sentence) => {
+    const { ended } = await runImport(snapshotFor(runLocale, 'knowledge'), interfaceLocale, {
+      'kb:import-reference-text': () => ({ success: true, idempotent: false }),
+      'db:import-run-complete-batch': () => ({ success: false, failure: { code: 'IMPORT_RUN_EXECUTION_STALE' } }),
+    })
+    expect(ended.status).toBe('failed')
+    for (const line of shownOnRunCard(ended, interfaceLocale)) expect(line).toBe(sentence)
+  })
+})
