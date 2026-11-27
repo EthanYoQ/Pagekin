@@ -103,7 +103,6 @@ async function received(channel: string, args: readonly unknown[]): Promise<Rece
 }
 
 const text = (locale: 'zh-CN' | 'en-US', result: Received) => failureText(shown(locale), resultFailure(result))
-/** master 上 revision-merge 不在写通道集合里，会话门禁的码随抛出过来；作者看到的说明按同一个码查。 */
 const zhShown = async (channel: string, args: readonly unknown[]) => text('zh-CN', await received(channel, args).catch((error: Error) => ({ success: false, error: error.message })))
 const STALE = '项目已切换或重新打开，这次操作属于之前打开的项目，已拒绝执行。请在当前打开的项目里重新操作。'
 

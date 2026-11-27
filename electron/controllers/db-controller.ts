@@ -966,7 +966,7 @@ export function registerDatabaseController() {
     }
   })
 
-  // 审稿与批注的写入都在一个事务里，失败时整次撤回，正文不变。
+  // 审稿、批注写入各在一个事务里（review-repository.ts、annotation-commit），失败整次撤回。
   const reviews = {
     handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
       code: 'REVIEW_WRITE_FAILED',
@@ -1075,7 +1075,7 @@ export function registerDatabaseController() {
     return { success: true }
   })
 
-  // 后处理只在定稿事务提交之后才跑（finalize-chapter.command.ts 先 commitFinalizationSnapshot），写失败不影响已保存的定稿。
+  // 定稿先提交（finalize-chapter.command.ts 的 commitFinalizationSnapshot），后处理写失败不影响已保存的定稿。
   const postProcess = {
     handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
       code: 'POST_PROCESS_WRITE_FAILED',
@@ -1099,7 +1099,7 @@ export function registerDatabaseController() {
   // ============================================================
   // 5. revisions — 修稿
   // ============================================================
-  // 修稿的写入各在一个事务里（revision-repository.ts），失败时整次撤回，草稿正文不变。
+  // 修稿写入各在一个事务里（revision-repository.ts），失败整次撤回，草稿不变。
   const revisions = {
     handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
       code: 'REVISION_WRITE_FAILED',
