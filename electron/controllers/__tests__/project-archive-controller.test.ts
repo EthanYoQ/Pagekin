@@ -840,7 +840,6 @@ describe('作品、归档、更新与云备份失败的说明与 master 逐字�
     expect(shownText).toMatchSnapshot()
   })
 
-  // master 上恢复面板把没登记的码交给 displayedErrorMessage，显示「说不清原因」那句。
   it.each([
     ['MIGRATION_VERIFICATION_FAILED', new SchemaMigrationError('MIGRATION_VERIFICATION_FAILED')],
     ['SCHEMA_DOWNGRADE_REFUSED', new SchemaMigrationError('SCHEMA_DOWNGRADE_REFUSED')],
