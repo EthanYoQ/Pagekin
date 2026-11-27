@@ -9,11 +9,14 @@ const mocks = vi.hoisted(() => ({
   showOpenDialog: vi.fn(),
 }))
 
-vi.mock('electron', () => ({
+vi.mock('electron', async () => {
+  const { shownSelectionFailure } = await import('./shown-selection-failure')
+  return {
   app: { getLocale: () => 'en-US' },
   dialog: { showOpenDialog: mocks.showOpenDialog },
-  ipcMain: { handle: vi.fn((channel: string, handler: IpcHandler) => mocks.handlers.set(channel, handler)) },
-}))
+  ipcMain: { handle: vi.fn((channel: string, handler: IpcHandler) => mocks.handlers.set(channel, shownSelectionFailure(handler))) },
+  }
+})
 
 import { closeProjectDatabase, getProjectDb } from '../../database'
 import { openCanonicalProjectFixture as initProjectDatabase } from '../../../test/helpers/canonical-project-fixture'

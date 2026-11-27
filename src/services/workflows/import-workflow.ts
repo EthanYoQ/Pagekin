@@ -335,10 +335,10 @@ function productionDependencies(
       return meta?.status === 'superseded'
     },
     publishAuthorChapter: async (chapter, draft, run) => {
-      const { retryFinalizationPublication } = await import('../finalization-client')
+      const { finalizationFailure, retryFinalizationPublication } = await import('../finalization-client')
       const result = await retryFinalizationPublication(draft.finalizationId, session)
       if (!result.success || result.publicationStatus !== 'published') {
-        throw result.error ? new Error(result.error) : authorError(context.interfaceLocale, { note: note('第 {number} 章实体正文发布失败', 'Chapter {number} could not be published to the manuscript directory.', { number: chapter.number }) })
+        throw authorError(context.interfaceLocale, finalizationFailure(result) ?? { note: note('第 {number} 章实体正文发布失败', 'Chapter {number} could not be published to the manuscript directory.', { number: chapter.number }) })
       }
       callbacks.log(textForLocale(
         run.locale,

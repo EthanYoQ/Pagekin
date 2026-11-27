@@ -71,7 +71,7 @@ const finalizationClient = vi.hoisted(() => ({
   commitFinalizationSnapshot: vi.fn(),
 }))
 
-vi.mock('../../../finalization-client', () => finalizationClient)
+vi.mock('../../../finalization-client', async importOriginal => ({ ...await importOriginal<object>(), ...finalizationClient }))
 
 const PROJECT_PATH = 'C:\\novels\\A'
 const CONFIRMED_REVIEW_CONTENT = JSON.stringify({
@@ -348,7 +348,7 @@ describe('workflow mutation failure boundaries', () => {
       contentRevision: 8,
       draftId: 1,
       publicationStatus: 'pending',
-      error: 'Error: MANUSCRIPT_TARGET_CONFLICT',
+      failure: { code: 'MANUSCRIPT_TARGET_CONFLICT' },
     })
     const command = new FinalizeChapterCommand({
       draftPath: 'ai-novel://draft/1',
@@ -420,7 +420,7 @@ describe('workflow mutation failure boundaries', () => {
     finalizationClient.commitFinalizationSnapshot.mockResolvedValue({
       success: false,
       committed: false,
-      error: 'atomic finalization rejected',
+      failure: { code: 'IPC_HANDLER_FAILED' },
     })
     const command = new FinalizeChapterCommand({
       draftPath: 'ai-novel://draft/1',
@@ -448,7 +448,7 @@ describe('workflow mutation failure boundaries', () => {
       step: {},
       context: context(),
       callbacks: stepCallbacks,
-    })).rejects.toThrow('atomic finalization rejected')
+    })).rejects.toThrow('定稿事务未提交')
     expect(finalizationClient.commitFinalizationSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({ content: '编辑器冻结正文', contentRevision: 8 }),
     )
