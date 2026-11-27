@@ -287,7 +287,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
     } catch (error) {
       if (isProjectSessionCurrent(projectSession)) {
         setSaveOutcome('failed')
-        toast.error(failureText(currentInterfaceLocale(), failureOr(SAVE_FAILED, reasonOf(currentInterfaceLocale(), error))))
+        toast.error(failureText(currentInterfaceLocale(), failureOr(SAVE_FAILED, reasonOf(currentInterfaceLocale(), error)), { fallback: SAVE_FAILED }))
       }
       if (propagateFailure) throw error
     } finally {

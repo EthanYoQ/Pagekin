@@ -208,8 +208,8 @@ describe('runPostProcessPipeline stopOnFailure', () => {
     const failure = await runPostProcessPipeline('C:/novel', 'chapter_2_finalize', 'Chapter 2 finalization', [
       { key: 'first', label: 'First step', critical: true, executor: async () => undefined },
     ], callbacks, { retryCount: 0, cancellation: englishContext(), projectSession }).then(() => undefined, (error: unknown) => error as Error)
-    expect(failure?.message).toBe('Failed to create the post-processing run.')
     expect(failure?.message).not.toMatch(/\p{Script=Han}|[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+/u)
+    expect(failure?.message).toBe('Failed to create the post-processing run.')
   })
 
   it('fails closed before IPC when no frozen project session is supplied', async () => {
