@@ -522,13 +522,12 @@ const IMPORT_BLOCKED_CODES = new Set(['GENERATION_DISPATCH_BLOCKED', 'GENERATION
  * 作者原稿不能重新开始，说明写明正文已保存、反推的部分可以手动补齐。
  * 码不进说明，由调用方记进诊断日志。其余码返回 undefined，交给共用说明。
  */
-export function importGenerationStopMessage(
-  locale: ErrorDisplayLocale, code: string, inFlight = false, purpose: 'reference' | 'author-manuscript' = 'reference',
-): string | undefined {
+export function importStopFailure(
+  code: string, inFlight = false, purpose: 'reference' | 'author-manuscript' = 'reference',
+): Failure | undefined {
   const stop = importStopKind(code, inFlight)
   if (!stop) return undefined
-  if (purpose === 'reference') return translate(locale, REFERENCE_STOP_KEYS[stop])
-  return joinSentences(locale, translate(locale, AUTHOR_STOP_REASON_KEYS[stop]), translate(locale, 'error.authorInferenceStopNext'))
+  return { note: catalogNote(purpose === 'reference' ? REFERENCE_STOP_KEYS[stop] : AUTHOR_STOP_KEYS[stop]) }
 }
 
 function chapterPhrase(locale: ErrorDisplayLocale, damaged: DamagedReviewCycle & { chapterNumber: number }): string {
@@ -625,8 +624,8 @@ const REFERENCE_STOP_KEYS = {
   previousAttempt: 'error.importPreviousAttemptIncomplete',
 } as const satisfies Record<ImportStopKind, MessageKey>
 
-/** 作者原稿不能重新开始，原稿正文在反推之前已经提交；说明只写原因，再接作者实际能做的下一步。 */
-const AUTHOR_STOP_REASON_KEYS = {
+/** 作者原稿的正文在反推前已提交，不能重新开始，说明里不提「重新开始」。 */
+const AUTHOR_STOP_KEYS = {
   budget: 'error.authorInferenceBudgetReached',
   activeTime: 'error.authorInferenceActiveTimeExhausted',
   blocked: 'error.authorInferenceBlocked',
