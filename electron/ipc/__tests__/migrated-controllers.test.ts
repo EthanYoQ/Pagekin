@@ -117,6 +117,22 @@ const MIGRATED_DATABASE_CHANNELS = [
   'db:blueprint-character-sync-list-pending',
   'db:blueprint-character-sync-get',
   'db:blueprint-character-sync-complete',
+  'db:draft-import-finalized-batch',
+  'db:draft-create',
+  'db:draft-list',
+  'db:draft-list-all',
+  'db:draft-get-meta',
+  'db:draft-get-full',
+  'db:draft-get-latest',
+  'db:draft-get-finalized',
+  'db:draft-get-max-finalized-chapter',
+  'db:draft-authority-sequence',
+  'db:draft-export-snapshot',
+  'db:draft-export-authority-current',
+  'db:draft-next-version',
+  'db:draft-update-status',
+  'db:draft-update-content',
+  'db:draft-delete',
 ]
 
 it('迁移后的数据库处理器不在直连基线里', () => {

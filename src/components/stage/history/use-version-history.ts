@@ -6,6 +6,8 @@ import type { DraftStatus } from '../../../shared/draft-status'
 import { LatestRequestGate } from '../../../shared/latest-request-gate'
 import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
 import { failureText, resultFailure } from '../../../i18n/app-errors'
+import { draftWriteFailure } from '../../../services/draft-write-failure'
+import { note } from '../../../shared/failure'
 import { useProjectStore } from '../../../stores/project-store'
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
 import { projectSessionContextFromProject, sameProjectSessionContext } from '../../../shared/project-session-context'
@@ -157,11 +159,11 @@ export function useVersionHistory(projectKey: string) {
       content,
       wordCount: countDraftUnits(content),
     }, projectSession.projectPath)
-    if (!created.success) throw new Error(created.error || text('没有新建回滚草稿', 'the rollback draft was not created'))
+    if (!created.success) throw new Error(failureText(currentInterfaceLocale(), draftWriteFailure(created), { fallback: note('没有新建回滚草稿', 'the rollback draft was not created') }))
     if (!isProjectSessionCurrent(projectSession)) return null
     const refreshed = await loadVersions(selectedChapter)
     return { version: refreshed.find(version => version.id === created.id)?.version ?? null, created: true }
-  }, [loadVersions, projectKey, selectedChapter, text])
+  }, [loadVersions, projectKey, selectedChapter])
 
   const currentSession = projectSessionContextFromProject(currentProject)
   const loadedThisSession = loaded !== null && (loaded.session === null

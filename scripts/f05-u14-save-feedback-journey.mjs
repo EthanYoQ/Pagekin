@@ -191,7 +191,7 @@ async function main() {
     mark('fixture-draft-seed')
     const seededDraft = await invoke(page, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
       content: '列车抵达旧车站。', wordCount: 8 }, project.projectPath, context)
-    assert.equal(seededDraft.success, true, seededDraft.error)
+    assert.equal(seededDraft.success, true, seededDraft.failure?.code)
     draftId = seededDraft.id ?? seededDraft.draft?.id
     assert(Number.isInteger(draftId), `draft id absent: ${JSON.stringify(seededDraft)}`)
     mark('stage-project-open')
@@ -447,7 +447,8 @@ async function main() {
       const exitError = exitDialog.getByRole('alert')
       await exitError.waitFor({ state: 'visible' })
       const message = (await exitError.innerText()).trim()
-      assert.match(message, /U14_INJECTED_SAVE_FAILURE/, 'exit dialog does not name the failed save')
+      assert.match(message, /^草稿保存失败/, 'exit dialog does not name the failed save')
+      assert(!message.includes('U14_INJECTED_SAVE_FAILURE'), 'exit dialog exposes the raw save error')
       assert(await shownDirty(page), 'failed exit save falsely marked clean')
       assert(!storedBody().includes('退出保存'), 'failed exit save changed the durable draft body')
       pass('U14.A08-failure', 'U14.A08', 'exit dialog remains open with the failure; the top bar stays unsaved and the durable body is unchanged', { exitError: message })

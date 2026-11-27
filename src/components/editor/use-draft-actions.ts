@@ -10,6 +10,7 @@ import { actionToast, type ActionToastAction } from '../ui/ActionToast'
 import { chapterLabel } from '../../shared/chapter-label'
 import { authorError, displayedErrorMessage, englishWithReason, failureText, resultFailure } from '../../i18n/app-errors'
 import { failureOr } from '../../services/failure-reason'
+import { draftWriteFailure } from '../../services/draft-write-failure'
 import { reasonOf } from '../../services/workflows/commands/architecture.command'
 import { note, type Failure, type LegacyReason } from '../../shared/failure'
 import {
@@ -273,7 +274,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
         countDraftUnits(saveSnapshot.content),
         projectSession.projectPath,
       )
-      if (!result.success) throw authorError(currentInterfaceLocale(), failureOr(SAVE_FAILED, reasonOf(currentInterfaceLocale(), result.error)))
+      if (!result.success) throw authorError(currentInterfaceLocale(), failureOr(SAVE_FAILED, draftWriteFailure(result)))
       if (!isProjectSessionCurrent(projectSession)) return
       const currentTab = useEditorStore.getState().tabs.find(
         tab => tab.id === tabId && tab.projectKey === projectKey,

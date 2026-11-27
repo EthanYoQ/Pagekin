@@ -206,7 +206,7 @@ async function main() {
     const imported = await invoke(session.page, 'db:draft-import-finalized-batch', { operationId: `u15-${runId}`,
       chapters: [{ chapterNumber: 1, title: '旧站来信', content: finalizedText,
         wordCount: [...finalizedText].length }] }, created.projectPath, fixtureSession)
-    assert.equal(imported.success, true, imported.error)
+    assert.equal(imported.success, true, imported.failure?.code)
     const importedDrafts = await invoke(session.page, 'db:draft-list-all', created.projectPath, fixtureSession)
     const importedDraft = importedDrafts.find(draft => draft.chapterNumber === 1 && draft.status === 'finalized')
     assert(importedDraft, 'synthetic finalized chapter was not listed')

@@ -977,9 +977,9 @@ export interface DatabaseChannels {
 
   'db:draft-import-finalized-batch': {
     args: [request: FinalizedDraftImportRequest, expectedProjectPath: string]
-    return: { success: boolean; receipt?: FinalizedDraftImportReceipt; error?: string }
+    return: { success: boolean; receipt?: FinalizedDraftImportReceipt; failure?: Failure }
   }
-  'db:draft-create': { args: [params: { chapterNumber: number; version: number; source: 'write' | 'rewrite'; content: string; wordCount: number; sourceDependencies?: DraftSourceDependency[] }, expectedProjectPath: string]; return: { success: boolean; id?: number; error?: string } }
+  'db:draft-create': { args: [params: { chapterNumber: number; version: number; source: 'write' | 'rewrite'; content: string; wordCount: number; sourceDependencies?: DraftSourceDependency[] }, expectedProjectPath: string]; return: { success: boolean; id?: number; failure?: Failure } }
   'db:draft-list': { args: [chapterNumber: number, expectedProjectPath: string]; return: DraftMeta[] }
   'db:draft-list-all': { args: [expectedProjectPath: string]; return: DraftMeta[] }
   'db:draft-get-meta': { args: [id: number, expectedProjectPath: string]; return: DraftMeta | null }
@@ -1065,17 +1065,13 @@ export interface DatabaseChannels {
     return: { success: boolean; failure?: Failure }
   }
   'db:draft-next-version': { args: [chapterNumber: number, expectedProjectPath: string]; return: number }
-  'db:draft-update-status': { args: [id: number, status: string, wordCount: number | undefined, expectedProjectPath: string]; return: { success: boolean; error?: string } }
+  'db:draft-update-status': { args: [id: number, status: string, wordCount: number | undefined, expectedProjectPath: string]; return: { success: boolean; failure?: Failure } }
   'db:annotation-history-list': { args: [draftId: number, expectedProjectPath: string]; return: { id: number; version: number; before: string; after: string; annotations: import('./editor-inline-generation').EditorInlineAnnotation[]; createdAt: string }[] }
   'db:annotation-commit': { args: [input: { draftId: number; expectedSaved: string; before: string; after: string; annotations: import('./editor-inline-generation').EditorInlineAnnotation[] }, expectedProjectPath: string]; return: { success: boolean; failure?: Failure } }
-  'db:draft-update-content': { args: [id: number, content: string, wordCount: number, expectedProjectPath: string]; return: { success: boolean; error?: string } }
+  'db:draft-update-content': { args: [id: number, content: string, wordCount: number, expectedProjectPath: string]; return: { success: boolean; failure?: Failure } }
   'db:draft-delete': {
     args: [id: number, expectedProjectPath: string]
-    return: {
-      success: boolean
-      errorCode?: 'FINALIZED_DRAFT_DELETE_REQUIRED'
-      error?: string
-    }
+    return: { success: boolean; failure?: Failure }
   }
   'db:recovery-candidate-record': {
     args: [request: RecoveryCandidateRecordInput, expectedProjectPath: string]

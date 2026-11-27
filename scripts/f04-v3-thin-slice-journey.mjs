@@ -85,7 +85,7 @@ async function main() {
     assert.equal(blueprint.success, true, blueprint.error)
     const draft = await invoke(page, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
       content: fixtureBody, wordCount: 8 }, projectPath, context)
-    assert.equal(draft.success, true, draft.error)
+    assert.equal(draft.success, true, draft.failure?.code)
     draftId = draft.id ?? draft.draft?.id
     assert(Number.isInteger(draftId), 'fixture draft id missing')
     await app.close()

@@ -232,11 +232,11 @@ Object.assign(CCH_SCENARIOS, {
       const content = hugeChapter(number)
       const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(),
         chapters: [{ chapterNumber: number, title: chapterTitle(number), content, wordCount: countUnits(content) }] }, projectPath, session)
-      assert.equal(imported.success, true, imported.error)
+      assert.equal(imported.success, true, imported.failure?.code)
     }
     const draft = hugeChapter(4, COPIES_OVER_REVIEW_LIMIT)
     const created = await invoke(page, 'db:draft-create', { chapterNumber: 4, version: 1, source: 'write', content: draft, wordCount: countUnits(draft) }, projectPath, session)
-    assert.equal(created.success, true, created.error)
+    assert.equal(created.success, true, created.failure?.code)
     await reload()
   }, run: async context => {
     const { page, shoot } = context
@@ -275,7 +275,7 @@ Object.assign(CCH_SCENARIOS, {
     const content = chapterText(1)
     const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(),
       chapters: [{ chapterNumber: 1, title: FW723_TITLE, content, wordCount: countUnits(content) }] }, projectPath, session)
-    assert.equal(imported.success, true, imported.error)
+    assert.equal(imported.success, true, imported.failure?.code)
     const knowledge = await invoke(page, 'kb:import-text', content, `第1章 ${FW723_TITLE}.txt`, projectPath, session)
     assert.equal(knowledge.success, true, knowledge.error)
     await context.restart()

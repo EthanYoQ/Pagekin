@@ -389,7 +389,7 @@ async function main() {
     const context = { projectId: created.projectId, projectPath: created.projectPath, leaseId: opened.project.sessionLease }
     const draft = await invoke(a.page, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
       content: `分叉起点 ${runId}`, wordCount: 4 }, created.projectPath, context)
-    assert.equal(draft.success, true, draft.error)
+    assert.equal(draft.success, true, draft.failure?.code)
     await a.page.reload()
     await stage.waitForStage(a.page)
     const panelA = await openPanel(a.page, name)
@@ -441,7 +441,7 @@ async function main() {
       operationId: `u16-finalized-${runId}`, chapters: [{ chapterNumber: 1, title: '铜钥匙',
         content: currentBody, wordCount: [...currentBody].length }],
     }, copy, copySession)
-    assert.equal(finalized.success, true, finalized.error)
+    assert.equal(finalized.success, true, finalized.failure?.code)
     const oldRun = seedFrozenOldRun(path.join(copy, '.ai-novel', 'project.db'), copyOpen.project.id)
     await restarted.page.reload()
     await stage.waitForStage(restarted.page)
@@ -548,7 +548,7 @@ async function main() {
     const initialBody = '新副本继续写作'
     const draft2 = await invoke(resumedA.page, 'db:draft-create', { chapterNumber: 2, version: 1, source: 'write',
       content: initialBody, wordCount: 7 }, selectedBranchCopy, selectedSession)
-    assert.equal(draft2.success, true, draft2.error)
+    assert.equal(draft2.success, true, draft2.failure?.code)
     await resumedA.page.reload()
     await stage.waitForStage(resumedA.page)
     assert.equal(await stage.root(resumedA.page).getAttribute('data-shell-presentation'), 'stage')
