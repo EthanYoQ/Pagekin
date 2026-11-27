@@ -226,7 +226,7 @@ describe('current-project reference import', () => {
         selectionCount += 1
         if (selectionCount === 1) return {
           success: false,
-          error: '一个或多个所选文件只有章节标题，没有可导入的正文。请补充小说正文后，重新选择未完成的文件。',
+          failure: { code: 'IMPORT_SOURCE_SELECTION_FAILED', note: { key: 'error.importSelectionTitleOnly' } },
         }
         return {
           success: true,
@@ -279,7 +279,7 @@ describe('current-project reference import', () => {
     })
     invoke.mockImplementation(async (channel: string) => {
       if (channel === 'db:import-run-list-resumable') return [parsing]
-      if (channel === 'dialog:select-novel-files') return { success: false, error: 'retry interrupted' }
+      if (channel === 'dialog:select-novel-files') return { success: false, failure: { code: 'IMPORT_SOURCE_SELECTION_FAILED', note: { key: 'error.importSelectionEmpty' } }, locale: 'en-US' }
       if (channel === 'db:project-core-get') return null
       if (channel === 'db:blueprint-get-all') return []
       return { success: true }
@@ -301,6 +301,7 @@ describe('current-project reference import', () => {
       locale: 'en-US',
       expectedProjectPath: project.path,
     })
+    await expect.element(page.getByText('One or more selected files are empty. Add novel text and choose the unfinished files again.')).toBeVisible()
   })
 
   it('shows only the persisted safe parsing failure after reopen', async () => {

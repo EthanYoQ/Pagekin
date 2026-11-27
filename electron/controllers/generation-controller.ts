@@ -34,6 +34,7 @@ import type { GenerationKnowledgeSnapshot } from '../../src/shared/generation-kn
 import { withKnowledgeSourceGate } from '../services/knowledge-source-gate'
 import { KnowledgeBaseUnavailableError, knowledgeBaseLoader } from '../services/knowledge-base-loader'
 import { getEmbeddingConfig, getRerankConfig } from './kb-controller'
+import { handle } from '../ipc/handle'
 
 type Owner = ReturnType<typeof createMainGenerationOwner>
 type OwnerChannels = LegacyRosterGenerationChannels & GraphGenerationChannels & GenerationOwnerChannels & CharacterProposalChannels & FinalizedCharacterGenerationChannels & ReviewRevisionGenerationInvokeChannels & AgentGenerationChannels & ImportGenerationChannels & EditorInlineGenerationChannels & FinalizationGenerationChannels
@@ -84,6 +85,7 @@ export function assertImportGenerationSourcesCurrent(handle: MainGenerationRunHa
 
 const GENERATION_ERROR_CODE = /^(?:GENERATION|ROOT_BUDGET|ARTIFACT|MAIN|CHARACTER|FINALIZED_CHARACTER|LEGACY_ROSTER)_[A-Z_]+$/u
 const DIAGNOSTIC_MESSAGE_LIMIT = 200
+const MIGRATED_CHANNEL = /^(?:character-proposal|character-identity|finalized-character|legacy-roster|review-revision):/u
 
 /**
  * 生成 IPC 只向渲染端返回错误码。没有错误码的异常要先留下主进程诊断，再统一成
@@ -182,7 +184,8 @@ export function registerGenerationController(options: {
   }
   function register<C extends keyof OwnerChannels>(channel: C, arity: number,
     handler: (owner: Owner, ...args: OwnerChannels[C]['args']) => OwnerChannels[C]['return'] | Promise<OwnerChannels[C]['return']>) {
-    ipcMain.handle(channel, async (event, ...raw: unknown[]) => {
+    const registerIpc = MIGRATED_CHANNEL.test(channel) ? handle : ipcMain.handle.bind(ipcMain)
+    registerIpc(channel, async (event, ...raw: unknown[]) => {
       try {
         const session = raw.pop()
         if (!isProjectSessionContext(session) || raw.length !== arity && !(channel === 'generation:compose-visible' && raw.length === 3)) throw new Error('GENERATION_PROJECT_SESSION_REQUIRED')

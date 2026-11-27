@@ -256,7 +256,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
         })
         setSplitDone(true)
       } else {
-        setSplitError(displayedErrorMessage(currentInterfaceLocale(), result.error, text('拆章失败', 'Could not split chapters')))
+        setSplitError(failureText(errorLocaleForRun(result.locale ?? runLocale, currentInterfaceLocale()), resultFailure(result), { fallback: note('拆章失败', 'Could not split chapters') }))
       }
     } catch (e) {
       if (operationSession && !isProjectSessionCurrent(operationSession)) return
@@ -264,7 +264,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
     } finally {
       setSplitting(false)
     }
-  }, [createProject, locale, name, purpose, savePath, targetMode, text])
+  }, [createProject, locale, name, purpose, savePath, targetMode])
 
   /** 选择保存路径 */
   const handleSelectFolder = useCallback(async () => {
