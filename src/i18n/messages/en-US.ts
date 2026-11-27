@@ -202,6 +202,7 @@ export const enUS = {
   'error.characterStateResultInvalid': "The finalized chapter text is saved, but the character cards were not updated: the model's character-state replies were in the wrong format several times. Select Retry in this chapter's post-finalization steps. If it keeps failing, choose another model for After finalizing in Models by stage.",
   'error.characterRosterNewerChapter': 'A later finalized chapter already updated this character, so the earlier chapter did not overwrite its current state.',
   'error.narrativeThreadEvidenceNotInSource': 'Paste a short excerpt that appears in the selected finalized chapter.',
+  'error.plotThreadWriteFailed': 'Your existing threads and plot tree are still there. This change could not be saved to the project. Refresh, then try again.',
   'error.draftNotFound': 'This draft no longer exists (it may have been deleted), so the change was not saved.',
   'error.draftFinalizedReadOnly': 'This chapter is finalized and its text is read-only, so the change was not saved.',
   'error.supersededDraftDeleteForbidden': 'This is a replaced final version and cannot be deleted on its own; it is removed together with the chapter manuscript.',

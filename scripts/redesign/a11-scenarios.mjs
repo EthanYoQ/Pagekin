@@ -26,7 +26,7 @@ const seedWith = plans => context => seedStageSample(context, { landOnChapter3: 
   assert.equal(imported.success, true, imported.error)
   for (const plan of plans) {
     const created = await invoke(page, 'db:narrative-thread-plan-create', plan, path, session)
-    assert.equal(created.success, true, created.error)
+    assert.equal(created.success, true, JSON.stringify(created.failure))
   }
 } })
 const seed = seedWith(PLANS)

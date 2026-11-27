@@ -57,7 +57,7 @@ const REFS_CONTRAST = [
 
 const seedRefs = context => seedStageSample(context, { beforeReload: async ({ page, invoke, path: projectPath, session }) => {
   const plan = await invoke(page, 'db:narrative-thread-plan-create', THREAD, projectPath, session)
-  assert.equal(plan.success, true, plan.error)
+  assert.equal(plan.success, true, JSON.stringify(plan.failure))
   const draft = await invoke(page, 'db:draft-create', { chapterNumber: 3, version: 2, source: 'write', content: SECOND_DRAFT,
     wordCount: countUnits(SECOND_DRAFT) }, projectPath, session)
   assert.equal(draft.success, true, draft.error)
