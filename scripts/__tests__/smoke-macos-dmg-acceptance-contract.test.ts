@@ -96,7 +96,7 @@ describe('macOS DMG acceptance receipt contract', () => {
           calls.push(channel)
           if (channel === 'config:get') return config
           expect(channel).toBe('config:set')
-          if (!writeSucceeds) return { success: false, error: 'CONFIG_WRITE_DENIED' }
+          if (!writeSucceeds) return { success: false, failure: { code: 'CONFIG_WRITE_FAILED' } }
           config = { ...config, ...value }
           return { success: true }
         } } },
@@ -111,7 +111,7 @@ describe('macOS DMG acceptance receipt contract', () => {
       closeMacApplication: async () => { calls.push('cleanup') },
     })
     if (macMode && !writeSucceeds) {
-      await expect(run({})).rejects.toThrow('CONFIG_WRITE_DENIED')
+      await expect(run({})).rejects.toThrow('CONFIG_WRITE_FAILED')
       expect(calls).not.toContain('reload')
       expect(calls).toContain('cleanup')
       expect(config).toEqual({ theme: 'light' })
