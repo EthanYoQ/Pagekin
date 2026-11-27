@@ -14,6 +14,7 @@ import {
   type PublishManuscriptInput,
 } from './manuscript-publisher'
 import { PortableRuntimeFreezeError, readPortableRuntimeFreeze } from './portable-runtime-freeze'
+import type { Failure } from '../../src/shared/failure'
 
 export interface FinalizationRequest {
   /** 已由 ProjectAccess 验证并 canonicalize 的项目根目录。 */
@@ -42,6 +43,8 @@ export interface FinalizationResult {
   publicationStatus?: PublicationStatus
   error?: string
 }
+
+export type FinalizationIpcResult = Omit<FinalizationResult, 'error'> & { failure?: Failure }
 
 export interface FinalizationPublisher {
   publish(input: PublishManuscriptInput): Promise<void>

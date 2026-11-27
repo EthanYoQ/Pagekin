@@ -307,7 +307,7 @@ async function main() {
       const committed = await invoke(stalePage, 'finalization:commit', { tabId: 'u09-stale-v2', projectPath,
         projectSession: currentSession, draftId: newer.id, chapterNumber: 1, chapterTitle: '南站新版',
         content: newerText, contentRevision: 0 }, currentSession)
-      assert.equal(committed.success, true, committed.error)
+      assert.equal(committed.success, true, committed.failure?.code)
       assert.equal(importDb.prepare("SELECT id FROM drafts WHERE chapter_number=1 AND status='finalized' ORDER BY version DESC LIMIT 1").get().id,
         newer.id, 'newer version did not become authoritative')
       releaseLateModel(); releaseLateModel = undefined

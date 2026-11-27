@@ -1,5 +1,4 @@
 import { wireNote } from '../../src/i18n/app-errors'
-import { translate } from '../../src/i18n/core'
 import type { WireFailure } from '../../src/shared/failure'
 import { MAX_TEXT_BYTES } from '../security/windows-safe-file-system'
 
@@ -17,9 +16,9 @@ function readFailureKey(error: unknown): (typeof READ_FAILURES)[keyof typeof REA
   return Object.hasOwn(READ_FAILURES, code) ? READ_FAILURES[code as keyof typeof READ_FAILURES] : undefined
 }
 
-export function readFailureCopy(error: unknown): readonly [zhCN: string, enUS: string] | undefined {
+export function readFailureNote(error: unknown) {
   const key = readFailureKey(error)
-  return key && [translate('zh-CN', key, { max: MAX_TEXT_MB }), translate('en-US', key, { max: MAX_TEXT_MB })]
+  return key && { key, params: { max: MAX_TEXT_MB } }
 }
 
 export function externalFileReadFailure(error: unknown): WireFailure {

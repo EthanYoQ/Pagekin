@@ -82,6 +82,7 @@ import type {
   ImportInspectionSummary,
   ImportPurpose,
   ImportNovelFileSelectionRequest,
+  ImportRunLocale,
   ImportRunPreparationResult,
   ImportRunPrepareFromInspectionResult,
   ImportRunPrepareFromInspectionRequest,
@@ -1210,7 +1211,9 @@ export interface ImportChannels {
       success: boolean
       inspection?: ImportInspectionSummary
       preparation?: ImportRunPreparationResult
-      error?: string
+      failure?: Failure
+      /** 失败说明所用语言；续上未完成的导入时沿用原运行的语言。 */
+      locale?: ImportRunLocale
     } | null
   }
 }

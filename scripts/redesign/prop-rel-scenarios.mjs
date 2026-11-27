@@ -8,7 +8,7 @@ import * as stage from './pages/stage.mjs'
 import { finalizeChapter } from './f491-scenarios.mjs'
 import { afterIpc, seedStageSample } from './scenarios.mjs'
 
-async function generate(page, fake, from, to) {
+export async function generate(page, fake, from, to) {
   const before = fake.chats.length
   await blueprint.generateRange(page, from, to)
   await runSheet.waitUntilOpen(page)

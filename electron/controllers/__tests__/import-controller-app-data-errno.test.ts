@@ -10,15 +10,18 @@ const mocks = vi.hoisted(() => ({
   showOpenDialog: vi.fn(),
 }))
 
-vi.mock('electron', () => ({
+vi.mock('electron', async () => {
+  const { shownSelectionFailure } = await import('./shown-selection-failure')
+  return {
   app: { getLocale: () => 'zh-CN' },
   dialog: { showOpenDialog: mocks.showOpenDialog },
   ipcMain: {
     handle: vi.fn((channel: string, handler: IpcHandler) => {
-      mocks.handlers.set(channel, handler)
+      mocks.handlers.set(channel, shownSelectionFailure(handler))
     }),
   },
-}))
+  }
+})
 
 vi.mock('../../services/import-source-identity-secret', () => ({
   loadApplicationImportSourceSecret: () => {
