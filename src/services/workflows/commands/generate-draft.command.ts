@@ -1,7 +1,7 @@
 import { chapterTimeContinuity } from '../../../shared/chapter-time-continuity'
 import { ignoreFailure } from '../../../shared/ignore-failure'
 import { authorError, displayedErrorMessage, englishWithReason, resultFailure } from '../../../i18n/app-errors'
-import { failureCode, note } from '../../../shared/failure'
+import { authorOwned, failureCode, note } from '../../../shared/failure'
 import { sanitizeDraftText, composeDraftVisibleContinuation, DRAFT_CONDENSE_PURPOSE, DRAFT_VISIBLE_TEXT_VERSION, isDraftVisibleTextVersion, type DraftVisibleTextVersion } from '../../../shared/draft-visible-text'
 import { DRAFT_RECONCILE_PURPOSE, draftReconciliationBlock } from '../../../shared/draft-reconciliation'
 import { DEFAULT_MATERIAL_ADMISSION } from '../../../shared/generation-owner-contract'
@@ -598,10 +598,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
       projectSession,
       projectSessionContextFromProject(project),
     )) {
-      throw new Error(uiText(
-        '当前项目已切换，章节生成已停止',
-        'The project changed, so chapter generation was stopped.',
-      ))
+      throw authorError(context.interfaceLocale, { note: note('当前项目已切换，章节生成已停止', 'The project changed, so chapter generation was stopped.') })
     }
     const novelConfig = Object.freeze({ ...project.novelConfig })
     const writingLanguage = workflowWritingLanguage(context)
@@ -734,10 +731,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
     })
 
     const template = await resolvePromptTemplate(templateKey, projectSession, writingLanguage)
-    if (!template) throw new Error(uiText(
-      `未找到模板: ${templateKey}`,
-      `Template not found: ${templateKey}`,
-    ))
+    if (!template) throw authorError(context.interfaceLocale, { note: note('未找到模板: {templateKey}', 'Template not found: {templateKey}', { templateKey: authorOwned(templateKey) }) })
 
     // ==========================================
     // Prompt 构建——按「稳定前缀 → 可变后缀」排列
@@ -856,10 +850,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
       && Boolean(source.content.trim())
     ))
     if (!isFirstChapter && !hasRequiredPreviousCandidate && !requiredFinalizedSource) {
-      throw new Error(uiText(
-        `无法固定第 ${previousChapterNumber} 章的必需定稿来源，已停止生成。请修复或重新定稿该章后再试。`,
-        `The required finalized source for Chapter ${previousChapterNumber} could not be fixed, so generation stopped. Repair or re-finalize that chapter and try again.`,
-      ))
+      throw authorError(context.interfaceLocale, { note: note('无法固定第 {previousChapterNumber} 章的必需定稿来源，已停止生成。请修复或重新定稿该章后再试。', 'The required finalized source for Chapter {previousChapterNumber} could not be fixed, so generation stopped. Repair or re-finalize that chapter and try again.', { previousChapterNumber }) })
     }
     const chapterExecutionContract = chapterExecutionContractText(writingLanguage, writerChapterInfo)
     const systemRole = `${promptBuilder.getSystemRole()}\n\n${chapterExecutionContract.rules}`
@@ -904,10 +895,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
         `  必需材料超出上下文容量（${error.decision.decision}）：${blocked}`,
         `  Required material exceeds the context capacity (${error.decision.decision}): ${blocked}`,
       ))
-      throw new Error(uiText(
-        '本章必需材料（作者资料、角色档案、后续计划、上一章正文）超出上下文容量，已停止生成。请精简这些内容后重试。',
-        'The required material for this chapter (author facts, character profiles, future plans, previous chapter prose) exceeds the context capacity, so generation stopped. Trim it and try again.',
-      ))
+      throw authorError(context.interfaceLocale, { note: note('本章必需材料（作者资料、角色档案、后续计划、上一章正文）超出上下文容量，已停止生成。请精简这些内容后重试。', 'The required material for this chapter (author facts, character profiles, future plans, previous chapter prose) exceeds the context capacity, so generation stopped. Trim it and try again.') })
     }
     const admittedCandidateSourceIds = new Set(chapterMaterials.selection.included
       .map(material => material.ref.sourceId)
@@ -1266,10 +1254,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
         if (units < range.minimum) throw draftTooShortError(context, units, targetChars)
       }
       if (!alreadySaved && hasSubstantialPreviousChapterReuse(previousEnding, cleanDraftText, writingLanguage)) {
-        throw new Error(uiText(
-          '新章节开头与上一章结尾存在大段重演，结果未保存。请重新生成，并让本章从上一章已完成事件之后继续。',
-          'The new chapter substantially replays the previous ending, so it was not saved. Regenerate it and continue after the events already completed in the previous chapter.',
-        ))
+        throw authorError(context.interfaceLocale, { note: note('新章节开头与上一章结尾存在大段重演，结果未保存。请重新生成，并让本章从上一章已完成事件之后继续。', 'The new chapter substantially replays the previous ending, so it was not saved. Regenerate it and continue after the events already completed in the previous chapter.') })
       }
 
       // 落于数据库
@@ -1277,10 +1262,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
         projectSession,
         projectSessionContextFromProject(useProjectStore.getState().currentProject),
       )) {
-        throw new Error(uiText(
-          '当前项目已切换，已拒绝保存章节草稿',
-          'The project changed, so saving the chapter draft was refused.',
-        ))
+        throw authorError(context.interfaceLocale, { note: note('当前项目已切换，已拒绝保存章节草稿', 'The project changed, so saving the chapter draft was refused.') })
       }
       this.assertNotCancelled(context)
       if (mainOwned && !alreadySaved
@@ -1660,10 +1642,7 @@ ${visibleDraft}`,
       if (addition.finishReason === 'length' && mergedDelta < 300) {
         params.callbacks.replaceText?.(draft)
         if (noProgressRecoveryUsed) {
-          throw new Error(uiText(
-            '唯一一次无进展恢复请求仍未增加足够的新正文，结果未保存。请缩短章节目标后重试。',
-            'The single no-progress recovery request still did not add enough new prose, so the result was not saved. Shorten the chapter target and try again.',
-          ))
+          throw authorError(params.context.interfaceLocale, { note: note('唯一一次无进展恢复请求仍未增加足够的新正文，结果未保存。请缩短章节目标后重试。', 'The single no-progress recovery request still did not add enough new prose, so the result was not saved. Shorten the chapter target and try again.') })
         }
         noProgressRecoveryUsed = true
         recoveryPending = true

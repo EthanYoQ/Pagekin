@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { captureProjectSession, isProjectSessionCurrent, isProjectSessionPath } from '../project-session-gate'
 import { useProjectStore } from '../../stores/project-store'
 import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
-import { displayedErrorMessage } from '../../i18n/app-errors'
+import { authorError, displayedErrorMessage } from '../../i18n/app-errors'
+import { authorOwned, note } from '../../shared/failure'
 import { useLLMStore } from '../../stores/llm-store'
 import { ipc } from '../../services/ipc-client'
 import { requireIpcSuccess } from '../../services/ipc-result'
@@ -498,10 +499,7 @@ export function useReviewChecklist({
           ...(cycle?.cycleId ? { reviewCycleId: cycle.cycleId } : {}),
         }, projectSession.projectPath)
       if (createResponse.errorCode === 'SOURCE_DRAFT_CHANGED') {
-        throw new Error(text(
-          '确认期间源草稿已变化，清单未保存；请重新运行 AI 审稿。',
-          'The source draft changed during confirmation, so the checklist was not saved. Run AI review again.',
-        ))
+        throw authorError(currentInterfaceLocale(), { note: note('确认期间源草稿已变化，清单未保存；请重新运行 AI 审稿。', 'The source draft changed during confirmation, so the checklist was not saved. Run AI review again.') })
       }
       const createResult = requireIpcSuccess(
         createResponse,
@@ -509,10 +507,7 @@ export function useReviewChecklist({
       )
       if (!isProjectSessionCurrent(projectSession)) return null
       if (!isReviewId(createResult.id)) {
-        throw new Error(text(
-          '确认审稿清单未返回记录标识。',
-          'The confirmed checklist did not return a record identifier.',
-        ))
+        throw authorError(currentInterfaceLocale(), { note: note('确认审稿清单未返回记录标识。', 'The confirmed checklist did not return a record identifier.') })
       }
 
       const saved = { reviewSourceId: createResult.id, content, snapshot }
@@ -681,10 +676,7 @@ export function useReviewChecklist({
         readDraftBody(draftPath, projectSession.projectPath, projectSession),
       ])
       if (!isProjectSessionCurrent(projectSession)) return
-      if (!draftMeta || !draftContent) throw new Error(text(
-        '关联的合并稿不可读，无法启动复验。',
-        'The merged draft cannot be read, so the recheck was not started.',
-      ))
+      if (!draftMeta || !draftContent) throw authorError(currentInterfaceLocale(), { note: note('关联的合并稿不可读，无法启动复验。', 'The merged draft cannot be read, so the recheck was not started.') })
       const draftTab = useEditorStore.getState().tabs.find(tab => (
         tab.projectKey === projectSession.projectPath && tab.filePath === draftPath
       ))
@@ -701,10 +693,7 @@ export function useReviewChecklist({
       }, projectSession)
       const workflowStore = useWorkflowStore.getState()
       const conflict = workflowStore.getResourceConflict(workflow)
-      if (conflict) throw new Error(text(
-        `复验暂未启动：任务“${conflict.title}”正在占用本章。`,
-        `The recheck was not started because “${conflict.title}” is using this chapter.`,
-      ))
+      if (conflict) throw authorError(currentInterfaceLocale(), { note: note('复验暂未启动：任务“{title}”正在占用本章。', 'The recheck was not started because “{title}” is using this chapter.', { title: authorOwned(conflict.title) }) })
       const runId = await workflowStore.startWorkflow(workflow, false)
       if (!isProjectSessionCurrent(projectSession)) return
       const run = useWorkflowStore.getState().history.find(candidate => candidate.id === runId)
@@ -715,10 +704,7 @@ export function useReviewChecklist({
       // 界面上的循环由复验完成的广播触发重读；这里只读一次决定提示。
       const refreshed = await ipc.invokeWithProjectSession(projectSession, 'db:review-cycle-get', sourceReviewId, projectSession.projectPath)
       if (!isProjectSessionCurrent(projectSession)) return
-      if (refreshed?.recheckDisposition !== 'completed') throw new Error(text(
-        '复验已运行，但持久化状态仍未完成，请重试。',
-        'The recheck ran, but its persisted state is still incomplete. Retry it.',
-      ))
+      if (refreshed?.recheckDisposition !== 'completed') throw authorError(currentInterfaceLocale(), { note: note('复验已运行，但持久化状态仍未完成，请重试。', 'The recheck ran, but its persisted state is still incomplete. Retry it.') })
       setRecheckMessage({ kind: 'success', text: text('合并后复验已完成。', 'The post-merge recheck is complete.') })
     } catch (error) {
       if (isProjectSessionCurrent(projectSession)) setRecheckMessage({ kind: 'error', text: displayedErrorMessage(currentInterfaceLocale(), error,

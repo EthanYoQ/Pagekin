@@ -8,7 +8,8 @@ import { navigate } from '../../stores/navigation/navigation-intents'
 import { toast } from '../ui/Toast'
 import { actionToast, type ActionToastAction } from '../ui/ActionToast'
 import { chapterLabel } from '../../shared/chapter-label'
-import { displayedErrorMessage, englishWithReason } from '../../i18n/app-errors'
+import { authorError, displayedErrorMessage, englishWithReason } from '../../i18n/app-errors'
+import { note } from '../../shared/failure'
 import {
   draftAIResourceClaims,
   finalizeResourceClaims,
@@ -259,7 +260,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
     setSaveOutcome('idle')
     try {
       const resource = parseResourceUri(filePath)
-      if (!resourceWriteAllowed(filePath) || resource?.kind !== 'draft') throw new Error(text('资源只读或无效', 'This resource is read-only or invalid.'))
+      if (!resourceWriteAllowed(filePath) || resource?.kind !== 'draft') throw authorError(currentInterfaceLocale(), { note: note('资源只读或无效', 'This resource is read-only or invalid.') })
       const result = await ipc.invokeWithProjectSession(
         projectSession,
         'db:draft-update-content',
@@ -470,7 +471,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
         tab => tab.id === tabId && tab.projectKey === projectKey,
       )
       if (!targetTab) {
-        throw new Error(text('当前草稿或项目会话已失效，无法冻结定稿内容', 'The draft or project session is no longer available.'))
+        throw authorError(currentInterfaceLocale(), { note: note('当前草稿或项目会话已失效，无法冻结定稿内容', 'The draft or project session is no longer available.') })
       }
       const snapshot = captureFinalizationSnapshot({
         tab: {

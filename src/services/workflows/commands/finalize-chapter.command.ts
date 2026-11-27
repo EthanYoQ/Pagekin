@@ -45,7 +45,10 @@ import {
   workflowMainProcessError,
 } from '../workflow-project-session'
 import { writingLanguageText } from '../../../shared/writing-language'
-import { localize } from '../../../i18n/core'
+import { errorLocaleForRun, localize } from '../../../i18n/core'
+import { authorError } from '../../../i18n/app-errors'
+import { note } from '../../../shared/failure'
+import { currentInterfaceLocale } from '../../../stores/locale-store'
 import type { Locale } from '../../../i18n/types'
 import type { FinalizedCharacterGenerationReceipt } from '../../../shared/finalized-character-generation'
 import {
@@ -123,7 +126,7 @@ export function buildFinalizePostProcessSteps(
     label: text('导入知识库', 'Import into knowledge base'),
     critical: true,
     executor: async (callbacks, context) => {
-      if (!context) throw new Error(text('定稿后处理缺少冻结工作流上下文', 'Post-finalization processing is missing the frozen workflow context.'))
+      if (!context) throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('定稿后处理缺少冻结工作流上下文', 'Post-finalization processing is missing the frozen workflow context.') })
       if (context.cancelled) throw new WorkflowCancelledError(workflowUiText(context, '工作流已取消', 'Workflow was cancelled.'))
       const projectSession = requireWorkflowProjectSession(context)
       const writingLanguage = workflowWritingLanguage(context)
@@ -145,11 +148,7 @@ export function buildFinalizePostProcessSteps(
       if (code) throw new Error(code)
       requireIpcSuccess(result, text('导入知识库', 'Import into knowledge base'))
       if (finalizedDraftId !== undefined) {
-        if (!result.docId) throw new Error(workflowUiText(
-          context,
-          '知识库导入成功但缺少文档身份收据',
-          'The knowledge-base import succeeded but returned no document identity receipt.',
-        ))
+        if (!result.docId) throw authorError(context.interfaceLocale, { note: note('知识库导入成功但缺少文档身份收据', 'The knowledge-base import succeeded but returned no document identity receipt.') })
         const linked = await ipc.invokeWithProjectSession(
           projectSession,
           'db:finalization-link-knowledge-document',
@@ -176,7 +175,7 @@ export function buildFinalizePostProcessSteps(
       label: text('章节剧情要点', 'Chapter plot notes'),
       critical: true,
       executor: async (callbacks, context) => {
-        if (!context) throw new Error(text('定稿后处理缺少冻结工作流上下文', 'Post-finalization processing is missing the frozen workflow context.'))
+        if (!context) throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('定稿后处理缺少冻结工作流上下文', 'Post-finalization processing is missing the frozen workflow context.') })
         if (context.cancelled) throw new WorkflowCancelledError(workflowUiText(context, '工作流已取消', 'Workflow was cancelled.'))
         if (
           finalizedDraftId !== undefined
@@ -187,11 +186,7 @@ export function buildFinalizePostProcessSteps(
             || projectionGeneration! < 0
           )
         ) {
-          throw new Error(workflowUiText(
-            context,
-            '定稿连续性投影缺少模型调用前冻结的来源水位',
-            'The finalized continuity projection is missing the source watermark frozen before the model call.',
-          ))
+          throw authorError(context.interfaceLocale, { note: note('定稿连续性投影缺少模型调用前冻结的来源水位', 'The finalized continuity projection is missing the source watermark frozen before the model call.') })
         }
         if (generation.finalizedStage) {
           const effect = await generation.finalizedStage('chapter_notes', context)
@@ -202,11 +197,7 @@ export function buildFinalizePostProcessSteps(
         const projectSession = requireWorkflowProjectSession(context)
         const writingLanguage = workflowWritingLanguage(context)
         const notesTemplate = await resolvePromptTemplate('generate_chapter_notes', projectSession, writingLanguage)
-        if (!notesTemplate) throw new Error(workflowUiText(
-          context,
-          '未找到章节要点模板',
-          'Chapter-notes template not found.',
-        ))
+        if (!notesTemplate) throw authorError(context.interfaceLocale, { note: note('未找到章节要点模板', 'Chapter-notes template not found.') })
         const notesBuilder = new PostProcessPromptBuilder(notesTemplate, writingLanguage)
           .withChapterContent(draftContent)
           .withChapterNumber(chapterNumber)
@@ -321,7 +312,7 @@ export function buildFinalizePostProcessSteps(
         label,
         critical: false,
         executor: async (callbacks, context) => {
-          if (!context) throw new Error(text('定稿后处理缺少冻结工作流上下文', 'Post-finalization processing is missing the frozen workflow context.'))
+          if (!context) throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('定稿后处理缺少冻结工作流上下文', 'Post-finalization processing is missing the frozen workflow context.') })
           if (context.cancelled) throw new WorkflowCancelledError(workflowUiText(context, '工作流已取消', 'Workflow was cancelled.'))
           const result = await ipc.invokeWithProjectSession(
             requireWorkflowProjectSession(context),
@@ -399,11 +390,7 @@ export class RunFinalizePostProcessCommand extends BaseWorkflowCommand<PostProce
       || frozen.source.chapterNumber !== this.params.finalizedSource.chapterNumber
       || frozen.source.contentHash !== this.params.finalizedSource.contentHash
     ) {
-      throw new Error(workflowUiText(
-        context,
-        '定稿正文来源收据已失效，后处理未启动',
-        'The finalized manuscript source receipt is stale, so post-processing was not started.',
-      ))
+      throw authorError(context.interfaceLocale, { note: note('定稿正文来源收据已失效，后处理未启动', 'The finalized manuscript source receipt is stale, so post-processing was not started.') })
     }
     // Capture once before the pipeline's withRetry; a transport retry must keep the same failed result.
     const explicit: Partial<Record<FinalizationStepKey, { retryRunId: string; retryOf?: FinalizedCharacterArtifact }>> = {}
@@ -509,15 +496,12 @@ export class FinalizeChapterCommand extends BaseWorkflowCommand<PostProcessStatu
     const uiText = (zhCNText: string, enUSText: string) => workflowUiText(context, zhCNText, enUSText)
     const projectSession = requireWorkflowProjectSession(context)
     const project = useProjectStore.getState().currentProject
-    if (!project) throw new Error(uiText('未打开项目', 'No project is open.'))
+    if (!project) throw authorError(context.interfaceLocale, { note: note('未打开项目', 'No project is open.') })
     if (!sameProjectSessionContext(
       projectSession,
       projectSessionContextFromProject(project),
     )) {
-      throw new Error(uiText(
-        '项目已切换，已停止对原项目的定稿操作',
-        'The project changed, so finalization of the previous project was stopped.',
-      ))
+      throw authorError(context.interfaceLocale, { note: note('项目已切换，已停止对原项目的定稿操作', 'The project changed, so finalization of the previous project was stopped.') })
     }
 
     callbacks.log(uiText(
@@ -527,13 +511,10 @@ export class FinalizeChapterCommand extends BaseWorkflowCommand<PostProcessStatu
 
     const snapshot = this.params.snapshot ?? await this.createBatchSnapshot(context, project.path)
     if (snapshot.projectPath !== project.path) {
-      throw new Error(uiText(
-        '定稿快照属于已切换的项目会话',
-        'The finalization snapshot belongs to a project session that is no longer active.',
-      ))
+      throw authorError(context.interfaceLocale, { note: note('定稿快照属于已切换的项目会话', 'The finalization snapshot belongs to a project session that is no longer active.') })
     }
     const refinedDraftText = snapshot.content
-    if (!refinedDraftText) throw new Error(uiText('没有定稿内容', 'There is no content to finalize.'))
+    if (!refinedDraftText) throw authorError(context.interfaceLocale, { note: note('没有定稿内容', 'There is no content to finalize.') })
 
     // SQLite 正文、状态和 publication outbox 由主进程在一个事务内提交。这里绝不
     // 再读取旧数据库正文，也不以 renderer 路径写实体稿。
@@ -638,7 +619,7 @@ export class FinalizeChapterCommand extends BaseWorkflowCommand<PostProcessStatu
     const projectSession = requireWorkflowProjectSession(context)
     const dbDraft = await readWorkflowDraftMeta(this.params.draftPath, projectPath, projectSession)
     this.assertNotCancelled(context)
-    if (!dbDraft) throw new Error(workflowUiText(context, '内部状态流转异常：无法定位待定稿草稿', 'Internal state error: the draft to finalize could not be found.'))
+    if (!dbDraft) throw authorError(context.interfaceLocale, { note: note('内部状态流转异常：无法定位待定稿草稿', 'Internal state error: the draft to finalize could not be found.') })
     return Object.freeze({
       tabId: `batch:${context.runId}:${dbDraft.id}`,
       projectPath,

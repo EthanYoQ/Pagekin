@@ -11,9 +11,11 @@ import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { sameProjectPathKey } from '../../shared/project-session-context'
 import { FINALIZATION_SHARED_WRITE_RESOURCE_KINDS, type WorkflowResourceClaims } from '../../shared/workflow-resource-claims'
 import { normalizeChapterWordsTarget } from './chapter-creation-parameters'
-import { localize } from '../../i18n/core'
+import { errorLocaleForRun, localize } from '../../i18n/core'
+import { authorError } from '../../i18n/app-errors'
+import { note } from '../../shared/failure'
 import type { Locale } from '../../i18n/types'
-import { useLocaleStore } from '../../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { FINALIZE_POST_PROCESS_KEY } from './stage-notice'
 
 // ==========================================
@@ -150,11 +152,7 @@ function workflowProjectSession(
   uiLocale: Locale = chapterWorkflowLocale(),
 ): ProjectSessionContext {
   if (!sameProjectPathKey(sourceProjectSession.projectPath, projectPath)) {
-    throw new Error(localize(
-      uiLocale,
-      '工作流项目会话与目标路径不匹配',
-      'Workflow project session does not match the target path',
-    ))
+    throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('工作流项目会话与目标路径不匹配', 'Workflow project session does not match the target path') })
   }
   return Object.freeze({ ...sourceProjectSession })
 }
@@ -172,11 +170,7 @@ export async function parseDraftMeta(
   if (!resource || !['draft', 'manuscript', 'chapter'].includes(resource.kind)) return null
   filePath = canonicalResourceUri(filePath)!
   if (!sameProjectPathKey(projectSession.projectPath, expectedProjectPath)) {
-    throw new Error(localize(
-      chapterWorkflowLocale(),
-      '读取草稿元数据时项目会话与目标路径不匹配',
-      'The project session does not match the target path, so the draft metadata was not read.',
-    ))
+    throw authorError(errorLocaleForRun(chapterWorkflowLocale(), currentInterfaceLocale()), { note: note('读取草稿元数据时项目会话与目标路径不匹配', 'The project session does not match the target path, so the draft metadata was not read.') })
   }
 
   // 优先处理 ai-novel://draft/{id} 纯数字 ID 格式（DB 化后的标准路径）
@@ -506,10 +500,7 @@ export function createRepairFinalizeWorkflow(
           const projectSession = requireWorkflowProjectSession(context)
           const project = useProjectStore.getState().currentProject
           if (!project || !sameProjectSessionContext(projectSession, projectSessionContextFromProject(project))) {
-            throw new Error(text(
-              '当前项目已切换，修复已停止',
-              'The project changed, so repair was stopped.',
-            ))
+            throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('当前项目已切换，修复已停止', 'The project changed, so repair was stopped.') })
           }
 
           // 使用数据库定稿源
@@ -519,15 +510,9 @@ export function createRepairFinalizeWorkflow(
             chapterNumber,
             projectPath,
           )
-          if (!draftMeta) throw new Error(text(
-            `第 ${chapterNumber} 章的定稿记录未获取到`,
-            `The finalized record for Chapter ${chapterNumber} could not be found.`,
-          ))
+          if (!draftMeta) throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('第 {chapterNumber} 章的定稿记录未获取到', 'The finalized record for Chapter {chapterNumber} could not be found.', { chapterNumber }) })
           const full = await ipc.invokeWithProjectSession(projectSession, 'db:draft-get-full', draftMeta.id, projectPath)
-          if (!full) throw new Error(text(
-            `正文提取失败: ID=${draftMeta.id}`,
-            `Could not read finalized manuscript content: ID=${draftMeta.id}`,
-          ))
+          if (!full) throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('正文提取失败: ID={id}', 'Could not read finalized manuscript content: ID={id}', { id: draftMeta.id }) })
           const finalizedSource = await ipc.invokeWithProjectSession(
             projectSession,
             'db:continuity-read-source',
@@ -537,10 +522,7 @@ export function createRepairFinalizeWorkflow(
           if (
             finalizedSource.status !== 'valid'
             || finalizedSource.snapshot.content !== full.content
-          ) throw new Error(text(
-            '定稿正文来源收据已失效',
-            'The finalized manuscript source receipt is stale.',
-          ))
+          ) throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('定稿正文来源收据已失效', 'The finalized manuscript source receipt is stale.') })
 
           let chapterTitle = text(`第${chapterNumber}章`, `Chapter ${chapterNumber}`)
           let chapterEntities: string[] = []
@@ -560,10 +542,7 @@ export function createRepairFinalizeWorkflow(
             return stepKey ? plan.rows.get(stepKey) ?? [] : plan.card
           }
           let stepKeys = current ? arrange(current.steps) : undefined
-          if (stepKeys?.length === 0) throw new Error(text(
-            '没有可以重试的失败步骤，请按各步骤的说明处理。',
-            'No failed step can be retried. Follow the note on each step.',
-          ))
+          if (stepKeys?.length === 0) throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('没有可以重试的失败步骤，请按各步骤的说明处理。', 'No failed step can be retried. Follow the note on each step.') })
 
           // 修复运行也冻结一次模型租约，全部 LLM 后处理共享一个预算。
           const { RunFinalizePostProcessCommand } = await import('./commands/finalize-chapter.command')

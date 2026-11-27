@@ -12,7 +12,8 @@ import type { StepCallbacks, WorkflowContext } from '../../stores/workflow-store
 import type { AllInvokeChannels, InvokeChannel, ProjectSessionContext } from '../../shared/ipc-channels'
 import { ipc } from '../ipc-client'
 import { copyLocale, errorLocaleForRun, localize } from '../../i18n/core'
-import { displayedErrorMessage } from '../../i18n/app-errors'
+import { authorError, displayedErrorMessage } from '../../i18n/app-errors'
+import { note } from '../../shared/failure'
 import type { ErrorDisplayLocale } from '../../i18n/types'
 import { currentInterfaceLocale } from '../../stores/locale-store'
 import { isWorkflowCancellation, WorkflowCancelledError } from './workflow-cancellation'
@@ -272,10 +273,7 @@ export async function runPostProcessPipeline(
 
   assertNotCancelled()
   if (!projectSession) {
-    throw new Error(text(
-      '后处理缺少冻结项目会话，已拒绝项目数据访问',
-      'Post-processing is missing a frozen project session, so project data access was denied.',
-    ))
+    throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('后处理缺少冻结项目会话，已拒绝项目数据访问', 'Post-processing is missing a frozen project session, so project data access was denied.') })
   }
   const { sourceType, sourceId } = parseScope(scope)
 
