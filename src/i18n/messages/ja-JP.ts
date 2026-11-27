@@ -299,7 +299,7 @@ export const jaJP = {
   'error.kimiTemperatureInvalid': 'Kimi API が受け付ける temperature は 0 から 1 までです。モデルの設定で調整してから、もう一度お試しください。',
   'error.modelOutputLimitInvalid': 'モデルの最大出力トークン数の設定が無効です。設定でこのモデルに正の整数を入力してから、もう一度お試しください。',
   'error.importRunCheckFailed': 'チェックが失敗したため（{code}）、取り込みを続行できませんでした。もう一度お試しください。繰り返し発生する場合は、このメッセージをお送りください。',
-  'error.importRunCheckFailedUncoded': 'チェックが失敗したため、取り込みを続行できませんでした。もう一度お試しください。繰り返し発生する場合は、このメッセージをお送りください。',
+  'error.importRunCheckFailedUncoded': 'すでに取り込んだ内容は影響を受けていません。チェックが失敗したため、取り込みを続行できませんでした。もう一度お試しください。繰り返し発生する場合は、このメッセージをお送りください。',
   'error.importRunSourceOverlap': '同じ取り込み元を含む、再開できる別の取り込みがあります。その取り込みを完了するかキャンセルしてから、もう一度お試しください。',
   'error.importRunAuthorPreviousRunning': '前回の作者の原稿の取り込みがまだ実行中です。停止するのを待ってから、最新のプレビューをもう一度確認してください。',
   'error.importRunAuthorStateChanged': '作者の原稿の取り込み状態が変わりました。最新のプレビューをもう一度確認してください。',

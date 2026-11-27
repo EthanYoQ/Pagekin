@@ -297,7 +297,7 @@ export const enUS = {
   'error.kimiTemperatureInvalid': 'The Kimi API only accepts a temperature from 0 to 1. Adjust it in the model settings, then try again.',
   'error.modelOutputLimitInvalid': 'The model’s max output tokens setting is invalid. Enter a positive whole number for this model in Settings, then try again.',
   'error.importRunCheckFailed': 'The import could not continue because a check failed ({code}). Try again; if it keeps happening, send us this message.',
-  'error.importRunCheckFailedUncoded': 'The import could not continue because a check failed. Try again; if it keeps happening, send us this message.',
+  'error.importRunCheckFailedUncoded': 'Content already imported is unaffected. The import could not continue because a check failed. Try again; if it keeps happening, send us this message.',
   'error.importRunSourceOverlap': 'Another resumable import already contains the same source. Complete or cancel that import, then try again.',
   'error.importRunAuthorPreviousRunning': 'The previous author import is still running. Wait for it to stop, then confirm the latest preview again.',
   'error.importRunAuthorStateChanged': 'The author import state changed. Confirm the latest preview again.',

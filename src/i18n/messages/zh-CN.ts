@@ -299,7 +299,7 @@ export const zhCN = {
   'error.kimiTemperatureInvalid': 'Kimi API 的温度必须在 0 到 1 之间。请在模型设置里调整后重试。',
   'error.modelOutputLimitInvalid': '模型的最大输出 Tokens 无效。请在设置里为这个模型填一个正整数后重试。',
   'error.importRunCheckFailed': '导入没能继续：校验没有通过（{code}）。请重试；如果仍然出现，请把这段说明反馈给我们。',
-  'error.importRunCheckFailedUncoded': '导入没能继续：校验没有通过。请重试；如果仍然出现，请把这段说明反馈给我们。',
+  'error.importRunCheckFailedUncoded': '已经导入的内容没有受影响。导入没能继续：校验没有通过。请重试；如果仍然出现，请把这段说明反馈给我们。',
   'error.importRunSourceOverlap': '另一个可恢复导入已包含相同来源，请先完成或取消该导入后重试',
   'error.importRunAuthorPreviousRunning': '之前的作者原稿导入仍在运行，请等待其停止后重新确认最新预览',
   'error.importRunAuthorStateChanged': '作者原稿导入状态已变化，请重新确认最新预览',
