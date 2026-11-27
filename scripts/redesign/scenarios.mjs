@@ -896,7 +896,7 @@ export const STAGE_SCENARIOS = {
     fs.mkdirSync(parent)
     const created = await invoke(page, 'project:create', { parentGrantId: grant.grantId, name: '雾岛', genre: '悬疑', targetAudience: '成年读者', writingLanguage: 'zh-CN' }, randomUUID(), null)
     measured.createAfterParentReplaced = created.success ? 'created' : created.error
-    assert.equal(measured.createAfterParentReplaced, 'Error: EXTERNAL_FILE_GRANT_TARGET_CHANGED', '主进程按授权目标已变化拒绝新建')
+    assert.equal(measured.createAfterParentReplaced, 'EXTERNAL_FILE_GRANT_TARGET_CHANGED', '主进程按授权目标已变化拒绝新建')
     try {
       fs.renameSync(context.samplePath, `${context.samplePath}-moved`)
       fs.renameSync(`${context.samplePath}-moved`, context.samplePath)

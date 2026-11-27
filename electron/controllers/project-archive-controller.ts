@@ -25,6 +25,7 @@ import { registerRecentProject } from './project-controller'
 import { mainText } from '../i18n'
 import { SchemaMigrationError } from '../migrations/registry'
 import { handle } from '../ipc/handle'
+import { registeredErrorCode } from '../../src/i18n/app-errors'
 
 const require = createRequire(import.meta.url)
 
@@ -96,6 +97,10 @@ function failure(operation: 'export' | 'restore', error: unknown, source?: strin
         : operation === 'export' ? 'PORTABLE_EXPORT_FAILED' : 'PORTABLE_RESTORE_FAILED'
   }
   if (operation === 'export') message = exportFailureCode(message)
+  if (!registeredErrorCode(message)) {
+    console.error(`[project-archive] ${operation} failed with an unregistered code`, error)
+    message = 'PROJECT_OPERATION_FAILED'
+  }
   const candidate = message === raw ? code ?? raw : message
   const errorCode = PORTABLE_ERROR_CODES.has(candidate as PortableProjectOperationErrorCode)
     ? candidate as PortableProjectOperationErrorCode

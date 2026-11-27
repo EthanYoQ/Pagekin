@@ -789,12 +789,30 @@ describe('project controller project identity', () => {
     )).resolves.toMatchObject({
       success: false,
       errorCode: 'PROJECT_STORAGE_PATH_UNSUPPORTED',
+      error: 'PROJECT_STORAGE_PATH_UNSUPPORTED',
       databaseRestored: true,
       dbReady: true,
     })
 
     expect(mocks.initCalls).toEqual([projectA])
     expect(mocks.initCalls).not.toContain(projectC)
+  })
+
+  it('新建时报错只在 code 上带登记码、message 是说明文字：回这个码，说明文字不过 IPC', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    mocks.projectAccess.createProject.mockImplementationOnce(() => {
+      throw Object.assign(new Error('所选文件夹不是作品根目录'), { code: 'PROJECT_ROOT_REQUIRED' })
+    })
+
+    const result = await handler('project:create')(
+      { sender: { id: 17 } },
+      { name: 'C', parentGrantId: `selected:${path.resolve('C:/projects')}`, genre: 'fantasy', targetAudience: 'all' },
+      'request-create-C-code-only-on-property',
+      projectA,
+    )
+
+    expect(result).toMatchObject({ success: false, error: 'PROJECT_ROOT_REQUIRED', failure: { code: 'PROJECT_ROOT_REQUIRED' } })
+    expect(JSON.stringify(result)).not.toContain('所选文件夹不是作品根目录')
   })
 
   it('returns an actionable typed error when the selected folder is not a project root', async () => {

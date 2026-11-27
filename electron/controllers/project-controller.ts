@@ -39,7 +39,7 @@ import type { LedgerAdmission } from '../repositories/generation-ledger-admissio
 import { projectPeekService } from '../services/project-peek'
 import { probeProjectSqlite } from '../services/sqlite-project-migration'
 import { mainText } from '../i18n'
-import { isRegisteredErrorCode, registeredErrorCode } from '../../src/i18n/app-errors'
+import { registeredErrorCode } from '../../src/i18n/app-errors'
 import { handle } from '../ipc/handle'
 import { adoptTransferredCharacterContinuityOnOpen } from '../services/transferred-character-continuity'
 import { FinalizationRepository } from '../repositories/finalization-repository'
@@ -65,7 +65,8 @@ function text(zhCNText: string, enUSText: string): string {
 
 /** 新建失败交给界面的码：登记过的码原样交出，其余系统报错按作者能做的事归成两类，原文只进日志。 */
 function projectCreateFailure(error: unknown): string {
-  if (isRegisteredErrorCode(error)) return String(error)
+  const registered = registeredErrorCode(error)
+  if (registered) return registered
   console.error('[Project] 新建失败:', error)
   const code = systemCode(error)
   return code === 'EPERM' || code === 'EACCES' ? 'PROJECT_CREATE_ACCESS_DENIED' : 'PROJECT_CREATE_FAILED'
@@ -622,7 +623,7 @@ export function registerProjectController(options: ProjectControllerOptions = {}
           ...databaseState,
           ...(preflight ?? {}),
           error: createFailure,
-          failure: preflight?.failure ?? { code: registeredErrorCode(createFailure)! },
+          failure: preflight?.failure ?? { code: createFailure },
         }
       }
     })
