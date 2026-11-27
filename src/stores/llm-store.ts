@@ -37,7 +37,7 @@ interface LLMState {
 
 let initializationFlight: Promise<void> | null = null
 
-/** IPC_HANDLER_FAILED 只是笼统的写失败，让给调用点自己的兜底句或通用说明，与迁移前相同。 */
+/** IPC_HANDLER_FAILED 只是笼统的写失败，让给调用点自己的兜底句或通用说明。 */
 function settingsFailureText(failure: Failure | undefined, fallback?: AuthorNote): string {
   return failureText(currentInterfaceLocale(), failure?.code === IPC_HANDLER_FAILED ? undefined : failure, { fallback })
 }

@@ -10,7 +10,6 @@ import { failureCode, type WireFailure } from '../../src/shared/failure'
 import { handle } from '../ipc/handle'
 import { mcpManager } from './mcp-manager'
 
-/** 已登记的码照传，其余原文只进日志。 */
 function mcpFailure(error: unknown): WireFailure {
   const code = failureCode(registeredErrorCode(error))
   if (!code) console.error('[MCP] 操作失败:', error)

@@ -7,7 +7,6 @@ import { seedStageSample } from './scenarios.mjs'
 const REMOTE_HOST = 'model-401.test'
 const SERVICE_BODY = '{"error":{"message":"Invalid API key"}}'
 
-/** 英文界面测连接，模型服务回 HTTP 401 并带返回正文：主进程只交码与目录说明，正文作为作者自己端点的内容原样显示。 */
 export const M33LLM_SCENARIOS = {
   'm33llm-connection-http-en': { model: true, setup: seedStageSample, run: async ({ app, page, shoot }) => {
     await app.evaluate((_, { host, body }) => {

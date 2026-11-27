@@ -469,7 +469,9 @@ export default function SkillSettings() {
       </section>
     </div>
   )
-}/** 主进程的说明为准；IPC_HANDLER_FAILED 只是笼统失败，让给这里的兜底句，与迁移前相同。 */
+}
+
+/** IPC_HANDLER_FAILED 只是笼统失败，让给这里的兜底句。 */
 function skillError(result: { failure?: Failure }, fallback: AuthorNote) {
   const failure = resultFailure(result)
   return authorError(currentInterfaceLocale(), failure && failure.code !== IPC_HANDLER_FAILED ? failure : { note: fallback })

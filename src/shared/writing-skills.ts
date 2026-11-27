@@ -375,7 +375,7 @@ export function inspectInstalledWritingSkill(raw: string, bundle: InstalledWriti
     : inspection
 }
 
-/** 地址哪里不对；说明由调用方按界面语言写。 */
+/** 说明由调用方按界面语言写。 */
 export type GitHubSkillUrlProblem = 'paste-skill' | 'not-url' | 'https-only' | 'github-only' | 'not-skill-md' | UrlPart
 type UrlPart = 'owner' | 'repository' | 'branch' | 'path'
 type Reject = (problem: GitHubSkillUrlProblem) => Error

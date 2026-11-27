@@ -32,7 +32,7 @@ interface MCPState {
   registerMCPToolsToRegistry: () => void
 }
 
-/** IPC_HANDLER_FAILED 只是笼统失败，让给这里的兜底句，与迁移前相同。 */
+/** IPC_HANDLER_FAILED 只是笼统失败，让给这里的兜底句。 */
 function mcpErrorText(result: { failure?: Failure }, fallback: AuthorNote): string {
   const failure = resultFailure(result)
   return failureText(currentInterfaceLocale(), failure?.code === IPC_HANDLER_FAILED ? undefined : failure, { fallback })

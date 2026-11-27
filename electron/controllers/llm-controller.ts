@@ -44,7 +44,6 @@ const CONNECTION_TEST_FAILED = 'LLM_CONNECTION_TEST_FAILED'
 const testFailure = (note: WireNote) => ({ success: false as const, failure: { code: CONNECTION_TEST_FAILED, note } satisfies WireFailure })
 const registered = (error: unknown): FailureCode | undefined => failureCode(registeredErrorCode(error))
 
-/** 设置写盘失败：已登记的码照传，其余原文只进日志。 */
 function settingsFailure(error: unknown) {
   const code = registered(error)
   if (!code) console.error('[AI Novel Writer] 模型设置没有写进去:', error)
@@ -112,9 +111,8 @@ function rememberContextWindow(snapshot: ModelProfile, windowTokens: number): vo
 }
 
 /**
- * 连接测试的结果由模型表单显示（#474）：要带上 HTTP 状态、供应商返回或建议地址的单独登记说明，
- * 其余登记过的码照传，网络失败按 cause.code 换成连接码。
- * 供应商返回、结束原因与建议地址出自作者自己配置的端点，master 上就逐字给作者看，所以作参数带过 IPC。
+ * 供应商返回、结束原因与建议地址出自作者自己配置的端点，不含本机信息，作参数带过 IPC。
+ * 网络失败按 cause.code 换成连接码。
  */
 function connectionTestFailure(failure: unknown) {
   const detail = failure as { code?: unknown; status?: unknown; suggestedBaseUrl?: unknown } | null

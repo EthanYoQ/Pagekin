@@ -60,7 +60,6 @@ describe('model settings refusals from the main process (#474 B6)', () => {
   })
 
   it('模型设置失败不显示主进程交来的异常原文，删除模型改说删除失败', async () => {
-    // 主进程把没登记的写盘失败换成 IPC_HANDLER_FAILED，原文只进主进程日志（electron/controllers/llm-controller.ts settingsFailure）。
     invoke.mockImplementation(async (called: string) => (called.startsWith('llm:') ? { success: false, failure: { code: 'IPC_HANDLER_FAILED' } } : undefined))
     await expect(shownError('en-US', () => useLLMStore.getState().deleteModel('model-1'))).resolves.toBe('Could not delete the model.')
     await expect(shownError('zh-CN', () => useLLMStore.getState().setDefaultModel('model-1'))).resolves.toBe('出了意外问题，暂时说不清原因。请再试一次。')

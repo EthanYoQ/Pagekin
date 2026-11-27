@@ -46,14 +46,14 @@ function text(zhCNText: string, enUSText: string): string {
   return mainText(app.getLocale(), zhCNText, enUSText)
 }
 
-/** 作者能看懂、能照着改的 Skill 拒绝理由，过 IPC 时带目录说明，由渲染端按界面语言写。 */
+/** 过 IPC 时只带目录说明，由渲染端按界面语言写成句子。 */
 class SkillRejected extends Error {
   constructor(readonly note: WireNote) {
     super(note.key)
   }
 }
 
-/** 拒绝理由带说明；已登记的码照传；其余（文件系统报错、防御性检查）原文只进日志。 */
+/** 其余失败的原文可能带本机路径，只进日志。 */
 function appDataFailure(error: unknown): WireFailure {
   if (error instanceof SkillRejected) return { code: 'WRITING_SKILL_REJECTED', note: error.note }
   const code = failureCode(registeredErrorCode(error))
@@ -341,7 +341,6 @@ async function fetchGitHubWritingSkill(sourceUrl: string): Promise<{
   }
 }
 
-/** 诊断只交码：解析器和文件系统的原文带本机路径，只进日志。 */
 function promptDiagnosticCode(error: unknown): string {
   const message = error instanceof Error ? error.message : ''
   if (message === 'PROMPT_TEMPLATE_INVALID' || message === 'PROMPT_FILENAME_MISMATCH') return message

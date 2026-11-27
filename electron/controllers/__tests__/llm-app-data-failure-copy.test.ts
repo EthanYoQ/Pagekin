@@ -86,7 +86,7 @@ const locale = () => shown(mocks.locale as InterfaceLocale)
 
 type Received = { success: boolean; failure?: Failure; error?: string }
 
-/** 迁移后读 failure，通用码让给调用点的兜底句（SkillSettings、llm-store 同此）；master 上读 error。 */
+/** 同一份用例也要在 master 上跑，那里结果读 error。 */
 async function reasonShown(raw: unknown, fallback: readonly [string, string]): Promise<string> {
   const result = receivedIpcResult(await raw) as Received
   expect(result.success).toBe(false)
@@ -97,7 +97,6 @@ async function reasonShown(raw: unknown, fallback: readonly [string, string]): P
   return displayedErrorMessage(locale(), new Error(result.error || selectCopy(locale(), ...fallback)))
 }
 
-/** ModelForm 的连接测试提示：「连接失败：原因」，英文界面用 englishWithReason 接原因。 */
 async function connectionNotice(raw: unknown): Promise<string> {
   const result = receivedIpcResult(await raw) as Received
   expect(result.success).toBe(false)
