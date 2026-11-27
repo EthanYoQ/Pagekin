@@ -168,7 +168,7 @@ export function createChapterBackend() {
         const { chapterNumber, initialDraftId } = args[0] as { chapterNumber: number; initialDraftId?: number }
         await state.reopenGate
         const final = state.drafts.find(draft => draft.chapterNumber === chapterNumber && draft.status === 'finalized')
-        if (!final) return { success: false, error: 'CHAPTER_REOPEN_NOT_FINALIZED' }
+        if (!final) return { success: false, failure: { code: 'CHAPTER_REOPEN_NOT_FINALIZED' } }
         const open = state.drafts.find(draft => draft.chapterNumber === chapterNumber && draft.sourceDependencies?.some(dependency => 'chapterNumber' in dependency && dependency.chapterNumber === chapterNumber)
           && !['finalized', 'superseded', 'archived'].includes(draft.status))
         if (open) return { success: true, created: false, draftId: open.id, version: open.version }

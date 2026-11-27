@@ -37,17 +37,17 @@ afterEach(() => { useLocaleStore.setState({ locale: originalLocale }) })
 
 describe('删除定稿失败时的说明', () => {
   it.each([
-    ['zh-CN', '删除失败', '项目已切换或重新打开', '未知错误'],
-    ['en-US', 'Delete failed', 'The project was switched or reopened', 'Unknown error'],
-  ] as const)('%s 界面：会话失效码显示登记的说明，未登记的码用通用说明，没有原因时用兜底', async (locale, heading, stale, fallback) => {
+    ['zh-CN', '删除失败', '项目已切换或重新打开'],
+    ['en-US', 'Delete failed', 'The project was switched or reopened'],
+  ] as const)('%s 界面：会话失效码显示登记的说明，未登记的码和没有原因时用通用说明', async (locale, heading, stale) => {
     useLocaleStore.setState({ locale })
     for (const [error, detail] of [
       ['PROJECT_SESSION_STALE', stale],
       ['SOMETHING_NEW_FROM_MAIN', translate(locale, 'error.unregisteredCode')],
-      [undefined, fallback],
+      [undefined, translate(locale, 'error.unregisteredCode')],
     ] as const) {
       mocks.toast.error.mockClear()
-      mocks.invoke.mockResolvedValue({ committed: false, success: false, error })
+      mocks.invoke.mockResolvedValue({ committed: false, success: false, ...(error ? { failure: { code: error } } : {}) })
       await deleteFinalizedChapter(input)
       const [message] = mocks.toast.error.mock.calls[0] as [string]
       expect(message.startsWith(`${heading}\n\n${detail}`)).toBe(true)
@@ -69,11 +69,11 @@ describe('删除定稿章之后的提示用作者看得懂的话', () => {
     ['en-US', 'draft', 'Retry cleanup'],
   ] as const)('%s 界面的 %s 入口：清理没做完时说明哪些还没清理、去哪里重试，不出现内部术语', async (locale, surface, retry) => {
     useLocaleStore.setState({ locale })
-    committed({ success: false, error: 'EBUSY: resource busy or locked' })
+    committed({ success: false, failure: { code: 'CHAPTER_DELETE_CLEANUP_INCOMPLETE' } })
     await deleteFinalizedChapter({ ...input, surface })
     const [message] = mocks.toast.warning.mock.calls[0] as [string]
     expect(message).toContain(retry)
-    expect(message).toContain('EBUSY')
+    expect(message).toContain(translate(locale, 'error.chapterDeleteCleanupIncomplete'))
     expect(message).not.toMatch(JARGON)
   })
 

@@ -305,13 +305,13 @@ describe('portable project restore service', () => {
 
     const deleting = await service.delete(f.targetRoot, { draftId: keptDraft, chapterNumber: 3 })
     // 夹具里这份定稿没有后处理记录，先走旧定稿的人工核对再删。
-    expect(deleting).toMatchObject({ success: false, error: 'CHAPTER_DELETE_LEGACY_KNOWLEDGE_CHECK_REQUIRED' })
+    expect(deleting).toMatchObject({ success: false, failure: { code: 'CHAPTER_DELETE_LEGACY_KNOWLEDGE_CHECK_REQUIRED' } })
     expect(await service.confirmLegacyKnowledgeAbsent(f.targetRoot, 'trash-after-import')).toMatchObject({ success: true, committed: true })
     expect(read()?.originProjectId).toBe(f.sourceProjectId)
     expect(service.listTrash()).toMatchObject({ entries: expect.arrayContaining([
       expect.objectContaining({ deletionId: 'trash-after-import', draftId: keptDraft, restoreMode: 'reopen-as-draft' })]) })
-    expect(await service.restore(f.targetRoot, receipt.targetProjectId, { deletionId: 'trash-after-import', draftId: keptDraft, expectedMode: 'into-gap' }))
-      .toEqual({ success: false, error: 'CHAPTER_RESTORE_MODE_CHANGED' })
+    await expect(service.restore(f.targetRoot, receipt.targetProjectId, { deletionId: 'trash-after-import', draftId: keptDraft, expectedMode: 'into-gap' }))
+      .rejects.toThrow(/^CHAPTER_RESTORE_MODE_CHANGED$/u)
     expect(await service.restore(f.targetRoot, receipt.targetProjectId, { deletionId: 'trash-after-import', draftId: keptDraft, expectedMode: 'reopen-as-draft' }))
       .toMatchObject({ success: true, outcome: 'reopened-as-draft', chapterNumber: 3, created: true })
     expect(read()?.originProjectId).toBe(f.sourceProjectId)

@@ -1,4 +1,5 @@
 import type { DraftSourceDependency } from './draft-source-dependency'
+import type { Failure } from './failure'
 import { WORKING_DRAFT_STATUSES, type DraftStatus } from './draft-status'
 
 export type ReopenedFinal = Extract<DraftSourceDependency, { chapterNumber: number }>
@@ -10,7 +11,7 @@ export interface ReopenChapterRequest {
 
 export type ReopenChapterResult =
   | { success: true; created: boolean; draftId: number; version: number }
-  | { success: false; error: string }
+  | { success: false; failure?: Failure }
 
 export interface ReplacementImpact {
   chapterNumber: number

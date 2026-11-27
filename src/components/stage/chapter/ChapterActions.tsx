@@ -8,7 +8,7 @@ import type { HumanConfirmedReviewSnapshot } from '../../../shared/human-confirm
 import { chapterLabel } from '../../../shared/chapter-label'
 import { isOpenReopenDraft } from '../../../shared/chapter-reopen'
 import { globalEventBus } from '../../../shared/event-bus'
-import { displayedErrorMessage } from '../../../i18n/app-errors'
+import { displayedErrorMessage, failureText, resultFailure } from '../../../i18n/app-errors'
 import { routeStageModel } from '../../../shared/model-stage-routing'
 import { countDraftUnits } from '../../../shared/draft-units'
 import { isGenerationModel, preferredGenerationModelId } from '../../../services/workflows/chapter-write-launch'
@@ -254,7 +254,7 @@ export default function ChapterActions({ sheetSlot, tab, stage, chapterNumber, t
     const before = useEditorStore.getState().tabs.find(candidate => candidate.id === tab.id)?.content
     try {
       const result = await reopenFinalizedChapter(session, initialDraftId === undefined ? { chapterNumber } : { chapterNumber, initialDraftId })
-      if (!result.success) throw new Error(result.error)
+      if (!result.success) throw new Error(failureText(currentInterfaceLocale(), resultFailure(result)))
       const reopened = (await fetchChapterDrafts(chapterNumber, session)).find(candidate => candidate.id === result.draftId)
       if (!isProjectSessionCurrent(session) || !reopened) return
       globalEventBus.emit('REFRESH_RESOURCE', { resources: ['drafts'], projectPath: session.projectPath, projectSession: session })

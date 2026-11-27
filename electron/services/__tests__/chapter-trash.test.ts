@@ -181,7 +181,7 @@ describe('恢复', () => {
     const again = await s.delete(projectRoot, { draftId: draft, chapterNumber: 2 })
 
     expect(again).toMatchObject({ success: true, committed: true })
-    expect(again.error).toBeUndefined()
+    expect(again.failure).toBeUndefined()
   })
 
   it('恢复已提交后重发实体稿抛错：仍报恢复成功，实体稿停在待发布，留给章节页的「重试发布」', async () => {
@@ -246,8 +246,8 @@ describe('恢复', () => {
     finalize(rewritten, 'kb-2-rewrite')
     expect(s.listTrash()).toMatchObject({ entries: [{ restoreMode: 'as-history' }] })
 
-    const stale = await s.restore(projectRoot, 'project', { deletionId: 'delete-a', draftId: current, expectedMode: 'into-gap' })
-    expect(stale).toEqual({ success: false, error: 'CHAPTER_RESTORE_MODE_CHANGED' })
+    await expect(s.restore(projectRoot, 'project', { deletionId: 'delete-a', draftId: current, expectedMode: 'into-gap' }))
+      .rejects.toThrow(/^CHAPTER_RESTORE_MODE_CHANGED$/u)
     expect(statuses(old, current)).toEqual(['deleted', 'deleted'])
 
     const restored = await s.restore(projectRoot, 'project', { deletionId: 'delete-a', draftId: current, expectedMode: 'as-history' })
@@ -285,11 +285,11 @@ describe('恢复', () => {
 
     expect(await s.restore(projectRoot, 'project', { deletionId: 'delete-a', draftId: current, expectedMode: 'into-gap' }))
       .toEqual({ success: true, outcome: 'already-restored', chapterNumber: 2, draftId: current })
-    expect(await s.restore(projectRoot, 'project', { deletionId: 'nope', draftId: write(4, '工作稿'), expectedMode: 'into-gap' }))
-      .toEqual({ success: false, error: 'CHAPTER_RESTORE_NOT_FOUND' })
+    await expect(s.restore(projectRoot, 'project', { deletionId: 'nope', draftId: write(4, '工作稿'), expectedMode: 'into-gap' }))
+      .rejects.toThrow(/^CHAPTER_RESTORE_NOT_FOUND$/u)
     expect(await s.restore(projectRoot, 'project', { deletionId: '', draftId: current, expectedMode: 'into-gap' }))
-      .toEqual({ success: false, error: 'CHAPTER_RESTORE_REQUEST_INVALID' })
-    expect(await s.restore(projectRoot, 'project', null as never)).toEqual({ success: false, error: 'CHAPTER_RESTORE_REQUEST_INVALID' })
+      .toEqual({ success: false, failure: { code: 'CHAPTER_RESTORE_REQUEST_INVALID' } })
+    expect(await s.restore(projectRoot, 'project', null as never)).toEqual({ success: false, failure: { code: 'CHAPTER_RESTORE_REQUEST_INVALID' } })
   })
 
   it('这次删除的清理没完成时先续跑；仍失败就拒绝恢复并带回收据，清理成功后再恢复（G2）', async () => {
@@ -299,7 +299,7 @@ describe('恢复', () => {
     expect(await s.delete(projectRoot, { draftId: current, chapterNumber: 2 })).toMatchObject({ success: false, committed: true })
 
     const refused = await s.restore(projectRoot, 'project', { deletionId: 'delete-a', draftId: current, expectedMode: 'into-gap' })
-    expect(refused).toMatchObject({ success: false, error: 'CHAPTER_RESTORE_CLEANUP_INCOMPLETE', operation: { status: 'failed' } })
+    expect(refused).toMatchObject({ success: false, failure: { code: 'CHAPTER_RESTORE_CLEANUP_INCOMPLETE' }, operation: { status: 'failed' } })
     expect(statuses(current)).toEqual(['deleted'])
 
     failKnowledge.clear()
@@ -313,7 +313,7 @@ describe('恢复', () => {
     const record = FinalizationRepository.commit({ finalizationId: randomUUID(), draftId: draft, chapterNumber: 2,
       chapterTitle: '沉船', content: '第二章旧式定稿。', contentHash: sha256('第二章旧式定稿。'), contentRevision: 1, targetFileName: '2.txt' })
     const { service: s, removed } = service()
-    expect(await s.delete(projectRoot, { draftId: draft, chapterNumber: 2 })).toMatchObject({ error: 'CHAPTER_DELETE_LEGACY_KNOWLEDGE_CHECK_REQUIRED' })
+    expect(await s.delete(projectRoot, { draftId: draft, chapterNumber: 2 })).toMatchObject({ failure: { code: 'CHAPTER_DELETE_LEGACY_KNOWLEDGE_CHECK_REQUIRED' } })
 
     const result = await s.restore(projectRoot, 'project', { deletionId: 'delete-a', draftId: draft, expectedMode: 'into-gap' })
 
@@ -365,9 +365,8 @@ describe('恢复', () => {
     // 状态与收据都改完、删收据时才失败：前面的写入都必须一起撤销。
     db().exec("CREATE TRIGGER inject_restore_failure BEFORE DELETE ON chapter_deletion_operations BEGIN SELECT RAISE(ABORT, 'INJECTED_RESTORE_FAILURE'); END")
 
-    const result = await s.restore(projectRoot, 'project', { deletionId: 'delete-a', draftId: current, expectedMode: 'into-gap' })
-
-    expect(result).toEqual({ success: false, error: 'INJECTED_RESTORE_FAILURE' })
+    await expect(s.restore(projectRoot, 'project', { deletionId: 'delete-a', draftId: current, expectedMode: 'into-gap' }))
+      .rejects.toThrow('INJECTED_RESTORE_FAILURE')
     expect(snapshot()).toBe(before)
     expect(statuses(old, current)).toEqual(['deleted', 'deleted'])
     db().exec('DROP TRIGGER inject_restore_failure')
@@ -437,8 +436,8 @@ describe('彻底删除', () => {
     expect(ChapterDeletionRepository.getByDraftId(current)).toMatchObject({ status: 'completed' })
     expect(DraftRepository.getMaxFinalizedChapter()).toBe(3)
     expect(await s.purge(projectRoot, { deletionIds: ['delete-a'] })).toEqual({ success: true, purged: [], alreadyGone: ['delete-a'] })
-    expect(await s.restore(projectRoot, 'project', { deletionId: 'delete-a', draftId: current, expectedMode: 'into-gap' }))
-      .toEqual({ success: false, error: 'CHAPTER_RESTORE_NOT_FOUND' })
+    await expect(s.restore(projectRoot, 'project', { deletionId: 'delete-a', draftId: current, expectedMode: 'into-gap' }))
+      .rejects.toThrow(/^CHAPTER_RESTORE_NOT_FOUND$/u)
   })
 
   it('清空回收站删掉全部项；请求不合法时什么都不删', async () => {
@@ -450,7 +449,7 @@ describe('彻底删除', () => {
     expect(first).toBe(3)
 
     for (const request of [{ deletionIds: [] }, { deletionIds: [''] }, { all: false }, null, 'all']) {
-      expect(await s.purge(projectRoot, request as never)).toEqual({ success: false, error: 'CHAPTER_TRASH_REQUEST_INVALID' })
+      expect(await s.purge(projectRoot, request as never)).toEqual({ success: false, failure: { code: 'CHAPTER_TRASH_REQUEST_INVALID' } })
     }
     expect((s.listTrash() as { entries: unknown[] }).entries).toHaveLength(2)
 
@@ -466,7 +465,7 @@ describe('彻底删除', () => {
     await s.delete(projectRoot, { draftId: ids[1]!, chapterNumber: 3 })
     db().exec(`CREATE TRIGGER inject_purge_failure BEFORE DELETE ON drafts_all WHEN old.id = ${ids[1]} BEGIN SELECT RAISE(ABORT, 'INJECTED_PURGE_FAILURE'); END`)
 
-    expect(await s.purge(projectRoot, { all: true })).toEqual({ success: false, error: 'INJECTED_PURGE_FAILURE' })
+    await expect(s.purge(projectRoot, { all: true })).rejects.toThrow('INJECTED_PURGE_FAILURE')
     expect(statuses(...ids)).toEqual(['deleted', 'deleted'])
 
     db().exec('DROP TRIGGER inject_purge_failure')
@@ -486,8 +485,8 @@ describe('回收站列表', () => {
     expect(s.listTrash()).toEqual({ success: true,
       entries: [expect.objectContaining({ deletionId: 'delete-b', chapterNumber: 3 })],
       damaged: [{ deletionId: 'delete-a', error: 'CHAPTER_TRASH_RECEIPT_MISSING' }] })
-    expect(await s.restore(projectRoot, 'project', { deletionId: 'delete-a', draftId: ids[0]!, expectedMode: 'into-gap' }))
-      .toEqual({ success: false, error: 'CHAPTER_TRASH_RECEIPT_MISSING' })
+    await expect(s.restore(projectRoot, 'project', { deletionId: 'delete-a', draftId: ids[0]!, expectedMode: 'into-gap' }))
+      .rejects.toThrow(/^CHAPTER_TRASH_RECEIPT_MISSING$/u)
   })
 })
 

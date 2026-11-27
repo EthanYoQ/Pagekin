@@ -45,7 +45,7 @@ function finalize(draftId: number): void {
 
 function rollback(chapterNumber: number, fromDraftId: number): number {
   const reopened = FinalizationRepository.reopen({ chapterNumber, initialDraftId: fromDraftId })
-  if (!reopened.success) throw new Error(reopened.error)
+  if (!reopened.success) throw new Error(reopened.failure?.code)
   return reopened.draftId
 }
 

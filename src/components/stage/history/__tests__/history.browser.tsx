@@ -263,7 +263,7 @@ describe('版本历史', () => {
       const errors = vi.spyOn(toast, 'error')
       const base = invoke.getMockImplementation()!
       invoke.mockImplementation(async (channel, ...args) => channel === 'chapter:reopen'
-        ? { success: false, error: 'CHAPTER_REOPEN_ALREADY_OPEN' }
+        ? { success: false, failure: { code: 'CHAPTER_REOPEN_ALREADY_OPEN' } }
         : base(channel, ...args))
       await revertToFirst()
       await click('新建回滚草稿')

@@ -1,3 +1,5 @@
+import type { Failure } from './failure'
+
 export type ChapterDeletionProjectionStatus = 'pending' | 'completed' | 'failed' | 'not_required'
 export type ChapterDeletionStatus = 'authorization_required' | 'pending' | 'failed' | 'completed'
 export type LegacyKnowledgeAuthorization = 'not_required' | 'required' | 'consumed'
@@ -33,7 +35,7 @@ export interface ChapterDeletionResult {
   success: boolean
   committed: boolean
   operation?: ChapterDeletionOperation
-  error?: string
+  failure?: Failure
 }
 
 export const CHAPTER_RESTORE_MODES = Object.freeze(['into-gap', 'as-history', 'reopen-as-draft'] as const)
@@ -58,7 +60,7 @@ export interface DamagedTrashEntry {
 
 export type ChapterTrashListResult =
   | { success: true; entries: TrashedChapter[]; damaged: DamagedTrashEntry[] }
-  | { success: false; error: string }
+  | { success: false; failure?: Failure }
 
 export interface RestoreTrashedChapterRequest {
   deletionId: string
@@ -72,10 +74,10 @@ export type RestoreTrashedChapterResult =
   | { success: true; outcome: 'restored-as-history'; chapterNumber: number; draftId: number }
   | { success: true; outcome: 'reopened-as-draft'; chapterNumber: number; draftId: number; created: boolean }
   | { success: true; outcome: 'already-restored'; chapterNumber: number; draftId: number }
-  | { success: false; error: string; operation?: ChapterDeletionOperation }
+  | { success: false; failure?: Failure; operation?: ChapterDeletionOperation }
 
 export type PurgeTrashRequest = { deletionIds: string[] } | { all: true }
 
 export type PurgeTrashResult =
   | { success: true; purged: string[]; alreadyGone: string[] }
-  | { success: false; error: string }
+  | { success: false; failure?: Failure }

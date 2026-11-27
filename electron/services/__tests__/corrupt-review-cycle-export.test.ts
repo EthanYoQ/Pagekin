@@ -473,7 +473,7 @@ describe('有坏审修循环的书照常导出，坏循环留在存档外并指�
     const items = reviewedBook({ finalized: true })
     breakReviewProof(db(), items[1]!)
     const reopened = FinalizationRepository.reopen({ chapterNumber: 2 })
-    if (!reopened.success) throw new Error(reopened.error)
+    if (!reopened.success) throw new Error(reopened.failure?.code)
     finalize(reopened.draftId, 2, '暗礁')
     expect(db().prepare('SELECT status FROM drafts_all WHERE id=?').pluck().get(items[1]!.seeded.draftId)).toBe('superseded')
     await expect(trashService().delete(projectRoot, { draftId: reopened.draftId, chapterNumber: 2 }))
