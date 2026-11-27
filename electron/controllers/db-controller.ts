@@ -759,7 +759,7 @@ export function registerDatabaseController() {
   // ============================================================
   // 4. drafts — 草稿
   // ============================================================
-  // 新建、删除各在一个事务里，改状态是一条语句，改正文不删稿：失败时已存的稿件都还在。
+  // 失败时已存的稿件都还在：新建、删除各在一个事务里，改状态是一条语句，改正文不删稿。
   const drafts = {
     handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
       code: 'DRAFT_WRITE_FAILED',
