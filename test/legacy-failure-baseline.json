@@ -76,13 +76,7 @@
   "src/components/panels/sidebar/draft-deletion.ts": {
     "displayedErrorMessage": 1
   },
-  "src/components/panels/sidebar/finalized-chapter-deletion.ts": {
-    "displayedErrorMessage": 2
-  },
   "src/components/panels/sidebar/sidebar-file-openers.ts": {
-    "displayedErrorMessage": 1
-  },
-  "src/components/panels/sidebar/use-incomplete-deletions.ts": {
     "displayedErrorMessage": 1
   },
   "src/components/run/run-failure.ts": {
@@ -118,9 +112,6 @@
   "src/components/stage/chapter/ChapterActions.tsx": {
     "displayedErrorMessage": 1
   },
-  "src/components/stage/chapter/DeletionCleanupNotices.tsx": {
-    "displayedErrorMessage": 1
-  },
   "src/components/stage/chapter/ProseDocument.tsx": {
     "displayedErrorMessage": 1
   },
@@ -146,9 +137,6 @@
     "displayedErrorMessage": 1
   },
   "src/components/stage/setup/StageSetup.tsx": {
-    "displayedErrorMessage": 1
-  },
-  "src/components/stage/trash/TrashDialog.tsx": {
     "displayedErrorMessage": 1
   },
   "src/components/stage/use-stage-work.ts": {

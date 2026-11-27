@@ -74,7 +74,7 @@ function derive(draftId: number, characterId: string, currentState: Record<strin
 
 function reopen(chapterNumber: number, body: string): number {
   const opened = FinalizationRepository.reopen({ chapterNumber })
-  if (!opened.success) throw new Error(opened.error)
+  if (!opened.success) throw new Error(opened.failure?.code)
   DraftRepository.updateContent(opened.draftId, body, body.length)
   return opened.draftId
 }

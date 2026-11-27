@@ -356,7 +356,7 @@ export async function seedStageSample(context,
     if (review) {
       const expectedSource = { id: draft.id, chapterNumber: Number(number), version: 1, status, content: text }
       const created = await invoke(page, 'db:review-create', { baseDraftId: draft.id, content: review, expectedSource }, path, session)
-      assert.equal(created.success, true, created.error)
+      assert.equal(created.success, true, created.failure?.code)
     }
   }
   await beforeReload?.({ page, invoke, path, session })
@@ -896,7 +896,7 @@ export const STAGE_SCENARIOS = {
     fs.mkdirSync(parent)
     const created = await invoke(page, 'project:create', { parentGrantId: grant.grantId, name: '雾岛', genre: '悬疑', targetAudience: '成年读者', writingLanguage: 'zh-CN' }, randomUUID(), null)
     measured.createAfterParentReplaced = created.success ? 'created' : created.error
-    assert.equal(measured.createAfterParentReplaced, 'Error: EXTERNAL_FILE_GRANT_TARGET_CHANGED', '主进程按授权目标已变化拒绝新建')
+    assert.equal(measured.createAfterParentReplaced, 'EXTERNAL_FILE_GRANT_TARGET_CHANGED', '主进程按授权目标已变化拒绝新建')
     try {
       fs.renameSync(context.samplePath, `${context.samplePath}-moved`)
       fs.renameSync(`${context.samplePath}-moved`, context.samplePath)
@@ -1145,7 +1145,7 @@ export const STAGE_SCENARIOS = {
   'stage-revert-after-final': { model: false, shell: 'stage',
     setup: context => seedStageSample(context, { landOnChapter3: false, beforeReload: async ({ page, invoke, path, session }) => {
       const reopened = await invoke(page, 'chapter:reopen', { chapterNumber: 1 }, path, session)
-      assert.equal(reopened.success, true, reopened.error)
+      assert.equal(reopened.success, true, JSON.stringify(reopened))
       const updated = await invoke(page, 'db:draft-update-content', reopened.draftId, STAGE_SAMPLE.reverted, countUnits(STAGE_SAMPLE.reverted), path, session)
       assert.equal(updated.success, true, updated.error)
     } }),

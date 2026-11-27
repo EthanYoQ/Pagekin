@@ -137,7 +137,7 @@ describe('重新打开已定稿的章', () => {
     const final = backend.addDraft({ status: 'finalized' })
     const plain = backend.invoke.getMockImplementation()!
     backend.invoke.mockImplementation(async (channel, ...args) => channel === 'chapter:reopen'
-      ? { success: false, error: 'CHAPTER_REOPEN_BATCH_UNFINISHED' }
+      ? { success: false, failure: { code: 'CHAPTER_REOPEN_BATCH_UNFINISHED' } }
       : plain(channel, ...args))
     const shown = vi.spyOn(toast, 'error')
     await mount()

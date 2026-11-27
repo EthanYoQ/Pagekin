@@ -26,11 +26,11 @@ const seedPendingRevision = context => seedStageSample(context, {
     assert.equal(created.success, true, created.error)
     const expectedSource = { id: created.id, chapterNumber: 3, version: 1, status: 'draft', content }
     const review = await invoke(page, 'db:review-create', { baseDraftId: created.id, content: STAGE_SAMPLE.drafts[3].review, expectedSource }, path, session)
-    assert.equal(review.success, true, review.error)
+    assert.equal(review.success, true, review.failure?.code)
     const revised = content.replace('钟声比往常早了一刻', '钟声比往常早了整整一刻')
     const revision = await invoke(page, 'db:revision-create', { baseDraftId: created.id, revisionType: 'review-fix', reviewSourceId: review.id,
       content: revised, wordCount: countUnits(revised), expectedSource }, path, session)
-    assert.equal(revision.success, true, revision.error)
+    assert.equal(revision.success, true, revision.failure?.code)
   },
 })
 

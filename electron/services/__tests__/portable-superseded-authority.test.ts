@@ -101,7 +101,7 @@ describe('备份恢复的项目替换一章定稿', { timeout: 60_000 }, () => {
     finalizeChapter(10, 2, '第二章新稿：沉船翻了个身。', 2)
     const service = new ChapterDeletionService({ cleaner: { removeManuscript: async () => undefined, removeKnowledgeDocument: async () => undefined } })
     let result = await service.delete(restored.root, { draftId: 10, chapterNumber: 2 })
-    if (result.error === 'CHAPTER_DELETE_LEGACY_KNOWLEDGE_CHECK_REQUIRED') result = await service.confirmLegacyKnowledgeAbsent(restored.root, result.operation!.operationId)
+    if (result.failure?.code === 'CHAPTER_DELETE_LEGACY_KNOWLEDGE_CHECK_REQUIRED') result = await service.confirmLegacyKnowledgeAbsent(restored.root, result.operation!.operationId)
     expect(result).toMatchObject({ success: true, committed: true })
 
     expect(currentAuthority(restored)).not.toBeNull()

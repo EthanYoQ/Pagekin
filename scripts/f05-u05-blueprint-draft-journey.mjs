@@ -689,7 +689,7 @@ async function main() {
     const sentinel = 'U13_A09_CONTROLLED_POST_PROCESS_FAILURE'
     const failed = await invoke(page, 'db:post-process-mark-step-failed', injected.id, pendingSteps[0].stepKey,
       sentinel, context.projectPath, batchSession)
-    assert.equal(failed.success, true, failed.error)
+    assert.equal(failed.success, true, failed.failure?.code)
     const failedRun = await invoke(page, 'db:post-process-get-latest-run', 'chapter_finalize', '1', context.projectPath, batchSession)
     const failedSteps = await invoke(page, 'db:post-process-get-steps', failedRun.id, context.projectPath, batchSession)
     assert.equal(failedRun.id, injected.id)

@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 
-import { ipcMain, safeStorage } from 'electron'
+import { safeStorage } from 'electron'
 
 import type {
   CloudBackupAccountView,
@@ -49,6 +49,7 @@ import {
   type WebDavGeneration,
 } from '../services/webdav-backup-service'
 import { removeDirectoryWithWindowsRetry } from '../utils/remove-directory'
+import { handle } from '../ipc/handle'
 import { registerRecentProject, type RecentProject } from './project-controller'
 
 const require = createRequire(import.meta.url)
@@ -202,6 +203,7 @@ function failure(error: unknown, currentOperationId?: string): CloudBackupFailur
     success: false,
     state: code === 'CLOUD_BACKUP_CANCELLED' ? 'cancelled' : 'failed',
     errorCode: code,
+    failure: { code },
     ...(currentOperationId ? { operationId: currentOperationId } : {}),
     ...(error instanceof CloudBackupControllerError && error.damagedReviewCycle ? { damagedReviewCycle: error.damagedReviewCycle } : {}),
   }
@@ -265,11 +267,7 @@ function readRestoredProjectName(projectRoot: string): string {
 
 function productionDependencies(): CloudBackupControllerDependencies {
   return {
-    ipc: {
-      handle(channel, handler) {
-        ipcMain.handle(channel, (event, argument) => handler(event, argument))
-      },
-    },
+    ipc: { handle },
     credentialStore: new CloudCredentialStore({ safeStorage }),
     bindingStore: new CloudProjectBindingStore(),
     webDav: new WebDavBackupService(),

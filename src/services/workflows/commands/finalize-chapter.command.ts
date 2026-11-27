@@ -320,7 +320,7 @@ export function buildFinalizePostProcessSteps(
             finalizedDraftId,
             _project.path,
           )
-          const code = result.error ? finalizationStepErrorCode(result.error) : undefined
+          const code = !result.success && result.stepError ? finalizationStepErrorCode(result.stepError) : undefined
           if (code) throw new Error(code)
           requireIpcSuccess(result, label)
           callbacks.log(workflowUiText(context, ...done))

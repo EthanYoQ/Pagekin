@@ -229,9 +229,9 @@ describe('explicit Agent domain proposals', () => {
   })
 
   it('reports a failed config write without changing renderer facts', async () => {
-    invoke.mockResolvedValue({ success: false, error: 'disk unavailable' })
+    invoke.mockResolvedValue({ success: false, error: 'PROJECT_SESSION_STALE', failure: { code: 'PROJECT_SESSION_STALE' } })
     const result = await proposeNovelConfigTool.execute({ changes: { genre: '科幻' } }, createAgentExecutionContext())
-    expect(result).toMatchObject({ success: false, error: 'disk unavailable' })
+    expect(result).toMatchObject({ success: false, error: expect.stringContaining('项目已切换或重新打开') })
     expect(useProjectStore.getState().currentProject?.novelConfig.genre).toBe('奇幻')
   })
 

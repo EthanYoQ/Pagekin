@@ -340,7 +340,7 @@ describe('ProjectBackupPanel', () => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === 'cloud-backup:view') return { success: true, state: 'unconfigured', binding: null, account: null }
       if (channel === 'dialog:select-project-archive-export') return { grantId: 'export-grant', displayName: 'book.anovel' }
-      if (channel === 'project:archive-export') return { success: false, error: 'MIGRATION_VERIFICATION_FAILED', damagedReviewCycle }
+      if (channel === 'project:archive-export') return { success: false, errorCode: 'PORTABLE_UNSAFE_PROJECTION', error: 'PORTABLE_UNSAFE_PROJECTION', failure: { code: 'PORTABLE_UNSAFE_PROJECTION' }, damagedReviewCycle }
       throw new Error(`Unexpected IPC: ${channel}`)
     })
     await renderPanel()
@@ -357,7 +357,7 @@ describe('ProjectBackupPanel', () => {
       '作品没有改动。作品文件夹里有不认识的文件或链接，存档没有生成。请把这条提示反馈给我们。'],
     [{ errorCode: 'PORTABLE_ARCHIVE_SOURCE_UNSAFE', error: 'PORTABLE_ARCHIVE_SOURCE_UNSAFE' },
       '作品没有改动。作品文件夹里有不认识的文件或链接，存档没有生成。请把这条提示反馈给我们。'],
-    [{ error: 'MIGRATION_VERIFICATION_FAILED' },
+    [{ errorCode: 'PORTABLE_UNSAFE_PROJECTION', error: 'PORTABLE_UNSAFE_PROJECTION', failure: { code: 'PORTABLE_UNSAFE_PROJECTION' } },
       '作品没有改动。有一项数据无法安全打包，存档没有生成。请把这条提示反馈给我们。'],
     [{ errorCode: 'PORTABLE_EXPORT_AVATAR_DAMAGED', error: 'PORTABLE_EXPORT_AVATAR_DAMAGED' },
       '作品没有改动。有个角色头像文件坏了或不见了，存档没有生成。请在人物页给头像没显示的角色「选择头像」，再点「导出本地存档」。'],
@@ -393,6 +393,24 @@ describe('ProjectBackupPanel', () => {
     await act(async () => button('从本地存档恢复副本').click())
     expect(container.querySelector('[role="alert"]')?.textContent)
       .toBe('没有新建副本。恢复途中存档文件被改动或移走了。请确认存档还在原处，再点「从本地存档恢复副本」。')
+  })
+
+  it('恢复失败带着坏审稿循环的位置：仍说恢复的原因，不说「存档没生成」', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'cloud-backup:view') return { success: true, state: 'unconfigured', binding: null, account: null }
+      if (channel === 'dialog:select-project-archive') return { grantId: 'archive-grant', displayName: 'book.anovel' }
+      if (channel === 'dialog:select-project-restore-target') return { grantId: 'restore-target-grant', displayName: 'book-restored' }
+      if (channel === 'project:archive-restore') return {
+        success: false, errorCode: 'PORTABLE_ARCHIVE_INVALID', error: 'PORTABLE_ARCHIVE_INVALID', failure: { code: 'PORTABLE_ARCHIVE_INVALID' },
+        damagedReviewCycle: { chapterNumber: 2, chapterTitle: '沉船', inTrash: false },
+      }
+      throw new Error(`Unexpected IPC: ${channel}`)
+    })
+    await renderPanel()
+
+    await act(async () => button('从本地存档恢复副本').click())
+    expect(container.querySelector('[role="alert"]')?.textContent)
+      .toBe('没有新建副本。所选文件不是完整的书童存档，可能坏了或没下载完。请换一个存档，再点「从本地存档恢复副本」。')
   })
 
   it.each([

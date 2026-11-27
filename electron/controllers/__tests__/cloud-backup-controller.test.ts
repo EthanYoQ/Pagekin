@@ -6,7 +6,9 @@ import { createRequire } from 'node:module'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import type { CloudBackupFailure, CloudBackupProjectSessionContext } from '../../../src/shared/cloud-backup'
-import { damagedReviewCycleMessage, displayedErrorMessage } from '../../../src/i18n/app-errors'
+import { damagedReviewCycleMessage, displayedErrorMessage, failureText, receivedIpcResult, resultFailure } from '../../../src/i18n/app-errors'
+import type { Failure } from '../../../src/shared/failure'
+import { publicIpcResult } from '../../ipc/handle'
 import { shown } from '../../../src/i18n/__tests__/shown-locale'
 import { ExternalFileGrantService } from '../../services/external-file-grant-service'
 import { WebDavBackupError, WebDavBackupService } from '../../services/webdav-backup-service'
@@ -221,7 +223,7 @@ describe('registerCloudBackupController', () => {
       endpoint: 'https://dav.example.test/root/', username: 'writer', secret: 'top-secret',
     })
 
-    expect(result).toEqual({ success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_AUTH_FAILED' })
+    expect(result).toEqual({ success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_AUTH_FAILED', failure: { code: 'CLOUD_BACKUP_AUTH_FAILED' } })
     expect(f.deps.credentialStore.save).not.toHaveBeenCalled()
     expect(JSON.stringify(result)).not.toContain('top-secret')
   })
@@ -354,7 +356,7 @@ describe('registerCloudBackupController', () => {
     await expect(f.invoke('cloud-backup:backup', {
       operationId: OPERATION, projectSession: session, disclosureConfirmed: true,
     })).resolves.toEqual({
-      success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_BINDING_READ_ONLY', operationId: OPERATION,
+      success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_BINDING_READ_ONLY', failure: { code: 'CLOUD_BACKUP_BINDING_READ_ONLY' }, operationId: OPERATION,
     })
     expect(f.deps.bindingStore.saveWritable).not.toHaveBeenCalled()
     expect(f.deps.exportPortableProject).not.toHaveBeenCalled()
@@ -403,7 +405,7 @@ describe('registerCloudBackupController', () => {
       const result = await f.invoke('cloud-backup:backup', { operationId: OPERATION,
         projectSession: { ...session, projectPath: project.sourceRoot }, disclosureConfirmed: true })
 
-      expect(result).toMatchObject({ success: false, errorCode: 'CLOUD_BACKUP_CANCELLED' })
+      expect(result).toMatchObject({ success: false, errorCode: 'CLOUD_BACKUP_CANCELLED', failure: { code: 'CLOUD_BACKUP_CANCELLED' } })
       expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
       expect(fs.readdirSync(path.join(f.root, 'cloud-backup-staging'))).toEqual([])
       expect(portableExportsRunning()).toBe(0)
@@ -513,7 +515,7 @@ describe('registerCloudBackupController', () => {
       const result = await f.invoke('cloud-backup:backup', { operationId: OPERATION,
         projectSession: { ...session, projectPath: project.sourceRoot }, disclosureConfirmed: true }) as CloudBackupFailure
 
-      expect(result).toMatchObject({ success: false, errorCode: 'CLOUD_BACKUP_ARCHIVE_FAILED' })
+      expect(result).toMatchObject({ success: false, errorCode: 'CLOUD_BACKUP_ARCHIVE_FAILED', failure: { code: 'CLOUD_BACKUP_ARCHIVE_FAILED' } })
       expect(result.damagedReviewCycle && damagedReviewCycleMessage(shown('zh-CN'), result.damagedReviewCycle))
         .toBe('作品没有改动。有一项数据无法安全打包，存档没有生成。请把这条提示反馈给我们。')
       expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
@@ -539,7 +541,7 @@ describe('registerCloudBackupController', () => {
       const result = await f.invoke('cloud-backup:backup', { operationId: OPERATION,
         projectSession: { ...session, projectPath: project.sourceRoot }, disclosureConfirmed: true }) as CloudBackupFailure
 
-      expect(result).toMatchObject({ success: false, errorCode: 'CLOUD_BACKUP_ARCHIVE_FAILED' })
+      expect(result).toMatchObject({ success: false, errorCode: 'CLOUD_BACKUP_ARCHIVE_FAILED', failure: { code: 'CLOUD_BACKUP_ARCHIVE_FAILED' } })
       expect(result.damagedReviewCycle && damagedReviewCycleMessage(shown('zh-CN'), result.damagedReviewCycle))
         .toBe('作品没有改动。有一项数据无法安全打包，存档没有生成。请把这条提示反馈给我们。')
       expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
@@ -574,7 +576,7 @@ describe('registerCloudBackupController', () => {
     await expect(f.invoke('cloud-backup:backup', {
       operationId: OPERATION, projectSession: session, disclosureConfirmed: false,
     })).resolves.toEqual({
-      success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_DISCLOSURE_CONFIRMATION_REQUIRED', operationId: OPERATION,
+      success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_DISCLOSURE_CONFIRMATION_REQUIRED', failure: { code: 'CLOUD_BACKUP_DISCLOSURE_CONFIRMATION_REQUIRED' }, operationId: OPERATION,
     })
     vi.mocked(f.deps.credentialStore.resolveSecret).mockReturnValue({
       metadata: { accountId: ACCOUNT, endpoint: 'https://dav.example.test/root/', username: 'writer', persistence: 'os-backed' },
@@ -583,7 +585,7 @@ describe('registerCloudBackupController', () => {
     await expect(f.invoke('cloud-backup:backup', {
       operationId: OTHER_OPERATION, projectSession: session, disclosureConfirmed: true,
     })).resolves.toEqual({
-      success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_CREDENTIAL_UNAVAILABLE', operationId: OTHER_OPERATION,
+      success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_CREDENTIAL_UNAVAILABLE', failure: { code: 'CLOUD_BACKUP_CREDENTIAL_UNAVAILABLE' }, operationId: OTHER_OPERATION,
     })
     expect(f.deps.exportPortableProject).toHaveBeenCalledOnce()
     expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
@@ -614,7 +616,7 @@ describe('registerCloudBackupController', () => {
 
     finishExport()
     await expect(pending).resolves.toEqual({
-      success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_NOT_CONFIGURED', operationId: OPERATION,
+      success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_NOT_CONFIGURED', failure: { code: 'CLOUD_BACKUP_NOT_CONFIGURED' }, operationId: OPERATION,
     })
     expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
     expect(f.deps.assertCurrentProjectContext).toHaveBeenCalledTimes(2)
@@ -649,7 +651,7 @@ describe('registerCloudBackupController', () => {
 
     finishExport()
     await expect(pending).resolves.toEqual({
-      success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_BINDING_CONFLICT', operationId: OPERATION,
+      success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_BINDING_CONFLICT', failure: { code: 'CLOUD_BACKUP_BINDING_CONFLICT' }, operationId: OPERATION,
     })
     expect(f.deps.credentialStore.resolveSecret).not.toHaveBeenCalled()
     expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
@@ -694,11 +696,11 @@ describe('registerCloudBackupController', () => {
     await expect(f.invoke('cloud-backup:backup', {
       operationId: OPERATION, projectSession: session, disclosureConfirmed: true,
     })).resolves.toEqual({
-      success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_OPERATION_CONFLICT', operationId: OPERATION,
+      success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_OPERATION_CONFLICT', failure: { code: 'CLOUD_BACKUP_OPERATION_CONFLICT' }, operationId: OPERATION,
     })
     finishExport()
     await expect(pending).resolves.toEqual({
-      success: false, state: 'cancelled', errorCode: 'CLOUD_BACKUP_CANCELLED', operationId: OPERATION,
+      success: false, state: 'cancelled', errorCode: 'CLOUD_BACKUP_CANCELLED', failure: { code: 'CLOUD_BACKUP_CANCELLED' }, operationId: OPERATION,
     })
     expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
   })
@@ -712,7 +714,7 @@ describe('registerCloudBackupController', () => {
     await expect(f.invoke('cloud-backup:backup', {
       operationId: OPERATION, projectSession: session, disclosureConfirmed: true,
     })).resolves.toEqual({
-      success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_ARCHIVE_FAILED', operationId: OPERATION, damagedReviewCycle,
+      success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_ARCHIVE_FAILED', failure: { code: 'CLOUD_BACKUP_ARCHIVE_FAILED' }, operationId: OPERATION, damagedReviewCycle,
     })
     expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
   })
@@ -725,7 +727,7 @@ describe('registerCloudBackupController', () => {
       operationId: OPERATION, projectSession: session, disclosureConfirmed: true,
     }) as CloudBackupFailure
 
-    expect(result).toMatchObject({ success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_SOURCE_CHANGED' })
+    expect(result).toMatchObject({ success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_SOURCE_CHANGED', failure: { code: 'CLOUD_BACKUP_SOURCE_CHANGED' } })
     expect(displayedErrorMessage(shown('zh-CN'), new Error(result.errorCode)))
       .toBe('作品没有改动。备份时资料被改了，没有上传。请再点「立即云备份」。')
     expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
@@ -739,7 +741,7 @@ describe('registerCloudBackupController', () => {
       operationId: OPERATION, projectSession: session, disclosureConfirmed: true,
     }) as CloudBackupFailure
 
-    expect(result).toMatchObject({ success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_AVATAR_DAMAGED' })
+    expect(result).toMatchObject({ success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_AVATAR_DAMAGED', failure: { code: 'CLOUD_BACKUP_AVATAR_DAMAGED' } })
     expect(displayedErrorMessage(shown('zh-CN'), new Error(result.errorCode)))
       .toBe('作品没有改动。有个角色头像文件坏了或不见了，没有上传。请在人物页给头像没显示的角色「选择头像」，再点「立即云备份」。')
     expect(f.deps.webDav.appendGeneration).not.toHaveBeenCalled()
@@ -842,7 +844,7 @@ describe('registerCloudBackupController', () => {
       ...(targetGrantId === undefined ? {} : { targetGrantId }),
       ...extra,
     })
-    const refused = { success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_INPUT_INVALID', operationId: OTHER_OPERATION }
+    const refused = { success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_INPUT_INVALID', failure: { code: 'CLOUD_BACKUP_INPUT_INVALID' }, operationId: OTHER_OPERATION }
 
     function expectNothingReached(f: ReturnType<typeof fixture>) {
       expect(f.deps.webDav.downloadGeneration).not.toHaveBeenCalled()
@@ -951,7 +953,7 @@ describe('registerCloudBackupController', () => {
     vi.mocked(f.deps.credentialStore.clear).mockImplementation(() => { f.order.push('clear'); return true })
 
     await expect(f.invoke('cloud-backup:clear-credential', ACCOUNT)).resolves.toEqual({
-      success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_LOCAL_STATE_NOT_SAVED',
+      success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_LOCAL_STATE_NOT_SAVED', failure: { code: 'CLOUD_BACKUP_LOCAL_STATE_NOT_SAVED' },
     })
     expect(f.order).toEqual(['unbind'])
     expect(f.deps.credentialStore.clear).not.toHaveBeenCalled()
@@ -967,7 +969,7 @@ describe('registerCloudBackupController', () => {
     const f = fixture()
 
     await expect(f.invoke('cloud-backup:cancel', 'not-a-uuid')).resolves.toEqual({
-      success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_INPUT_INVALID',
+      success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_INPUT_INVALID', failure: { code: 'CLOUD_BACKUP_INPUT_INVALID' },
     })
   })
 
@@ -1026,7 +1028,7 @@ describe('registerCloudBackupController', () => {
       operationId: OPERATION, projectSession: session, disclosureConfirmed: true,
     })
 
-    expect(result).toEqual({ success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_FAILED', operationId: OPERATION })
+    expect(result).toEqual({ success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_FAILED', failure: { code: 'CLOUD_BACKUP_FAILED' }, operationId: OPERATION })
     expect(f.deps.bindingStore.saveWritable).not.toHaveBeenCalled()
     expect(warn).toHaveBeenCalledTimes(1)
     expect(warn).toHaveBeenCalledWith('[cloud-backup] unmapped failure', { name: 'Error', code: 'EACCES', syscall: 'open' })
@@ -1042,7 +1044,7 @@ describe('registerCloudBackupController', () => {
       localEndpointAccountId: ACCOUNT, cloudBookId: BOOK,
     })
 
-    expect(result).toEqual({ success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_FAILED' })
+    expect(result).toEqual({ success: false, state: 'failed', errorCode: 'CLOUD_BACKUP_FAILED', failure: { code: 'CLOUD_BACKUP_FAILED' } })
     expect(JSON.stringify(result)).not.toMatch(/top-secret|private\.example/u)
   })
 })
@@ -1119,7 +1121,7 @@ describe('云备份报错说出真正的原因（#702）', () => {
 
     const result = await backup(f)
 
-    expect(result).toMatchObject({ errorCode: 'CLOUD_BACKUP_ARCHIVE_FAILED' })
+    expect(result).toMatchObject({ errorCode: 'CLOUD_BACKUP_ARCHIVE_FAILED', failure: { code: 'CLOUD_BACKUP_ARCHIVE_FAILED' } })
   })
 
   it('云端世代来自更新版本的书童：说先升级，没有新建副本', async () => {
@@ -1154,7 +1156,7 @@ describe('云备份报错说出真正的原因（#702）', () => {
 
     const result = await restoreCopy(f)
 
-    expect(result).toMatchObject({ errorCode: 'CLOUD_BACKUP_RESTORE_FAILED' })
+    expect(result).toMatchObject({ errorCode: 'CLOUD_BACKUP_RESTORE_FAILED', failure: { code: 'CLOUD_BACKUP_RESTORE_FAILED' } })
     expect(zh(result)).toContain('没恢复完的副本文件夹')
   })
 
@@ -1195,5 +1197,25 @@ describe('云备份报错说出真正的原因（#702）', () => {
     })
 
     expect(zh(result)).toContain('数据文件夹写不进去')
+  })
+})
+
+describe('作品、归档、更新与云备份失败的说明与 master 逐字相同', () => {
+  it.each(['zh-CN', 'en-US'] as const)('%s', async locale => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const f = fixture()
+    const shownText = async (raw: unknown) => {
+      const result = receivedIpcResult(publicIpcResult(await raw)) as { success: boolean; failure?: Failure; errorCode?: string }
+      expect(result.success).toBe(false)
+      return failureText(shown(locale), resultFailure(result))
+    }
+    vi.mocked(f.deps.webDav.checkConnection).mockRejectedValueOnce(new WebDavBackupError('WEBDAV_AUTH'))
+    expect({
+      connectAuth: await shownText(f.invoke('cloud-backup:connect', { endpoint: 'https://dav.example.test/root/', username: 'writer', secret: 'top-secret' })),
+      connectInputInvalid: await shownText(f.invoke('cloud-backup:connect', null)),
+      cancelInputInvalid: await shownText(f.invoke('cloud-backup:cancel', 'not-a-uuid')),
+      backupWithoutDisclosure: await shownText(f.invoke('cloud-backup:backup', { operationId: '33333333-3333-4333-8333-333333333333', disclosureConfirmed: false })),
+      listCredentialUnavailable: await shownText(f.invoke('cloud-backup:list', { localEndpointAccountId: 'missing', cloudBookId: 'book' })),
+    }).toMatchSnapshot()
   })
 })
