@@ -33,7 +33,7 @@ describe('全局设置写盘失败时的说明（#702）', () => {
   const shownText = async (locale: 'zh-CN' | 'en-US') => {
     const raw = await mocks.handlers.get('config:set')!({}, { locale: 'en-US' })
     expect(JSON.stringify(raw)).not.toMatch(/EPERM|operation not permitted/u)
-    return failureText(shown(locale), resultFailure(receivedIpcResult(raw) as { success: boolean }))
+    return failureText(shown(locale), resultFailure(receivedIpcResult(raw) as Parameters<typeof resultFailure>[0]))
   }
 
   it('中文界面：说中文，不露系统原文', async () => {

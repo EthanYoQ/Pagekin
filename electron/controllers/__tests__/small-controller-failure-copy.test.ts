@@ -74,7 +74,7 @@ let resolved: typeof service | null = service
 
 const invoke = (channel: string, ...args: unknown[]) => mocks.handlers.get(channel)!(...args)
 
-/** 渲染端调用点显示的那句：迁移后读 failure，master 上头像读 error.message、其余读 error。 */
+/** 迁移后读 failure；master 上头像读 error.message，其余读 error。 */
 async function shownToAuthor(raw: unknown): Promise<string> {
   const result = receivedIpcResult(await raw) as { success: boolean; failure?: Failure; error?: unknown }
   expect(result.success).toBe(false)

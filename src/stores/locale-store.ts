@@ -84,7 +84,7 @@ export function createLocaleState(dependencies: LocaleDependencies): StateCreato
         dependencies.setDocumentLanguage(locale)
         try {
           const result = await dependencies.saveLocale(locale)
-          // 带着失败抛出：回退语言之后才按回退后的界面语言说明原因。
+          // 抛 AuthorError 而不是字符串：回退语言后再按回退后的界面语言说明原因。
           if (!result.success) throw authorError(activeInterfaceLocale(get()), resultFailure(result) ?? { code: IPC_HANDLER_FAILED })
           ledger.succeeded(save, locale)
         } catch (error) {
