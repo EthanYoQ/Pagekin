@@ -1,7 +1,9 @@
 import { expectTypeOf, it } from 'vitest'
 
 import type { DatabaseChannels } from '../ipc-channels'
+import type { Failure } from '../failure'
 
-it('未迁移的 db:project-clear-generated-data 声明与处理器一致，失败仍回 error', () => {
-  expectTypeOf<DatabaseChannels['db:project-clear-generated-data']['return']>().toHaveProperty('error').toEqualTypeOf<string | undefined>()
+it('db:project-clear-generated-data 迁到 handle() 后失败只回 failure', () => {
+  expectTypeOf<DatabaseChannels['db:project-clear-generated-data']['return']>().toHaveProperty('failure').toEqualTypeOf<Failure | undefined>()
+  expectTypeOf<DatabaseChannels['db:project-clear-generated-data']['return']>().not.toHaveProperty('error')
 })

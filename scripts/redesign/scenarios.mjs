@@ -339,7 +339,7 @@ export async function seedStageSample(context,
       relationships: [], arc: '', notes: '' }] }, path, session)).success, true)
   const core = await invoke(page, 'db:project-core-update', { ...STAGE_SAMPLE.core, totalChapters,
     wordsPerChapter: STAGE_SAMPLE.wordsPerChapter }, path, session)
-  assert.equal(core.success, true, core.error)
+  assert.equal(core.success, true, core.failure?.code)
   for (const [index, title] of STAGE_SAMPLE.titles.entries()) {
     assert.equal((await invoke(page, 'db:blueprint-upsert', { chapterNumber: index + 1, title, role: '发展', purpose: '推进灯塔与沉船的线索',
       keyEvents: '林岚在灯塔里找到新的线索', characters: [] }, path, session)).success, true)

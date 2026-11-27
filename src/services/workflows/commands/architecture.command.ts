@@ -23,6 +23,7 @@ import {
 import { ArchitecturePromptBuilder } from '../../prompts/prompt-builder'
 import { ipc } from '../../ipc-client'
 import { requireIpcSuccess } from '../../ipc-result'
+import { specificWriteFailure } from '../../specific-write-failure'
 import { projectSessionContextFromProject, sameProjectSessionContext } from '../../../shared/project-session-context'
 import {
   requireWorkflowProjectSession,
@@ -695,7 +696,7 @@ async function writeArchToDb(
     ? await ipc.invokeWithProjectSession(projectSession, 'db:project-core-commit-generated', { data: { [key]: cleanContent }, generationRunHandle }, expectedProjectPath)
     : await ipc.invokeWithProjectSession(projectSession, 'db:project-core-update', { [key]: cleanContent }, expectedProjectPath)
   if (!result.success) {
-    throw workflowMainProcessError(context.interfaceLocale, result.error, '故事架构写入数据库失败', 'Failed to write story architecture to the database.')
+    throw workflowMainProcessError(context.interfaceLocale, specificWriteFailure(result), '故事架构写入数据库失败', 'Failed to write story architecture to the database.')
   }
 
   // 通知 UI 层实时刷新架构完成状态
@@ -2244,12 +2245,13 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       expectedProjectPath,
     )
     if (!result.success) {
-      const commitError = result.error === 'PROJECT_CORE_SYNOPSIS_CHANGED'
+      const failure = specificWriteFailure(result)
+      const commitError = failure?.code === 'PROJECT_CORE_SYNOPSIS_CHANGED'
         ? text(
             '项目数据已变化，已拒绝覆盖情节大纲。',
             'Project data changed while the outline was being generated, so overwriting it was refused.',
           )
-        : result.error || fallbackError
+        : failure?.code ?? fallbackError
       try {
         await this.rollbackSynopsisCheckpoint(
           expectedProjectPath,

@@ -133,6 +133,20 @@ const MIGRATED_DATABASE_CHANNELS = [
   'db:draft-update-status',
   'db:draft-update-content',
   'db:draft-delete',
+  'db:close',
+  'db:project-core-get',
+  'db:project-core-update',
+  'db:project-core-commit-generated',
+  'db:project-core-synopsis-commit',
+  'db:project-clear-generated-data',
+  'db:blueprint-get-all',
+  'db:blueprint-get',
+  'db:blueprint-upsert',
+  'db:blueprint-upsert-many',
+  'db:blueprint-commit-range',
+  'db:blueprint-update-notes',
+  'db:blueprint-delete',
+  'db:blueprint-clear-all',
 ]
 
 it('迁移后的数据库处理器不在直连基线里', () => {

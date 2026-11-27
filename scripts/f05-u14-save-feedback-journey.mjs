@@ -187,7 +187,7 @@ async function main() {
     mark('fixture-blueprint-seed')
     const seededBlueprint = await invoke(page, 'db:blueprint-upsert', { chapterNumber: 1, title: '初始蓝图', role: '发展',
       purpose: '前往车站', keyEvents: '发现线索', characters: [] }, project.projectPath, context)
-    assert.equal(seededBlueprint.success, true, seededBlueprint.error)
+    assert.equal(seededBlueprint.success, true, seededBlueprint.failure?.code)
     mark('fixture-draft-seed')
     const seededDraft = await invoke(page, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
       content: '列车抵达旧车站。', wordCount: 8 }, project.projectPath, context)

@@ -286,7 +286,7 @@ async function main() {
     assert.equal(opened.success, true, opened.error)
     context = { projectId: project.projectId, projectPath: project.projectPath, leaseId: opened.project.sessionLease }
     const seeded = await invoke(page, 'db:project-core-update', { premise }, project.projectPath, context)
-    assert.equal(seeded.success, true, seeded.error)
+    assert.equal(seeded.success, true, seeded.failure?.code)
     const seededCore = await invoke(page, 'db:project-core-get', project.projectPath, context)
     assert.equal(seededCore?.premise, premise, 'worldbuilding prerequisite premise was not persisted')
     const roster = await invoke(page, 'db:character-roster-read', project.projectPath, context)

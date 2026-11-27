@@ -25,7 +25,7 @@ const LONG_CONFIG = {
 
 const seedFilled = context => seedStageSample(context, { landOnChapter3: false, beforeReload: async ({ page, invoke, path, session }) => {
   const core = await invoke(page, 'db:project-core-update', LONG_CONFIG, path, session)
-  assert.equal(core.success, true, core.error)
+  assert.equal(core.success, true, core.failure?.code)
 } })
 
 const AUTHOR_STYLE = '少用形容词，多写手上的动作。'
@@ -33,7 +33,7 @@ const AUTHOR_STYLE = '少用形容词，多写手上的动作。'
 const seedNew = context => seedStageSample(context, { landOnChapter3: false, beforeReload: async ({ page, invoke, path, session }) => {
   const core = await invoke(page, 'db:project-core-update', { coreOutline: '', genre: '', targetAudience: '', subGenre: '', worldSetting: '', goldenFinger: '',
     protagonistProfile: '', writingStyle: AUTHOR_STYLE, globalGuidance: '', referenceWorks: '' }, path, session)
-  assert.equal(core.success, true, core.error)
+  assert.equal(core.success, true, core.failure?.code)
 } })
 
 const innerScrolls = (page, selector) => page.locator(selector).evaluateAll(nodes => nodes

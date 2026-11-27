@@ -279,7 +279,7 @@ async function main() {
       assert(session.leaseId, 'stale source fixture session missing')
       const blueprint = await invoke(rolePage, 'db:blueprint-upsert', { chapterNumber: 1, title: '南站', role: '发展',
         purpose: '核对旧来源拒写', keyEvents: lateProse, characters: [] }, projectPath, session)
-      assert.equal(blueprint.success, true, blueprint.error)
+      assert.equal(blueprint.success, true, blueprint.failure?.code)
       const draft = await invoke(rolePage, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
         content: lateProse, wordCount: lateProse.length }, projectPath, session)
       assert.equal(draft.success, true, draft.failure?.code)
@@ -357,7 +357,7 @@ async function main() {
       assert(session.leaseId, 'finalized fixture session missing')
       const blueprint = await invoke(sourcePage, 'db:blueprint-upsert', { chapterNumber: 1, title: '北塔', role: '发展',
         purpose: '核对角色状态', keyEvents: finalizedProse, characters: [] }, projectPath, session)
-      assert.equal(blueprint.success, true, blueprint.error)
+      assert.equal(blueprint.success, true, blueprint.failure?.code)
       const draft = await invoke(sourcePage, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
         content: finalizedProse, wordCount: finalizedProse.length }, projectPath, session)
       assert.equal(draft.success, true, draft.failure?.code)
@@ -524,7 +524,7 @@ async function main() {
       assert(secondSession.leaseId, 'second finalized fixture session missing')
       const secondBlueprint = await invoke(secondSourcePage, 'db:blueprint-upsert', { chapterNumber: 2, title: '南站', role: '发展',
         purpose: '核对迟到的角色状态', keyEvents: lateProse, characters: [] }, projectPath, secondSession)
-      assert.equal(secondBlueprint.success, true, secondBlueprint.error)
+      assert.equal(secondBlueprint.success, true, secondBlueprint.failure?.code)
       const secondDraft = await invoke(secondSourcePage, 'db:draft-create', { chapterNumber: 2, version: 1, source: 'write',
         content: lateProse, wordCount: lateProse.length }, projectPath, secondSession)
       assert.equal(secondDraft.success, true, secondDraft.failure?.code)

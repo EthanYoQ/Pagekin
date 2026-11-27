@@ -285,13 +285,13 @@ describe('blueprint persistence helpers', () => {
   const session = { projectId: 'NovelA', leaseId: 'lease-NovelA', projectPath: 'C:/NovelA' }
 
   it('throws when saving one blueprint returns an IPC failure', async () => {
-    stubIpcInvoke({ success: false, error: 'DB 未打开' })
+    stubIpcInvoke({ success: false, failure: { code: 'PROJECT_NOT_OPEN' } })
 
-    await expect(saveChapterBlueprint(blueprint, 'C:/NovelA', session, shown('zh-CN'))).rejects.toThrow('保存章节蓝图失败：DB 未打开')
+    await expect(saveChapterBlueprint(blueprint, 'C:/NovelA', session, shown('zh-CN'))).rejects.toThrow('保存章节蓝图失败：请先打开项目。')
   })
 
   it('英文界面下主进程拒绝保存蓝图：报英文说明，不转出主进程的中文原文（#471）', async () => {
-    stubIpcInvoke({ success: false, error: 'Error: 项目数据库未打开' })
+    stubIpcInvoke({ success: false, failure: { code: 'BLUEPRINT_WRITE_FAILED', note: { key: 'error.blueprintWriteFailed' } } })
 
     await expect(saveChapterBlueprint(blueprint, 'C:/NovelA', session, shown('en-US')))
       .rejects.toThrow(/^Could not save the chapter blueprint\.$/u)
@@ -300,9 +300,9 @@ describe('blueprint persistence helpers', () => {
   })
 
   it('throws when saving many blueprints returns an IPC failure', async () => {
-    stubIpcInvoke({ success: false, error: '写入失败' })
+    stubIpcInvoke({ success: false, failure: { code: 'BLUEPRINT_WRITE_FAILED', note: { key: 'error.blueprintWriteFailed' } } })
 
-    await expect(saveAllBlueprints([blueprint], 'C:/NovelA', session, shown('zh-CN'))).rejects.toThrow('写入失败')
+    await expect(saveAllBlueprints([blueprint], 'C:/NovelA', session, shown('zh-CN'))).rejects.toThrow(/^保存章节蓝图失败$/u)
   })
 
   it('resolves when the IPC save succeeds', async () => {
@@ -357,7 +357,7 @@ describe('blueprint persistence helpers', () => {
   })
 
   it.each([
-    [{ success: false, error: '写入失败' }],
+    [{ success: false, failure: { code: 'BLUEPRINT_WRITE_FAILED', note: { key: 'error.blueprintWriteFailed' } } }],
     [{ success: true }],
   ])('does not announce blueprint refresh without a committed receipt', async (result) => {
     stubIpcInvoke(result)
@@ -378,7 +378,7 @@ describe('blueprint persistence helpers', () => {
   })
 
   it('英文界面下提交蓝图被主进程拒绝：报英文说明（#471）', async () => {
-    stubIpcInvoke({ success: false, error: '写入失败' })
+    stubIpcInvoke({ success: false, failure: { code: 'BLUEPRINT_WRITE_FAILED', note: { key: 'error.blueprintWriteFailed' } } })
 
     await expect(commitDirectoryBlueprintRange(
       [blueprint],

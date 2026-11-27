@@ -83,7 +83,7 @@ export async function seedBook(context, { finalized = [], drafts = {}, core: cor
       relationships: [], arc: '', notes: '' }, ...characters.map(character => ({ characterId: `draft:${randomUUID()}`, gender: '', age: '', appearance: '',
       abilities: '', relationships: [], arc: '', notes: '', ...character }))] }, projectPath, session)).success, true)
   const core = await invoke(page, 'db:project-core-update', { ...STAGE_SAMPLE.core, totalChapters: TOTAL_CHAPTERS, wordsPerChapter: WORDS_PER_CHAPTER, ...coreFields }, projectPath, session)
-  assert.equal(core.success, true, core.error)
+  assert.equal(core.success, true, core.failure?.code)
   for (let chapterNumber = 1; chapterNumber <= TOTAL_CHAPTERS; chapterNumber++) {
     assert.equal((await invoke(page, 'db:blueprint-upsert', { chapterNumber, title: stageChapterTitle(chapterNumber), role: '发展',
       purpose: '推进灯塔与沉船的线索', keyEvents: KEY_EVENTS[chapterNumber - 1], characters: ['林岚'] }, projectPath, session)).success, true)

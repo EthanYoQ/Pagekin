@@ -704,7 +704,7 @@ describe('清除生成内容', () => {
   const project = { id: 'lighthouse', path: 'C:/novels/lighthouse', sessionLease: 'lease-clear' } as ProjectData
   const originalProject = useProjectStore.getState()
   let invoke: ReturnType<typeof vi.fn>
-  let finishClear: (result: { success: boolean; error?: string }) => void = () => {}
+  let finishClear: (result: { success: boolean; failure?: { code: string; note?: { key: string } } }) => void = () => {}
 
   beforeEach(() => {
     invoke = vi.fn((channel: string) => channel === 'db:project-clear-generated-data'
@@ -788,10 +788,10 @@ describe('清除生成内容', () => {
     expect(onClose).not.toHaveBeenCalled()
     expect(dialog.isConnected).toBe(true)
 
-    await act(async () => finishClear({ success: false, error: '磁盘只读' }))
+    await act(async () => finishClear({ success: false, failure: { code: 'PROJECT_CLEAR_FAILED', note: { key: 'error.projectClearFailed' } } }))
     const alert = await vi.waitFor(() => document.querySelector<HTMLElement>('[role="alertdialog"]')!)
     expect(alert.querySelector('.pi-dialog-title')!.textContent).toBe('清除失败')
-    expect(alert.querySelector('.pi-dialog-message')!.textContent).toBe('磁盘只读')
+    expect(alert.querySelector('.pi-dialog-message')!.textContent).toBe('作品内容没有被清除。这次清除没能完成，请再试一次。')
     await userEvent.click(buttonNamed(alert, '确定'))
     await vi.waitFor(() => expect(buttonNamed(dialog, '清除所选').disabled).toBe(false))
     expect(onClose).not.toHaveBeenCalled()
