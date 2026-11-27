@@ -34,7 +34,7 @@ async function launch() {
       globalThis.__ownerAcceptance = { dispatches: 0, requests: [] }
       const logError = console.error
       globalThis.__ipcLoggedCodes = []
-      console.error = (...args) => { if (args[1] instanceof Error) globalThis.__ipcLoggedCodes.push(args[1].message); logError(...args) }
+      console.error = (...args) => { if (String(args[0]).includes('抛出未登记的错误') && args[1] instanceof Error) globalThis.__ipcLoggedCodes.push(args[1].message); logError(...args) }
       globalThis.fetch = async (url, options) => {
         if (String(url) !== 'https://api.openai.com/v1/chat/completions'
           || new Headers(options?.headers).get('Authorization') !== `Bearer ${fixture.syntheticKey}`) throw new Error('SYNTHETIC_FETCH_ONLY')
