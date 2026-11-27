@@ -25,7 +25,7 @@ import { promptLanguageText } from '../prompt-language'
 import { retryDirectoryCharacterSync } from './directory-character-sync-recovery'
 import type { WritingLanguage } from '../../shared/writing-language'
 import { countDraftUnits } from '../../shared/draft-units'
-import { note } from '../../shared/failure'
+import { note, type AuthorNote } from '../../shared/failure'
 import { authorError, isRegisteredErrorCode, resultFailure } from '../../i18n/app-errors'
 import { errorLocaleForRun } from '../../i18n/core'
 import { FINALIZATION_SHARED_WRITE_RESOURCE_KINDS } from '../../shared/workflow-resource-claims'
@@ -123,9 +123,9 @@ function productionDependencies(
 ): ImportRunOrchestratorDependencies {
   const session = context.projectSession
   const projectPath = context.projectPath
-  // 主进程没给原因时的兜底说明进运行卡片的步骤详情，按导入运行的语言写（工作流的 uiLocale 就是 run.locale）。
-  const required = <T,>(result: { success: boolean; error?: string } & T, zhCNText: string, enUSText: string): T => {
-    if (!result.success) throw new Error(result.error || textForLocale(context.uiLocale, zhCNText, enUSText))
+  // 主进程没给原因时的兜底说明进运行卡片的步骤详情，按导入运行的语言写（工作流的 interfaceLocale 随 run.locale）。
+  const required = <T,>(result: { success: boolean; error?: string } & T, fallback: AuthorNote): T => {
+    if (!result.success) throw result.error ? new Error(result.error) : authorError(context.interfaceLocale, { note: fallback })
     return result
   }
   return {
@@ -134,8 +134,7 @@ function productionDependencies(
     startOrResume: async (runId, owner) => {
       const start = required(
         await ipc.invokeWithProjectSession(session, 'db:import-run-start-resume', runId, owner, projectPath),
-        '无法开始或继续这次导入。',
-        'Could not start or resume the import run.',
+        note('无法开始或继续这次导入。', 'Could not start or resume the import run.'),
       ).start!
       context.data.importRunExecution = start.execution
       return start
@@ -145,8 +144,7 @@ function productionDependencies(
         await ipc.invokeWithProjectSession(
           session, 'db:import-run-renew-execution', runId, execution, projectPath,
         ),
-        '无法延长这次导入的写入时限。',
-        'Could not renew the import execution lease.',
+        note('无法延长这次导入的写入时限。', 'Could not renew the import execution lease.'),
       ).execution!
       context.data.importRunExecution = renewed
       return renewed
@@ -167,8 +165,7 @@ function productionDependencies(
         execution,
         projectPath,
       ),
-      '无法保存 AI 生成的导入结果。',
-      'Could not freeze generated import output.',
+      note('无法保存 AI 生成的导入结果。', 'Could not freeze generated import output.'),
     ).receipt!,
     commitEffectReceipt: async (runId, stage, checkpoint, execution) => required(
       await ipc.invokeWithProjectSession(
@@ -180,8 +177,7 @@ function productionDependencies(
         execution,
         projectPath,
       ),
-      '无法提交 AI 生成的导入结果。',
-      'Could not commit the generated import output.',
+      note('无法提交 AI 生成的导入结果。', 'Could not commit the generated import output.'),
     ).result!,
     replayCommittedEffect: async (receipt, run) => {
       // Re-read through the main-process repository so replay receives the
@@ -197,19 +193,18 @@ function productionDependencies(
       )
       if (!durableReceipt || JSON.stringify(durableReceipt) !== JSON.stringify(receipt)) {
         throw importRecordError(
-          run.locale,
-          '已提交的导入结果与保存的记录不一致。',
-          'Committed import effect receipt does not match durable storage.',
+          context.interfaceLocale,
+          note('已提交的导入结果与保存的记录不一致。请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。', 'Committed import effect receipt does not match durable storage. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.'),
         )
       }
       assertImportRunEffectReceiptMetadata(durableReceipt, run)
       if (durableReceipt.state !== 'committed') {
-        throw importRecordError(run.locale, '导入结果还没有提交，不能直接恢复。', 'Prepared import effects cannot be replayed.')
+        throw importRecordError(context.interfaceLocale, note('导入结果还没有提交，不能直接恢复。请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。', 'Prepared import effects cannot be replayed. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.'))
       }
       if (durableReceipt.kind === 'chapter-blueprint-range') {
         const committed = durableReceipt.effectReceipt as BlueprintRangeCommitReceipt | undefined
         if (!committed?.characterSyncOperation?.operationId) {
-          throw importRecordError(run.locale, '已保存的章节蓝图导入记录不完整。', 'Committed blueprint import receipt is incomplete.')
+          throw importRecordError(context.interfaceLocale, note('已保存的章节蓝图导入记录不完整。请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。', 'Committed blueprint import receipt is incomplete. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.'))
         }
         await retryDirectoryCharacterSync(
           committed.characterSyncOperation.operationId,
@@ -225,7 +220,7 @@ function productionDependencies(
           !authorReceipt
           || authorReceipt.operationId !== `author-import:${run.id}`
           || authorReceipt.drafts.length !== run.totalChapters
-        ) throw importRecordError(run.locale, '已保存的作者原稿导入记录不完整。', 'Committed author-manuscript receipt is incomplete.')
+        ) throw importRecordError(context.interfaceLocale, note('已保存的作者原稿导入记录不完整。请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。', 'Committed author-manuscript receipt is incomplete. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.'))
         return
       }
       const core = await ipc.invokeWithProjectSession(session, 'db:project-core-get', projectPath)
@@ -234,11 +229,7 @@ function productionDependencies(
         session,
         projectSessionContextFromProject(current),
       )) {
-        throw new Error(textForLocale(
-          run.locale,
-          '当前项目已切换，无法恢复已保存的导入结果。',
-          'The project changed before the committed import effect could be restored.',
-        ))
+        throw authorError(context.interfaceLocale, { note: note('当前项目已切换，无法恢复已保存的导入结果。', 'The project changed before the committed import effect could be restored.') })
       }
       useProjectStore.getState().publishSavedNovelConfig(configFieldsFromCore(core), session, 'unsaved-edits')
       context.data.novelConfigSummary = currentNovelConfigSummary(context.writingLanguage)
@@ -292,11 +283,7 @@ function productionDependencies(
         },
       )
         .execute({ step: {} as never, context, callbacks })
-      if (!style.trim()) throw new Error(textForLocale(
-        context.uiLocale,
-        '未提取到可用文风，无法继续建立仿写约束',
-        'No usable writing style was extracted, so imitation guidance cannot be created.',
-      ))
+      if (!style.trim()) throw authorError(context.interfaceLocale, { note: note('未提取到可用文风，无法继续建立仿写约束', 'No usable writing style was extracted, so imitation guidance cannot be created.') })
     },
     inferBlueprints: async (chapters, checkpoint, run, commit) => {
       context.data.importGenerationSlot = { runId: run.id, stage: 'blueprints', batchId: checkpoint }
@@ -314,11 +301,7 @@ function productionDependencies(
     ),
     commitAuthorManuscript: async (run, commit) => {
       if (!run.authorityFingerprint || !run.manifestFingerprint) {
-        throw new Error(textForLocale(
-          run.locale,
-          '作者原稿导入缺少权威状态指纹',
-          'The author-manuscript import is missing its authority fingerprint.',
-        ))
+        throw authorError(context.interfaceLocale, { note: note('作者原稿导入缺少权威状态指纹', 'The author-manuscript import is missing its authority fingerprint.') })
       }
       await commit({
         operationId: `author-import:${run.id}`,
@@ -339,9 +322,8 @@ function productionDependencies(
       if (!receipt) return null
       if (receipt.state !== 'committed' || receipt.kind !== 'author-finalized-batch') {
         throw importRecordError(
-          context.uiLocale,
-          '作者原稿定稿还没有保存完成。',
-          'Author-manuscript finalization has not been durably committed.',
+          context.interfaceLocale,
+          note('作者原稿定稿还没有保存完成。请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。', 'Author-manuscript finalization has not been durably committed. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.'),
         )
       }
       return receipt.effectReceipt as FinalizedDraftImportReceipt
@@ -354,11 +336,7 @@ function productionDependencies(
       const { retryFinalizationPublication } = await import('../finalization-client')
       const result = await retryFinalizationPublication(draft.finalizationId, session)
       if (!result.success || result.publicationStatus !== 'published') {
-        throw new Error(result.error || textForLocale(
-          run.locale,
-          `第 ${chapter.number} 章实体正文发布失败`,
-          `Chapter ${chapter.number} could not be published to the manuscript directory.`,
-        ))
+        throw result.error ? new Error(result.error) : authorError(context.interfaceLocale, { note: note('第 {number} 章实体正文发布失败', 'Chapter {number} could not be published to the manuscript directory.', { number: chapter.number }) })
       }
       callbacks.log(textForLocale(
         run.locale,
@@ -369,11 +347,7 @@ function productionDependencies(
     postprocessAuthorChapter: async (chapter, draft, run) => {
       const current = useProjectStore.getState().currentProject
       if (!current || !sameProjectSessionContext(session, projectSessionContextFromProject(current))) {
-        throw new Error(textForLocale(
-          run.locale,
-          '当前项目已切换，无法更新原稿连续性事实',
-          'The project changed before manuscript continuity could be updated.',
-        ))
+        throw authorError(context.interfaceLocale, { note: note('当前项目已切换，无法更新原稿连续性事实', 'The project changed before manuscript continuity could be updated.') })
       }
       const { RunFinalizePostProcessCommand } = await import('./commands/finalize-chapter.command')
       const status = await new RunFinalizePostProcessCommand({
@@ -400,11 +374,7 @@ function productionDependencies(
         )),
       }).execute({ step: {} as never, context, callbacks })
       if (!status.allCriticalPassed) {
-        throw new Error(textForLocale(
-          run.locale,
-          `第 ${chapter.number} 章连续性后处理未完成`,
-          `Continuity post-processing did not complete for Chapter ${chapter.number}.`,
-        ))
+        throw authorError(context.interfaceLocale, { note: note('第 {number} 章连续性后处理未完成', 'Continuity post-processing did not complete for Chapter {number}.', { number: chapter.number }) })
       }
     },
     refresh: async run => {
@@ -421,8 +391,7 @@ function productionDependencies(
         await ipc.invokeWithProjectSession(
           session, 'db:import-run-complete-batch', runId, stage, checkpoint, execution, projectPath,
         ),
-        '无法保存导入进度。',
-        'Could not save the import checkpoint.',
+        note('无法保存导入进度。', 'Could not save the import checkpoint.'),
       )
       return { cancelApplied: result.cancelApplied ?? false, run: result.run! }
     },
@@ -430,27 +399,23 @@ function productionDependencies(
       await ipc.invokeWithProjectSession(
         session, 'db:import-run-advance-stage', runId, completedStage, nextStage, execution, projectPath,
       ),
-      '无法推进导入进度。',
-      'Could not advance the import checkpoint.',
+      note('无法推进导入进度。', 'Could not advance the import checkpoint.'),
     ).run!,
     fail: async (runId, stage, error, execution) => required(
       await ipc.invokeWithProjectSession(
         session, 'db:import-run-fail', runId, stage, error, execution, projectPath,
       ),
-      '无法保存导入失败记录。',
-      'Could not save the import failure.',
+      note('无法保存导入失败记录。', 'Could not save the import failure.'),
     ).run!,
     cancelAtBoundary: async (runId, execution) => required(
       await ipc.invokeWithProjectSession(
         session, 'db:import-run-cancel-at-boundary', runId, execution, projectPath,
       ),
-      '无法保存导入取消状态。',
-      'Could not save import cancellation.',
+      note('无法保存导入取消状态。', 'Could not save import cancellation.'),
     ).run!,
     complete: async (runId, execution) => required(
       await ipc.invokeWithProjectSession(session, 'db:import-run-complete', runId, execution, projectPath),
-      '无法完成这次导入。',
-      'Could not complete the import run.',
+      note('无法完成这次导入。', 'Could not complete the import run.'),
     ).run!,
   }
 }
@@ -500,11 +465,7 @@ export function createImportWorkflow(params: ImportWorkflowParams): WorkflowDefi
         execution,
         params.projectPath,
       )
-      if (!result.success) throw new Error(result.error || textForLocale(
-        params.run.locale,
-        '无法保存导入取消请求',
-        'Could not persist the import cancellation request.',
-      ))
+      if (!result.success) throw result.error ? new Error(result.error) : authorError(context.interfaceLocale, { note: note('无法保存导入取消请求', 'Could not persist the import cancellation request.') })
     },
   }
   if (params.run.purpose === 'author-manuscript') {

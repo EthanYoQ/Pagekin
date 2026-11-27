@@ -20,9 +20,10 @@ import {
 } from '../../shared/import-run'
 import type { StepCallbacks } from '../../stores/workflow-store'
 import type { FinalizedDraftImportDraftReceipt, FinalizedDraftImportReceipt } from '../../shared/finalized-draft-import'
-import { appErrorMessage, errorCodeOf, importGenerationStopMessage } from '../../i18n/app-errors'
+import { authorError, errorCodeOf, importStopFailure } from '../../i18n/app-errors'
 import { localize } from '../../i18n/core'
 import type { ErrorDisplayLocale } from '../../i18n/types'
+import { note, type AuthorError, type AuthorNote } from '../../shared/failure'
 import { isWorkflowCancellation, WorkflowCancelledError } from './workflow-cancellation'
 
 export const IMPORT_CHAPTER_PAGE_SIZE = 100
@@ -163,13 +164,9 @@ function stopIfCancelled(context: ImportRunExecutionContext, locale: ImportRunLo
   }
 }
 
-/** 收据或检查点与持久化记录对不上：作者照做不了什么，只能从导入对话框继续或重新导入，说明里留下是哪一项。 */
-export function importRecordError(locale: ImportRunLocale, zhCNText: string, enUSText: string): Error {
-  return new Error(localize(
-    locale,
-    `${zhCNText}请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。`,
-    `${enUSText} Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.`,
-  ))
+/** 收据或检查点与持久化记录对不上：作者照做不了什么，只能从导入对话框继续或重新导入，说明里留下是哪一项、接着写处理办法。 */
+export function importRecordError(locale: ErrorDisplayLocale, what: AuthorNote): AuthorError {
+  return authorError(locale, { note: what })
 }
 
 function splitContiguousBatches(
@@ -217,7 +214,7 @@ export class ImportRunOrchestrator {
           const renewed = await this.dependencies.renewExecution(run.id, execution.current)
           if (renewed.owner !== initialAuthority.owner || renewed.epoch !== initialAuthority.epoch) {
             // 续租拿回的执行身份变了，与主进程判定的执行代号过期是同一件事，用同一句说明。
-            throw new Error(appErrorMessage(this.dependencies.interfaceLocale, 'IMPORT_RUN_EXECUTION_STALE'))
+            throw authorError(this.dependencies.interfaceLocale, { code: 'IMPORT_RUN_EXECUTION_STALE' })
           }
           execution.current = renewed
           return execution.current
@@ -338,9 +335,9 @@ export class ImportRunOrchestrator {
         // 生成开始或发送前就被预算、阻断拒绝时报错只有裸码，在这里换成导入的说明，存进运行并抛出同一句；码只进诊断日志。
         // 只改写生成阶段（global、style、blueprints）：非生成阶段抛出的码保留原报错。
         const code = IMPORT_GENERATION_STAGES.has(requestedStage) ? errorCodeOf(error instanceof Error ? error.message : error) : undefined
-        const stopped = code && importGenerationStopMessage(this.dependencies.interfaceLocale, code, false, run.purpose)
+        const stopped = code ? importStopFailure(code, false, run.purpose) : undefined
         if (stopped) callbacks.log(localize(run.locale, `导入停止原因：${code}`, `Import stop reason: ${code}`))
-        const failure = stopped ? new Error(stopped) : error
+        const failure = stopped ? authorError(this.dependencies.interfaceLocale, stopped) : error
         try {
           execution.current = await this.dependencies.renewExecution(runId, execution.current)
           await this.dependencies.fail(
@@ -461,9 +458,8 @@ export class ImportRunOrchestrator {
     const committedReceipt = await this.dependencies.getEffectReceipt(run.id, stage, batchId)
     if (!committedReceipt || committedReceipt.state !== 'committed') {
       throw importRecordError(
-        run.locale,
-        '这一步生成的结果没有保存下来。',
-        'The result generated in this step was not saved.',
+        this.dependencies.interfaceLocale,
+        note('这一步生成的结果没有保存下来。请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。', 'The result generated in this step was not saved. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.'),
       )
     }
     return { run, execution: execution.current }
@@ -478,9 +474,8 @@ export class ImportRunOrchestrator {
     const existing = await this.dependencies.getEffectReceipt(run.id, stage, batchId)
     if (!existing) {
       throw importRecordError(
-        run.locale,
-        '已完成的导入批次缺少保存记录，无法按原结果恢复。',
-        'A completed import batch is missing its saved record, so its result cannot be restored.',
+        this.dependencies.interfaceLocale,
+        note('已完成的导入批次缺少保存记录，无法按原结果恢复。请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。', 'A completed import batch is missing its saved record, so its result cannot be restored. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.'),
       )
     }
     execution.current = await this.dependencies.renewExecution(run.id, execution.current)
@@ -644,9 +639,8 @@ export class ImportRunOrchestrator {
     const receipt = await getReceipt(run.id)
     if (!receipt) {
       throw importRecordError(
-        run.locale,
-        '读不到已保存的作者原稿记录。',
-        'The saved author-manuscript record could not be read.',
+        this.dependencies.interfaceLocale,
+        note('读不到已保存的作者原稿记录。请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。', 'The saved author-manuscript record could not be read. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.'),
       )
     }
     const draftsByChapter = new Map(receipt.drafts.map(draft => [draft.chapterNumber, draft]))
@@ -661,9 +655,8 @@ export class ImportRunOrchestrator {
           const draft = draftsByChapter.get(chapter.number)
           if (!draft) {
             throw importRecordError(
-              run.locale,
-              `已保存的作者原稿记录里缺少第 ${chapter.number} 章。`,
-              `The saved author-manuscript record is missing Chapter ${chapter.number}.`,
+              this.dependencies.interfaceLocale,
+              note('已保存的作者原稿记录里缺少第 {number} 章。请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。', 'The saved author-manuscript record is missing Chapter {number}. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.', { number: chapter.number }),
             )
           }
           execution.current = await this.dependencies.renewExecution(run.id, execution.current)

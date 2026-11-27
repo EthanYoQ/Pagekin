@@ -9,7 +9,7 @@ import {
   InferGlobalSettingsCommand as RuntimeInferGlobalSettingsCommand,
 } from '../import-novel.command'
 import { fakeLeaseModelId, useFakeModelStream, workflowRuntimeDependencies, type FakeGenerateStream } from './workflow-generation-runtime.fixture'
-import { importGenerationStopMessage } from '../../../../i18n/app-errors'
+import { failureText, importStopFailure } from '../../../../i18n/app-errors'
 import { contextLengthRejectingDependencies } from './context-length-runtime.fixture'
 import { isWorkflowCancellation } from '../../workflow-cancellation'
 import { GenerationHarnessError } from '../../../generation/generation-harness'
@@ -326,7 +326,7 @@ describe('InferBlueprintsPerChapterCommand', () => {
       .execute({ step: {}, context: createContext(), callbacks: { ...callbacks, log } })
       .catch((error: Error) => error)
 
-    expect((failure as Error).message).toBe(`蓝图推演失败：${importGenerationStopMessage(shown('zh-CN'), 'ROOT_BUDGET_EXHAUSTED')}`)
+    expect((failure as Error).message).toBe(`蓝图推演失败：${failureText(shown('zh-CN'), importStopFailure('ROOT_BUDGET_EXHAUSTED'))}`)
     expect((failure as Error).message).not.toContain('ROOT_BUDGET_EXHAUSTED')
     expect(log.mock.calls.flat().some(line => String(line).includes('ROOT_BUDGET_EXHAUSTED'))).toBe(true)
   })
@@ -359,7 +359,7 @@ describe('InferBlueprintsPerChapterCommand', () => {
       .catch((error: Error) => error)
 
     expect(isWorkflowCancellation(failure)).toBe(false)
-    expect((failure as Error).message).toBe(`蓝图推演失败：${importGenerationStopMessage(shown('zh-CN'), 'ROOT_BUDGET_EXHAUSTED')}`)
+    expect((failure as Error).message).toBe(`蓝图推演失败：${failureText(shown('zh-CN'), importStopFailure('ROOT_BUDGET_EXHAUSTED'))}`)
   })
 
   it('does not point an English request-limit stop at the token settings', async () => {
@@ -374,7 +374,7 @@ describe('InferBlueprintsPerChapterCommand', () => {
       .execute({ step: {}, context, callbacks })
       .catch((error: Error) => error)
 
-    expect((failure as Error).message).toContain(importGenerationStopMessage(shown('en-US'), 'ROOT_BUDGET_EXHAUSTED'))
+    expect((failure as Error).message).toContain(failureText(shown('en-US'), importStopFailure('ROOT_BUDGET_EXHAUSTED')))
     expect((failure as Error).message).not.toMatch(/token/iu)
   })
 
@@ -388,7 +388,7 @@ describe('InferBlueprintsPerChapterCommand', () => {
       .execute({ step: {}, context: createContext(), callbacks })
       .catch((error: Error) => error)
 
-    expect((failure as Error).message).toBe(`蓝图推演失败：${importGenerationStopMessage(shown('zh-CN'), 'GENERATION_STORAGE_FAILED')}`)
+    expect((failure as Error).message).toBe(`蓝图推演失败：${failureText(shown('zh-CN'), importStopFailure('GENERATION_STORAGE_FAILED'))}`)
     expect((failure as Error).message).toContain('继续导入')
   })
 
@@ -403,7 +403,7 @@ describe('InferBlueprintsPerChapterCommand', () => {
       .execute({ step: {}, context, callbacks })
       .catch((error: Error) => error)
 
-    expect((failure as Error).message).toBe(`蓝图推演失败：${importGenerationStopMessage(shown('zh-CN'), 'ROOT_BUDGET_EXHAUSTED', false, 'author-manuscript')}`)
+    expect((failure as Error).message).toBe(`蓝图推演失败：${failureText(shown('zh-CN'), importStopFailure('ROOT_BUDGET_EXHAUSTED', false, 'author-manuscript'))}`)
     expect((failure as Error).message).not.toContain('重新开始')
   })
 
@@ -435,9 +435,8 @@ describe('InferBlueprintsPerChapterCommand', () => {
       step: {},
       context: createContext(),
       callbacks,
-    })).rejects.toThrow(
-      'code=missing_field path=blueprints[0].relationships[0].relation field=relation',
-    )
+    })).rejects.toThrow('蓝图推演失败：结构化输出项不符合合同')
+    expect(vi.mocked(callbacks.log)).toHaveBeenCalledWith(expect.stringContaining('code=missing_field path=blueprints[0].relationships[0].relation field=relation'))
 
     expect(generateStream).toHaveBeenCalledOnce()
     expect(invoke.mock.calls.map(([channel]) => channel)).not.toContain('db:blueprint-commit-range')
@@ -837,7 +836,7 @@ describe('InferGlobalSettingsCommand', () => {
       .execute({ step: {}, context: createContext(), callbacks: { ...callbacks, log } })
       .catch((error: Error) => error)
 
-    expect((failure as Error).message).toBe(importGenerationStopMessage(shown('zh-CN'), 'GENERATION_STORAGE_FAILED', true))
+    expect((failure as Error).message).toBe(failureText(shown('zh-CN'), importStopFailure('GENERATION_STORAGE_FAILED', true)))
     expect((failure as Error).message).toContain('继续导入')
     expect(log.mock.calls.flat().some(line => String(line).includes('GENERATION_STORAGE_FAILED'))).toBe(true)
   })
@@ -853,7 +852,7 @@ describe('InferGlobalSettingsCommand', () => {
       .execute({ step: {}, context: createContext(), callbacks: { ...callbacks, log } })
       .catch((error: Error) => error)
 
-    expect((failure as Error).message).toBe(importGenerationStopMessage(shown('zh-CN'), 'ROOT_BUDGET_EXHAUSTED', true))
+    expect((failure as Error).message).toBe(failureText(shown('zh-CN'), importStopFailure('ROOT_BUDGET_EXHAUSTED', true)))
     expect(log.mock.calls.flat().some(line => String(line).includes('ROOT_BUDGET_EXHAUSTED'))).toBe(true)
   })
 
@@ -1137,7 +1136,7 @@ describe('导入 slot 的输出没通过校验', () => {
   it('蓝图输出缺章被拒：丢弃这个运行的全部候选，「继续导入」才会重新请求这一批', async () => {
     const { runtime, discarded, context } = mainOwnedImport(JSON.stringify({ blueprints: [] }))
     await expect(new RuntimeInferBlueprintsPerChapterCommand({ createRuntime: async () => runtime } as never)
-      .execute({ step: {}, context, callbacks })).rejects.toThrow(/missing_item/)
+      .execute({ step: {}, context, callbacks })).rejects.toThrow('蓝图推演失败：结构化输出项不符合合同')
     expect(discarded()).toEqual(['artifact-1', 'artifact-2'])
   })
 
@@ -1216,7 +1215,7 @@ describe('导入 slot 的输出没通过校验', () => {
       return answer(channel, ...args)
     })
     await expect(new RuntimeInferBlueprintsPerChapterCommand({ createRuntime: async () => runtime } as never)
-      .execute({ step: {}, context, callbacks })).rejects.toThrow(/missing_item/)
+      .execute({ step: {}, context, callbacks })).rejects.toThrow('蓝图推演失败：结构化输出项不符合合同')
     expect(discarded()).toEqual(['artifact-1', 'artifact-2'])
     expect(vi.mocked(callbacks.log)).toHaveBeenCalledWith(expect.stringContaining('IPC 断开'))
   })

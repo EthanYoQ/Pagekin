@@ -36,7 +36,7 @@ function snapshotFor(locale: Locale, stage: ImportRunSnapshot['stage']): ImportR
   }
 }
 
-function useInterface(locale: InterfaceLocale) {
+function setInterface(locale: InterfaceLocale) {
   useLocaleStore.setState({ locale: copyLocale(locale), interfaceLocale: locale })
 }
 
@@ -62,7 +62,7 @@ async function importStopsAtGenerationBegin(rejection: string, options: { runLoc
       default: return undefined
     }
   })
-  useInterface(options.interfaceLocale)
+  setInterface(options.interfaceLocale)
   vi.stubGlobal('window', { aiNovelAPI: { invoke: vi.fn(async (channel: string) => channel === 'skills:list-user' ? [] : false), on: vi.fn(() => () => {}), once: vi.fn() } })
   try {
     await useWorkflowStore.getState().startWorkflow(createImportWorkflow({ projectPath: session.projectPath, projectSession: session, run: snapshot, executionOwner: 'test-import-executor' }))
@@ -82,7 +82,7 @@ function shownOnRunCard(run: WorkflowRun, interfaceLocale: InterfaceLocale): str
 }
 
 async function onRunCard(thrown: unknown, runLocale: Locale, interfaceLocale: InterfaceLocale): Promise<string[]> {
-  useInterface(interfaceLocale)
+  setInterface(interfaceLocale)
   const runId = await useWorkflowStore.getState().startWorkflow({
     type: 'novel_import', title: '导入', projectPath: session.projectPath, projectSession: session, uiLocale: runLocale,
     steps: [{ name: '蓝图', description: '蓝图', executor: async () => { throw thrown } }],

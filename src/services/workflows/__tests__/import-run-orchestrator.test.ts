@@ -8,7 +8,7 @@ import type {
 } from '../../../shared/import-run'
 import { createImportRunChapterBatchCheckpointId } from '../../../shared/import-run'
 import type { FinalizedDraftImportReceipt } from '../../../shared/finalized-draft-import'
-import { importGenerationStopMessage } from '../../../i18n/app-errors'
+import { failureText, importStopFailure } from '../../../i18n/app-errors'
 import { useProjectStore } from '../../../stores/project-store'
 import { useWorkflowStore } from '../../../stores/workflow-store'
 import {
@@ -1027,7 +1027,7 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
       .executeStage('run-1', stage, 'test-runner', { cancelled: false }, { ...callbacks, log })
       .catch((error: Error) => error)
 
-    expect((failure as Error).message).toBe(importGenerationStopMessage(shown(locale), code))
+    expect((failure as Error).message).toBe(failureText(shown(locale), importStopFailure(code)))
     expect((failure as Error).message).not.toContain(code)
     expect(getRun()).toMatchObject({ status: 'failed', lastError: (failure as Error).message })
     expect(log.mock.calls.flat().some(line => String(line).includes(code))).toBe(true)
@@ -1042,8 +1042,8 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
       .executeStage('run-1', 'global', 'test-runner', { cancelled: false }, { ...callbacks, log })
       .catch((error: Error) => error)
 
-    const japanese = importGenerationStopMessage(shown('ja-JP'), 'ROOT_BUDGET_EXHAUSTED')
-    expect(japanese).not.toBe(importGenerationStopMessage(shown('en-US'), 'ROOT_BUDGET_EXHAUSTED'))
+    const japanese = failureText(shown('ja-JP'), importStopFailure('ROOT_BUDGET_EXHAUSTED'))
+    expect(japanese).not.toBe(failureText(shown('en-US'), importStopFailure('ROOT_BUDGET_EXHAUSTED')))
     expect((failure as Error).message).toBe(japanese)
     expect(getRun()).toMatchObject({ locale: 'en-US', lastError: japanese })
     expect(log).toHaveBeenCalledWith('Import stop reason: ROOT_BUDGET_EXHAUSTED')
@@ -1082,7 +1082,7 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
     const failure = await new ImportRunOrchestrator(deps)
       .executeStage('run-1', 'global', 'test-runner', { cancelled: false }, callbacks)
       .catch((error: Error) => error)
-    expect((failure as Error).message).toBe(importGenerationStopMessage(shown('zh-CN'), 'ROOT_BUDGET_EXHAUSTED', false, 'author-manuscript'))
+    expect((failure as Error).message).toBe(failureText(shown('zh-CN'), importStopFailure('ROOT_BUDGET_EXHAUSTED', false, 'author-manuscript')))
     expect((failure as Error).message).not.toContain('重新开始')
     expect(getRun().lastError).toBe((failure as Error).message)
   })
