@@ -59,8 +59,12 @@ describe('model settings refusals from the main process (#474 B6)', () => {
     expect(shownChinese).not.toContain('LLM_')
   })
 
-  it('keeps an unregistered deletion failure as the main process reported it, without the class-name prefix', async () => {
-    invoke.mockImplementation(async (called: string) => (called === 'llm:delete-model' ? { success: false, error: 'Error: EBUSY: models.json' } : undefined))
-    await expect(shownError('en-US', () => useLLMStore.getState().deleteModel('model-1'))).resolves.toBe('EBUSY: models.json')
+  it('模型设置失败不显示主进程交来的异常原文，删除模型改说删除失败', async () => {
+    // llm:* 是直连通道，主进程 catch 里交的是 String(error)（electron/controllers/llm-controller.ts）。
+    const raw = "Error: EBUSY: resource busy or locked, open 'C:\\Users\\a\\models.json'"
+    invoke.mockImplementation(async (called: string) => (called.startsWith('llm:') ? { success: false, error: raw } : undefined))
+    await expect(shownError('en-US', () => useLLMStore.getState().deleteModel('model-1'))).resolves.toBe('Could not delete the model.')
+    await expect(shownError('zh-CN', () => useLLMStore.getState().setDefaultModel('model-1'))).resolves.toBe('出了意外问题，暂时说不清原因。请再试一次。')
+    await expect(shownError('en-US', () => useLLMStore.getState().setStageModel('planning', 'model-1'))).resolves.toBe('Something unexpected went wrong. Try again.')
   })
 })

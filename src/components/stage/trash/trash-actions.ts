@@ -2,7 +2,7 @@ import type { RestoreTrashedChapterResult, TrashedChapter } from '../../../share
 import { globalEventBus } from '../../../shared/event-bus'
 import type { ProjectSessionContext } from '../../../shared/ipc-channels'
 import { ipc } from '../../../services/ipc-client'
-import { displayedErrorMessage } from '../../../i18n/app-errors'
+import { failureText, resultFailure } from '../../../i18n/app-errors'
 import { pluralEn } from '../../../shared/plural-en'
 import { useDraftStore } from '../../../stores/draft-store'
 import { recordRestoredPublication } from '../../../stores/restored-publication-store'
@@ -80,7 +80,7 @@ const reasonOf = (error: string | undefined) => {
   const { text } = useLocaleStore.getState()
   return error === INTERRUPTED
     ? text('操作中断了，回收站已刷新，请看清现状后再试。', 'The action was interrupted. The trash was reloaded; check it and try again.')
-    : displayedErrorMessage(currentInterfaceLocale(), error)
+    : failureText(currentInterfaceLocale(), resultFailure({ error }))
 }
 
 /** 按列表给的恢复方式恢复回收站里的一项。返回是否恢复成功。 */

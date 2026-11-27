@@ -40,3 +40,14 @@ describe('update card copy', () => {
     if (reason !== 'network') expect(copy).not.toContain('检查网络')
   })
 })
+
+describe('更新失败的说明', () => {
+  // 主进程只交 UpdateError 的封闭枚举（electron/services/update-service.ts 的 classifyUpdateFailure），说明只按 reason 和 code 选，
+  // 字段里即使混进原文也不会显示。master 上同样成立，没有能红的路径。
+  it('更新失败不显示异常原文', () => {
+    const raw = 'net::ERR_CONNECTION_RESET at ClientRequest.<anonymous>'
+    const leaked = { code: raw, phase: 'check', reason: raw, retryable: true, safeTechnicalDetails: raw } as unknown as Parameters<typeof getUpdateErrorMessage>[0]
+    expect(getUpdateErrorMessage(leaked, zh)).toBe('更新操作暂时失败。请稍后重试。')
+    expect(getUpdateErrorMessage(leaked, (_zh, en) => en)).toBe('The update operation failed temporarily. Please try again later.')
+  })
+})
