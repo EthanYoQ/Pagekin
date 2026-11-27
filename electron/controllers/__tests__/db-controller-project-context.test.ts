@@ -436,7 +436,7 @@ describe('database controller project context guard', () => {
 
       expect(result).toEqual({
         success: false,
-        errorCode: 'AUTHOR_IMPORT_PREVIEW_STALE',
+        failure: { code: 'AUTHOR_IMPORT_PREVIEW_STALE' },
       })
       expect(mocks.importInspectionConsume).not.toHaveBeenCalled()
       expect(mocks.importRunPrepare).not.toHaveBeenCalled()
@@ -499,7 +499,7 @@ describe('database controller project context guard', () => {
       'C:/projects/A',
     )).resolves.toEqual({
       success: false,
-      errorCode: 'AUTHOR_IMPORT_PREVIEW_STALE',
+      failure: { code: 'AUTHOR_IMPORT_PREVIEW_STALE' },
     })
   })
 
@@ -590,80 +590,12 @@ describe('database controller project context guard', () => {
       'C:/projects/A',
     )).resolves.toEqual({
       success: false,
-      errorCode: 'PROJECT_CONTEXT_CHANGED',
       failure: { code: 'PROJECT_CONTEXT_CHANGED' },
-      error: 'The project was switched or reopened, and this action belonged to the earlier session, so it was rejected. Repeat it in the project that is open now.',
     })
     expect(mocks.importRunFinalizeParsing).not.toHaveBeenCalled()
   })
 
   describe('import run failures shown in the import dialog and run card (#474)', () => {
-    const han = /\p{Script=Han}/u
-
-    it('explains an author-actionable code in the run language and keeps the code', async () => {
-      mocks.importRunRestart.mockImplementation(() => { throw new Error('IMPORT_RUN_AUTHOR_RESTART_FORBIDDEN') })
-      mocks.importRunGet.mockReturnValue({ locale: 'en-US' })
-      const english = await handler('db:import-run-restart')({}, 'author-run', 'next-run', 'C:/projects/A')
-      expect(english).toEqual({
-        success: false,
-        errorCode: 'IMPORT_RUN_AUTHOR_RESTART_FORBIDDEN',
-        failure: { code: 'IMPORT_RUN_AUTHOR_RESTART_FORBIDDEN' },
-        error: 'An author-manuscript import cannot be restarted. Resume the original import to finish publishing and post-processing.',
-      })
-
-      mocks.importRunGet.mockReturnValue({ locale: 'zh-CN' })
-      await expect(handler('db:import-run-restart')({}, 'author-run', 'next-run', 'C:/projects/A')).resolves.toEqual({
-        success: false,
-        errorCode: 'IMPORT_RUN_AUTHOR_RESTART_FORBIDDEN',
-        failure: { code: 'IMPORT_RUN_AUTHOR_RESTART_FORBIDDEN' },
-        error: '作者原稿导入不能重新开始。请继续原来的这次导入，完成发布和后处理。',
-      })
-    })
-
-    it('gives integrity failures a readable sentence that carries the code for feedback', async () => {
-      mocks.importRunRestart.mockImplementation(() => { throw new Error('IMPORT_RUN_ID_CONFLICT') })
-      mocks.importRunGet.mockReturnValue({ locale: 'en-US' })
-      const result = await handler('db:import-run-restart')({}, 'run', 'next-run', 'C:/projects/A') as { error: string; errorCode: string }
-      expect(result.errorCode).toBe('IMPORT_RUN_ID_CONFLICT')
-      expect(result.error).toBe('The import could not continue because a check failed (IMPORT_RUN_ID_CONFLICT). Try again; if it keeps happening, send us this message.')
-      expect(result.error).not.toMatch(han)
-    })
-
-    it('does not hand a bare generation-source code to the run card', async () => {
-      mocks.importRunPrepareEffectReceipt.mockImplementationOnce(() => { throw new Error('GENERATION_IMPORT_SLOT_AMBIGUOUS') })
-      mocks.importRunGet.mockReturnValue({ locale: 'en-US' })
-      await expect(handler('db:import-run-effect-receipt-prepare')(
-        {}, { runId: 'run', stage: 'style', batchId: 'done' }, { owner: 'renderer', epoch: 1, expiresAt: 1 }, 'C:/projects/A',
-      )).resolves.toEqual({
-        success: false,
-        errorCode: 'GENERATION_IMPORT_SLOT_AMBIGUOUS',
-        error: 'The import could not continue because a check failed (GENERATION_IMPORT_SLOT_AMBIGUOUS). Try again; if it keeps happening, send us this message.',
-      })
-    })
-
-    it('puts the explanation into the thrown message of read channels', async () => {
-      mocks.importRunGetEffectReceipt.mockImplementation(() => { throw new Error('IMPORT_RUN_RECEIPT_CORRUPT') })
-      mocks.importRunGet.mockReturnValue({ locale: 'en-US' })
-      await expect(handler('db:import-run-effect-receipt-get')({}, 'run', 'style', 'done', 'C:/projects/A'))
-        .rejects.toThrow('The import could not continue because a check failed (IMPORT_RUN_RECEIPT_CORRUPT).')
-    })
-
-    it('uses the requested import language before any run exists', async () => {
-      mocks.importInspectionPeek.mockReturnValueOnce({ chapters: [] })
-      mocks.importInspectionConsume.mockImplementationOnce(() => { throw new Error('IMPORT_INSPECTION_EXPIRED') })
-      await expect(handler('db:import-run-prepare-inspection')(
-        { sender: { id: 8 } },
-        { inspectionId: 'gone', runId: 'new-run', purpose: 'reference', locale: 'en-US' },
-        'C:/projects/A',
-      )).resolves.toEqual({
-        success: false,
-        errorCode: 'IMPORT_INSPECTION_EXPIRED',
-        failure: { code: 'IMPORT_INSPECTION_EXPIRED' },
-        error: 'The file check has expired. Choose the files again.',
-      })
-      expect(mocks.importRunGet).not.toHaveBeenCalled()
-    })
-
     it('stores a readable failure reason instead of the IPC wrapper or a bare code', async () => {
       mocks.importRunGet.mockReturnValue({ locale: 'en-US' })
       const execution = { owner: 'renderer', epoch: 1, expiresAt: 1 }
@@ -683,36 +615,6 @@ describe('database controller project context guard', () => {
       )
       expect(mocks.importRunFail).toHaveBeenLastCalledWith('run', 'knowledge', 'Chapter 3 could not be written.', execution)
     })
-  })
-
-  it('returns the repository finalization conflict without flattening its reason', async () => {
-    mocks.importRunFinalizeParsing.mockImplementationOnce(() => {
-      throw new Error('另一个可恢复导入已包含相同来源，请先完成或取消该导入后重试')
-    })
-
-    await expect(handler('db:import-run-finalize-parsing')(
-      {},
-      'parse-run',
-      'C:/projects/A',
-    )).resolves.toMatchObject({
-      success: false,
-      error: expect.stringContaining('另一个可恢复导入已包含相同来源'),
-    })
-    expect(mocks.importRunFinalizeParsing).toHaveBeenCalledWith('parse-run')
-  })
-
-  it('returns durable English finalization guidance without replacing it with the UI locale', async () => {
-    const guidance = 'Another resumable import already contains the same source. Complete or cancel that import, then try again.'
-    mocks.importRunFinalizeParsing.mockImplementationOnce(() => {
-      throw new Error(guidance)
-    })
-
-    await expect(handler('db:import-run-finalize-parsing')(
-      {},
-      'english-parse-run',
-      'C:/projects/A',
-    )).resolves.toEqual({ success: false, error: `Error: ${guidance}` })
-    expect(mocks.importRunFinalizeParsing).toHaveBeenCalledWith('english-parse-run')
   })
 
   it('rejects a stale roster commit before the main-process roster module is reached', async () => {

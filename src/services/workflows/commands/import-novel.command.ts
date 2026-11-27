@@ -1,4 +1,4 @@
-import { authorError, failureText, importStopFailure } from '../../../i18n/app-errors'
+import { authorError, failureText, importStopFailure, resultFailure } from '../../../i18n/app-errors'
 import type { ErrorDisplayLocale } from '../../../i18n/types'
 import { AuthorError, codeOf, note, type Failure } from '../../../shared/failure'
 import { IMPORT_SLOT_MAX_REQUESTS } from '../../../shared/import-generation'
@@ -590,7 +590,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
       )
       if (!commitResult.success) throw workflowMainProcessError(
         context.interfaceLocale,
-        commitResult.error,
+        resultFailure(commitResult),
         '导入全局事实原子提交失败',
         'The imported global facts could not be committed atomically.',
       )
