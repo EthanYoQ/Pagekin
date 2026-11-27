@@ -34,7 +34,7 @@ beforeEach(() => {
 
 describe('LLM settings mutation boundaries', () => {
   it('keeps the previous default model when persistence fails', async () => {
-    mocks.invoke.mockResolvedValue({ success: false, error: 'disk full' })
+    mocks.invoke.mockResolvedValue({ success: false, failure: { code: 'IPC_HANDLER_FAILED' } })
 
     await expect(useLLMStore.getState().setDefaultModel('new-model')).resolves.toBe(false)
 
@@ -51,7 +51,7 @@ describe('LLM settings mutation boundaries', () => {
   })
 
   it('publishes the default rerank model only after persistence succeeds', async () => {
-    mocks.invoke.mockResolvedValueOnce({ success: false, error: 'disk full' })
+    mocks.invoke.mockResolvedValueOnce({ success: false, failure: { code: 'IPC_HANDLER_FAILED' } })
     await expect(useLLMStore.getState().setDefaultRerankModel('new-rerank')).resolves.toBe(false)
     expect(useLLMStore.getState().defaultRerankModelId).toBeNull()
 
@@ -106,10 +106,11 @@ describe('模型设置失败时给作者看的说明', () => {
     for (const [error, shown] of [
       ['PROJECT_SESSION_STALE', expect.stringContaining(stale)],
       ['SOMETHING_NEW_FROM_MAIN', fallback],
+      ['IPC_HANDLER_FAILED', fallback],
       [undefined, fallback],
     ] as const) {
       mocks.alertError.mockClear()
-      mocks.invoke.mockResolvedValue({ success: false, error })
+      mocks.invoke.mockResolvedValue({ success: false, ...(error ? { failure: { code: error } } : {}) })
       await expect(useLLMStore.getState().deleteModel('old-model')).resolves.toBe(false)
       expect(mocks.alertError).toHaveBeenCalledWith(shown, { title })
     }
@@ -117,7 +118,7 @@ describe('模型设置失败时给作者看的说明', () => {
 
   it('默认模型保存失败时不把错误码或 "Error: " 前缀交给作者', async () => {
     useLocaleStore.setState({ locale: 'en-US' })
-    mocks.invoke.mockResolvedValue({ success: false, error: 'PROJECT_SESSION_STALE' })
+    mocks.invoke.mockResolvedValue({ success: false, failure: { code: 'PROJECT_SESSION_STALE' } })
     await expect(useLLMStore.getState().setDefaultModel('new-model')).resolves.toBe(false)
     const [message, options] = mocks.alertError.mock.calls[0]
     expect(message).toMatch(/^The project was switched or reopened/u)

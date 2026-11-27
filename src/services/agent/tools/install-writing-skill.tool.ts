@@ -1,7 +1,7 @@
 import { ipc } from '../../ipc-client'
 import { skillRegistry } from '../skill-registry'
 import { buildAgentTool } from '../tool-registry'
-import { agentToolText, agentToolErrorDetail } from './project-context'
+import { agentToolText, agentToolFailureDetail } from './project-context'
 import { containsHan } from '../../../i18n/app-errors'
 
 export const installWritingSkillTool = buildAgentTool({
@@ -35,7 +35,7 @@ export const installWritingSkillTool = buildAgentTool({
     context?.markSideEffectStarted?.()
     const result = await ipc.invoke('skills:install-github', sourceUrl)
     if (!result.success || !result.skill) {
-      const detail = agentToolErrorDetail(context, result.error)
+      const detail = agentToolFailureDetail(context, result)
       return {
         success: false,
         content: '',

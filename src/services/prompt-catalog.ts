@@ -10,6 +10,7 @@ import { resolveWritingLanguage, type WritingLanguage } from '../shared/writing-
 const DIAGNOSTIC_TEXT: Record<string, readonly [zhCN: string, enUS: string]> = {
   PROMPT_TEMPLATE_INVALID: ['提示词内容结构无效', 'The prompt file has an invalid structure.'],
   PROMPT_FILENAME_MISMATCH: ['提示词标识或语言与文件名不一致', 'The prompt key or language does not match its file name.'],
+  PROMPT_FILE_UNREADABLE: ['提示词文件读不出来，或者内容格式不对', 'The prompt file cannot be read, or its content is malformed.'],
 }
 const diagnosticText = (error: string) => Object.hasOwn(DIAGNOSTIC_TEXT, error)
   ? useLocaleStore.getState().text(...DIAGNOSTIC_TEXT[error]!)

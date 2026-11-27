@@ -280,7 +280,7 @@ describe('ModelDiscoveryService', () => {
 
     const result = await new ModelDiscoveryService().discoverModels(saved)
 
-    expect(result).toEqual({ success: false, errorCode: 'network' })
+    expect(result).toEqual({ success: false, reason: 'network' })
     expect(redirectedRequests).toBe(0)
     const observableOutput = JSON.stringify({
       result,
@@ -325,7 +325,7 @@ describe('ModelDiscoveryService', () => {
       timeoutMs: 25,
     }).discoverModels(saved)
 
-    expect(result).toEqual({ success: false, errorCode: 'network' })
+    expect(result).toEqual({ success: false, reason: 'network' })
     const observableOutput = JSON.stringify({
       result,
       logs: [log.mock.calls, warn.mock.calls, error.mock.calls],
@@ -358,7 +358,7 @@ describe('ModelDiscoveryService', () => {
 
     const result = await new ModelDiscoveryService().discoverModels(saved)
 
-    expect(result).toEqual({ success: false, errorCode: 'auth' })
+    expect(result).toEqual({ success: false, reason: 'auth' })
     const observableOutput = JSON.stringify({
       result,
       logs: [log.mock.calls, warn.mock.calls, error.mock.calls],
@@ -384,7 +384,7 @@ describe('ModelDiscoveryService', () => {
     })
 
     await expect(new ModelDiscoveryService().discoverModels(saved))
-      .resolves.toEqual({ success: false, errorCode: 'invalid_response' })
+      .resolves.toEqual({ success: false, reason: 'invalid_response' })
   })
 
   it.each([
@@ -400,7 +400,7 @@ describe('ModelDiscoveryService', () => {
     const saved = profile({ id: `unsupported-${protocol}-${status}`, provider, protocol, baseUrl })
 
     await expect(new ModelDiscoveryService().discoverModels(saved))
-      .resolves.toEqual({ success: false, errorCode: 'unsupported' })
+      .resolves.toEqual({ success: false, reason: 'unsupported' })
   })
 
   it.each([
@@ -422,7 +422,7 @@ describe('ModelDiscoveryService', () => {
     const saved = profile({ id: `empty-${protocol}`, provider, protocol, baseUrl })
 
     await expect(new ModelDiscoveryService().discoverModels(saved))
-      .resolves.toEqual({ success: false, errorCode: 'no_models' })
+      .resolves.toEqual({ success: false, reason: 'no_models' })
   })
 
   it('tells a list with no model for this purpose apart from an empty list', async () => {
@@ -436,7 +436,7 @@ describe('ModelDiscoveryService', () => {
     const saved = profile({ id: 'unsuitable-gemini', provider: 'gemini', protocol: 'gemini', baseUrl, purposes: ['generation'] })
 
     await expect(new ModelDiscoveryService().discoverModels(saved))
-      .resolves.toEqual({ success: false, errorCode: 'no_suitable_models' })
+      .resolves.toEqual({ success: false, reason: 'no_suitable_models' })
   })
 
   it.each([
@@ -458,7 +458,7 @@ describe('ModelDiscoveryService', () => {
     const saved = profile({ id: `oversized-list-${protocol}`, provider, protocol, baseUrl })
 
     await expect(new ModelDiscoveryService().discoverModels(saved))
-      .resolves.toEqual({ success: false, errorCode: 'invalid_response' })
+      .resolves.toEqual({ success: false, reason: 'invalid_response' })
   })
 
   it.each([
@@ -499,7 +499,7 @@ describe('ModelDiscoveryService', () => {
 
     const result = await new ModelDiscoveryService().discoverModels(saved)
 
-    expect(result).toEqual({ success: false, errorCode: 'invalid_response' })
+    expect(result).toEqual({ success: false, reason: 'invalid_response' })
     expect(JSON.stringify(result)).not.toContain(invalidText)
     expect(JSON.stringify(result)).not.toContain('safe-model')
   })
@@ -560,7 +560,7 @@ describe('ModelDiscoveryService', () => {
 
     const result = await new ModelDiscoveryService({ fetchImpl }).discoverModels(saved)
 
-    expect(result).toEqual({ success: false, errorCode: 'network' })
+    expect(result).toEqual({ success: false, reason: 'network' })
     const observableOutput = JSON.stringify({
       result,
       logs: [log.mock.calls, warn.mock.calls, error.mock.calls],
@@ -673,7 +673,7 @@ describe('ModelDiscoveryService', () => {
 
       const embedding = await new ModelDiscoveryService().discoverModels(
         profile({ provider: 'bigmodel-anthropic', protocol: 'anthropic', apiKey: credential, baseUrl: `${baseUrl}/api/anthropic`, purposes: ['embedding'] }))
-      expect(embedding).toEqual({ success: false, errorCode: 'no_suitable_models' })
+      expect(embedding).toEqual({ success: false, reason: 'no_suitable_models' })
     })
 
     it('Anthropic 协议的网关只认 Bearer 时，模型列表与生成用同一套鉴权', async () => {
@@ -709,7 +709,7 @@ describe('ModelDiscoveryService', () => {
 
     const result = await new ModelDiscoveryService().discoverModels(saved)
 
-    expect(result).toEqual({ success: false, errorCode: 'invalid_response' })
+    expect(result).toEqual({ success: false, reason: 'invalid_response' })
     expect(requestCount).toBe(0)
     expect(JSON.stringify(result)).not.toContain(credential)
   })

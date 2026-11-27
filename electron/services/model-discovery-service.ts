@@ -148,12 +148,12 @@ function urlContainsCredential(url: string, credential: string): boolean {
 
 function classifyHttpFailure(status: number): ModelDiscoveryResult {
   if (status === 401 || status === 403) {
-    return { success: false, errorCode: 'auth' }
+    return { success: false, reason: 'auth' }
   }
   if (status === 408 || status === 425 || status === 429 || status >= 500) {
-    return { success: false, errorCode: 'network' }
+    return { success: false, reason: 'network' }
   }
-  return { success: false, errorCode: 'unsupported' }
+  return { success: false, reason: 'unsupported' }
 }
 
 function parseOpenAIModels(payload: unknown, credential: string): DiscoveredModel[] | null {
@@ -302,7 +302,7 @@ export class ModelDiscoveryService {
       if (model.protocol === 'anthropic') {
         const requestUrl = resolveAnthropicModelsUrl(model.baseUrl)
         if (urlContainsCredential(requestUrl, model.apiKey)) {
-          return { success: false, errorCode: 'invalid_response' }
+          return { success: false, reason: 'invalid_response' }
         }
         const response = await (this.dependencies.fetchImpl ?? fetch)(
           requestUrl,
@@ -326,21 +326,21 @@ export class ModelDiscoveryService {
           payload = await response.json()
         } catch {
           return abortController.signal.aborted
-            ? { success: false, errorCode: 'network' }
-            : { success: false, errorCode: 'invalid_response' }
+            ? { success: false, reason: 'network' }
+            : { success: false, reason: 'invalid_response' }
         }
         const parsed = parseAnthropicModels(payload, model.apiKey)
-        if (!parsed) return { success: false, errorCode: 'invalid_response' }
-        if (parsed.listed === 0) return { success: false, errorCode: 'no_models' }
+        if (!parsed) return { success: false, reason: 'invalid_response' }
+        if (parsed.listed === 0) return { success: false, reason: 'no_models' }
         // Anthropic Messages 协议没有嵌入端点；列出的都是对话模型。
-        if (purpose === 'embedding') return { success: false, errorCode: 'no_suitable_models' }
+        if (purpose === 'embedding') return { success: false, reason: 'no_suitable_models' }
         return { success: true, models: parsed.models }
       }
 
       if (model.protocol === 'gemini') {
         const requestUrl = resolveGeminiModelsUrl(model.baseUrl)
         if (urlContainsCredential(requestUrl, model.apiKey)) {
-          return { success: false, errorCode: 'invalid_response' }
+          return { success: false, reason: 'invalid_response' }
         }
         const response = await (this.dependencies.fetchImpl ?? fetch)(
           requestUrl,
@@ -361,19 +361,19 @@ export class ModelDiscoveryService {
           payload = await response.json()
         } catch {
           return abortController.signal.aborted
-            ? { success: false, errorCode: 'network' }
-            : { success: false, errorCode: 'invalid_response' }
+            ? { success: false, reason: 'network' }
+            : { success: false, reason: 'invalid_response' }
         }
         const parsed = parseGeminiModels(payload, model.apiKey, purpose)
-        if (!parsed) return { success: false, errorCode: 'invalid_response' }
-        if (parsed.listed === 0) return { success: false, errorCode: 'no_models' }
-        if (parsed.models.length === 0) return { success: false, errorCode: 'no_suitable_models' }
+        if (!parsed) return { success: false, reason: 'invalid_response' }
+        if (parsed.listed === 0) return { success: false, reason: 'no_models' }
+        if (parsed.models.length === 0) return { success: false, reason: 'no_suitable_models' }
         return { success: true, models: parsed.models }
       }
 
       const requestUrl = resolveOpenAIModelsUrl(model.baseUrl)
       if (urlContainsCredential(requestUrl, model.apiKey)) {
-        return { success: false, errorCode: 'invalid_response' }
+        return { success: false, reason: 'invalid_response' }
       }
       const response = await (this.dependencies.fetchImpl ?? fetch)(
         requestUrl,
@@ -394,12 +394,12 @@ export class ModelDiscoveryService {
         payload = await response.json()
       } catch {
         return abortController.signal.aborted
-          ? { success: false, errorCode: 'network' }
-          : { success: false, errorCode: 'invalid_response' }
+          ? { success: false, reason: 'network' }
+          : { success: false, reason: 'invalid_response' }
       }
       const models = parseOpenAIModels(payload, model.apiKey)
-      if (!models) return { success: false, errorCode: 'invalid_response' }
-      if (models.length === 0) return { success: false, errorCode: 'no_models' }
+      if (!models) return { success: false, reason: 'invalid_response' }
+      if (models.length === 0) return { success: false, reason: 'no_models' }
       // OpenAI 兼容接口不说明模型用途，只能按名字把合用途的模型排前面。
       const fitsPurpose = model.purposes?.includes('rerank') ? OPENAI_COMPATIBLE_RERANK_MODEL
         : purpose === 'embedding' ? OPENAI_COMPATIBLE_EMBEDDING_MODEL : null
@@ -407,7 +407,7 @@ export class ModelDiscoveryService {
       const fits = (candidate: DiscoveredModel) => fitsPurpose.test(candidate.value)
       return { success: true, models: [...models.filter(fits), ...models.filter(candidate => !fits(candidate))] }
     } catch (error) {
-      return { success: false, errorCode: failedAtProxy(error) ? 'proxy' : 'network' }
+      return { success: false, reason: failedAtProxy(error) ? 'proxy' : 'network' }
     } finally {
       clearTimeout(timeout)
     }

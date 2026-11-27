@@ -9,7 +9,6 @@ const mocks = vi.hoisted(() => ({
   generate: vi.fn(),
   models: [] as ModelProfile[],
   locale: 'en-US',
-  storedLocale: undefined as string | undefined,
   configUnreadable: false,
 }))
 
@@ -30,7 +29,7 @@ vi.mock('../../utils/config-utils', () => ({
     if (filePath === 'config.json' && mocks.configUnreadable) throw new Error('EACCES: config.json')
     return filePath === 'models.json'
       ? mocks.models
-      : filePath === 'config.json' && mocks.storedLocale ? { ...fallback as object, locale: mocks.storedLocale } : fallback
+      : fallback
   }),
   tryReadJsonFile: vi.fn(() => ({ status: 'missing' })),
   writeJsonFile: vi.fn(),
@@ -44,6 +43,7 @@ vi.mock('../../llm/llm-factory', () => ({
 
 import { translate } from '../../../src/i18n/core'
 import { registerLLMController } from '../llm-controller'
+import { rendered } from './rendered-failure'
 
 const deepSeekModel: ModelProfile = {
   id: 'deepseek-reasoner',
@@ -95,7 +95,7 @@ const legacyDeepSeekV4Model: ModelProfile = {
 function connectionHandler(): IpcHandler {
   const handler = mocks.handlers.get('llm:test-connection')
   if (!handler) throw new Error('Missing llm:test-connection handler')
-  return handler
+  return (...args) => Promise.resolve(handler(...args)).then(result => rendered(result, mocks.locale))
 }
 
 beforeAll(() => {
@@ -279,7 +279,7 @@ describe('retrieval model connection test', () => {
     mocks.locale = locale
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('denied', { status: 401 })))
     try {
-      const result = await mocks.handlers.get('llm:test-connection')!({}, retrievalModel) as { success: boolean; error: string }
+      const result = await connectionHandler()({}, retrievalModel) as { success: boolean; error: string }
       expect(result.success).toBe(false)
       expect(result.error).toContain(expected)
       expect(result.error).not.toMatch(/EMBEDDING_|Error:/u)
@@ -295,7 +295,7 @@ describe('retrieval model connection test', () => {
     mocks.locale = locale
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [] }), { status: 200 })))
     try {
-      const result = await mocks.handlers.get('llm:test-connection')!({}, retrievalModel) as { success: boolean; error: string }
+      const result = await connectionHandler()({}, retrievalModel) as { success: boolean; error: string }
       expect(result.success).toBe(false)
       expect(result.error).toContain(expected)
       expect(result.error).not.toMatch(forbidden)
@@ -305,14 +305,12 @@ describe('retrieval model connection test', () => {
   })
 
   it('explains a registered code in Japanese when the interface language is Japanese', async () => {
-    mocks.locale = 'en-US'
-    mocks.storedLocale = 'ja-JP'
+    mocks.locale = 'ja-JP'
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [] }), { status: 200 })))
     try {
-      const result = await mocks.handlers.get('llm:test-connection')!({}, retrievalModel) as { success: boolean; error: string }
+      const result = await connectionHandler()({}, retrievalModel) as { success: boolean; error: string }
       expect(result.error).toContain('検索モデルが使えない結果')
     } finally {
-      mocks.storedLocale = undefined
       vi.unstubAllGlobals()
     }
   })
@@ -324,8 +322,8 @@ describe('retrieval model connection test', () => {
       return new Response(JSON.stringify({ data: [] }), { status: 200 })
     }))
     try {
-      const result = await mocks.handlers.get('llm:test-connection')!({}, retrievalModel) as { success: boolean; error: string }
-      expect(result).toEqual({ success: false, error: translate('en-US', 'error.embeddingResponseInvalid') })
+      const result = await connectionHandler()({}, retrievalModel) as { success: boolean; error: string }
+      expect(result).toMatchObject({ success: false, error: translate('en-US', 'error.embeddingResponseInvalid') })
     } finally {
       mocks.configUnreadable = false
       vi.unstubAllGlobals()
@@ -337,7 +335,7 @@ describe('retrieval model connection test', () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
     try {
-      const result = await mocks.handlers.get('llm:test-connection')!({}, {
+      const result = await connectionHandler()({}, {
         ...retrievalModel, provider: 'bigmodel-anthropic', protocol: 'anthropic', baseUrl: 'https://open.bigmodel.cn/api/anthropic',
       }) as { success: boolean; error: string }
       expect(result.success).toBe(false)
@@ -351,7 +349,7 @@ describe('retrieval model connection test', () => {
 
   it('keeps the suggested OpenAI-compatible Ollama address', async () => {
     mocks.locale = 'en-US'
-    const result = await mocks.handlers.get('llm:test-connection')!({}, { ...retrievalModel, baseUrl: 'http://localhost:11434/api' }) as { success: boolean; error: string }
+    const result = await connectionHandler()({}, { ...retrievalModel, baseUrl: 'http://localhost:11434/api' }) as { success: boolean; error: string }
     expect(result).toMatchObject({ success: false })
     expect(result.error).toContain('http://localhost:11434/v1')
     expect(result.error).not.toMatch(/EMBEDDING_|\p{Script=Han}/u)
@@ -379,7 +377,7 @@ describe('generation model connection test failures', () => {
   it('names the finish reason when the probe reply was cut short', async () => {
     mocks.locale = 'en-US'
     mocks.generate.mockResolvedValueOnce({ success: false, content: '', finishReason: 'length', error: 'LLM_RESPONSE_INCOMPLETE' })
-    await expect(connectionHandler()({}, deepSeekModel)).resolves.toEqual({
+    await expect(connectionHandler()({}, deepSeekModel)).resolves.toMatchObject({
       success: false,
       error: 'The model did not finish its reply (finish reason: length).',
     })
@@ -456,7 +454,7 @@ describe('connection test timeout', () => {
 
     const result = await pending
     expect(signal?.aborted).toBe(true)
-    expect(result).toEqual({ success: false, error: '连接测试 120 秒内没有完成，已停止等待。请检查网络或代理设置后重试。' })
+    expect(result).toMatchObject({ success: false, error: '连接测试 120 秒内没有完成，已停止等待。请检查网络或代理设置后重试。' })
   })
 
   it('cancels a hanging retrieval probe request after 30 seconds', async () => {
@@ -523,7 +521,7 @@ describe('connection test failures when the language setting cannot be read', ()
     }))
     const pending = connectionHandler()({}, deepSeekModel) as Promise<{ success: boolean; error: string }>
     await vi.advanceTimersByTimeAsync(30_000)
-    await expect(pending).resolves.toEqual({ success: false, error: translate('en-US', 'error.connectionTestTimeout', { seconds: 30 }) })
+    await expect(pending).resolves.toMatchObject({ success: false, error: translate('en-US', 'error.connectionTestTimeout', { seconds: 30 }) })
   })
 })
 
@@ -533,7 +531,7 @@ describe('generation model connection test with an empty error body', () => {
     mocks.generate.mockResolvedValueOnce({
       success: false, content: '', finishReason: 'error', error: 'LLM_REQUEST_FAILED', httpFailure: { status: 403, body: '' },
     })
-    await expect(connectionHandler()({}, deepSeekModel)).resolves.toEqual({
+    await expect(connectionHandler()({}, deepSeekModel)).resolves.toMatchObject({
       success: false,
       error: 'Model request failed (HTTP 403). Check the Base URL, API key, and model name.',
     })

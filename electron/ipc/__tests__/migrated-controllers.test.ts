@@ -5,6 +5,7 @@ import DIRECT_CHANNELS from '../direct-channels.json'
 import { REPO_ROOT, repoSourceFiles } from '../../../test/helpers/repo-source-files'
 
 const MIGRATED = [
+  'electron/controllers/app-data-controller.ts',
   'electron/controllers/chapter-lifecycle-controller.ts',
   'electron/controllers/character-avatar-controller.ts',
   'electron/controllers/cloud-backup-controller.ts',
@@ -14,6 +15,7 @@ const MIGRATED = [
   'electron/controllers/fs-controller.ts',
   'electron/controllers/import-controller.ts',
   'electron/controllers/kb-controller.ts',
+  'electron/controllers/llm-controller.ts',
   'electron/controllers/model-provider-resource-controller.ts',
   'electron/controllers/official-homepage-controller.ts',
   'electron/controllers/project-archive-controller.ts',
@@ -22,10 +24,11 @@ const MIGRATED = [
   'electron/controllers/update-controller.ts',
   'electron/controllers/startup-controller.ts',
   'electron/controllers/window-controller.ts',
+  'electron/mcp/mcp-ipc-bridge.ts',
 ]
 
 it('迁移后的控制器不在直连基线里', () => {
-  expect(repoSourceFiles('electron/controllers')).toEqual(expect.arrayContaining(MIGRATED))
+  expect([...repoSourceFiles('electron/controllers'), ...repoSourceFiles('electron/mcp')]).toEqual(expect.arrayContaining(MIGRATED))
   for (const file of MIGRATED) {
     const source = readFileSync(join(REPO_ROOT, file), 'utf8')
     const channels = [...source.matchAll(/'([a-z-]+:[a-z-]+)'/gu)].map(match => match[1])

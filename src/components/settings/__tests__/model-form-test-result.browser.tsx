@@ -3,7 +3,9 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 
+import { catalogNote } from '../../../i18n/app-errors'
 import type { Locale } from '../../../i18n/types'
+import type { Failure } from '../../../shared/failure'
 import type { ModelProfile } from '../../../shared/ipc-channels'
 import { BUILTIN_PRESETS } from '../../../shared/provider-presets'
 import { useLLMStore } from '../../../stores/llm-store'
@@ -31,9 +33,9 @@ const model: ModelProfile = {
   purposes: ['generation'],
 }
 
-async function renderFailedTest(locale: Locale, error: string) {
+async function renderFailedTest(locale: Locale, failure: Failure) {
   useLocaleStore.setState({ locale })
-  useLLMStore.setState({ testConnection: vi.fn(async () => ({ success: false, error })) })
+  useLLMStore.setState({ testConnection: vi.fn(async () => ({ success: false, failure })) })
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -65,16 +67,19 @@ describe('model connection test result (#484)', () => {
     ['zh-CN', '连接失败：模型的最大输出 Tokens 无效。请在设置里为这个模型填一个正整数后重试。'],
     ['en-US', 'Connection failed: The model’s max output tokens setting is invalid. Enter a positive whole number for this model in Settings, then try again.'],
   ] as const)('explains a registered failure code in %s instead of showing the bare code', async (locale, expected) => {
-    await renderFailedTest(locale, 'MODEL_OUTPUT_LIMIT_INVALID')
+    await renderFailedTest(locale, { code: 'MODEL_OUTPUT_LIMIT_INVALID' })
 
     await expect.element(page.getByText(expected, { exact: true })).toBeVisible()
     expect(container?.textContent).not.toContain('MODEL_OUTPUT_LIMIT_INVALID')
   })
 
-  it('keeps Chinese provider text out of the English result', async () => {
-    await renderFailedTest('en-US', '模型请求失败（HTTP 401）。')
+  it.each([
+    ['zh-CN', '连接失败：模型请求失败（HTTP 401）。请检查 Base URL、API Key 与模型名。'],
+    ['en-US', 'Connection failed: Model request failed (HTTP 401). Check the Base URL, API key, and model name.'],
+  ] as const)('writes the main-process note in %s without Chinese leaking into English', async (locale, expected) => {
+    await renderFailedTest(locale, { code: 'LLM_CONNECTION_TEST_FAILED', note: catalogNote('error.modelRequestHttp', { status: 401 }) })
 
-    await expect.element(page.getByText('Connection failed', { exact: true })).toBeVisible()
-    expect(container?.textContent).not.toMatch(/\p{Script=Han}/u)
+    await expect.element(page.getByText(expected, { exact: true })).toBeVisible()
+    if (locale === 'en-US') expect(container?.textContent).not.toMatch(/\p{Script=Han}/u)
   })
 })

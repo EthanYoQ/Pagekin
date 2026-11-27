@@ -30,6 +30,7 @@ vi.mock('../../utils/config-utils', () => ({
 
 import { applyNetworkProxy } from '../../network-proxy'
 import { registerLLMController } from '../llm-controller'
+import { rendered } from './rendered-failure'
 
 const PROXY_DOWN = '连不上「网络代理」里设置的代理'
 
@@ -49,7 +50,7 @@ const profile = (overrides: Record<string, unknown>) => ({
   baseUrl: 'https://api.example.com/v1', temperature: 0.7, maxTokens: 256, purposes: ['generation'], ...overrides,
 })
 const testConnection = async (overrides: Record<string, unknown> = {}) =>
-  (await mocks.handlers.get('llm:test-connection')!({}, profile(overrides)) as { success: boolean; error?: string })
+  rendered(await mocks.handlers.get('llm:test-connection')!({}, profile(overrides)) as { success: boolean; error?: string }, 'zh-CN')
 const discover = () => mocks.handlers.get('llm:discover-models')!({}, {
   provider: 'custom', protocol: 'openai', baseUrl: 'https://api.example.com/v1', apiKey: 'key', purposes: ['generation'],
 })
@@ -85,7 +86,7 @@ describe('请求连不上代理：说明是代理', () => {
   })
 
   it('拉模型列表', async () => {
-    await expect(discover()).resolves.toEqual({ success: false, errorCode: 'proxy' })
+    await expect(discover()).resolves.toEqual({ success: false, reason: 'proxy' })
   })
 
   it('代理主机名写错，解析不出：叫作者先检查地址和端口，不只叫他关代理', async () => {
@@ -125,7 +126,7 @@ describe('代理也连不上，但这次失败另有原因：照原样说明', (
 
   it('拉模型列表时服务回 503', async () => {
     fetchMock.mockImplementation(async () => new Response('', { status: 503 }))
-    await expect(discover()).resolves.toEqual({ success: false, errorCode: 'network' })
+    await expect(discover()).resolves.toEqual({ success: false, reason: 'network' })
   })
 
   it('Anthropic 协议的检索模型没发请求', async () => {
