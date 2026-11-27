@@ -198,6 +198,20 @@ describe('runPostProcessPipeline stopOnFailure', () => {
     expect(logs).not.toMatch(/初始化后处理跑批|后处理汇总|成功|⚠️|✅|❌|⏭️|💡/u)
   })
 
+  it('正文与定稿线的英文说明不含中文原因或裸码', async () => {
+    const invoke = stubIpcInvoke()
+    const original = invoke.getMockImplementation()!
+    invoke.mockImplementation(async (channel: string) => channel === 'db:post-process-create-run'
+      ? { success: false, error: '数据库写入失败' }
+      : original(channel))
+    const callbacks = { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() }
+    const failure = await runPostProcessPipeline('C:/novel', 'chapter_2_finalize', 'Chapter 2 finalization', [
+      { key: 'first', label: 'First step', critical: true, executor: async () => undefined },
+    ], callbacks, { retryCount: 0, cancellation: englishContext(), projectSession }).then(() => undefined, (error: unknown) => error as Error)
+    expect(failure?.message).toBe('Failed to create the post-processing run.')
+    expect(failure?.message).not.toMatch(/\p{Script=Han}|[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+/u)
+  })
+
   it('fails closed before IPC when no frozen project session is supplied', async () => {
     const invoke = stubIpcInvoke()
 

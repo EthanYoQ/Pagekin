@@ -47,7 +47,7 @@ import {
 import { writingLanguageText } from '../../../shared/writing-language'
 import { errorLocaleForRun, localize } from '../../../i18n/core'
 import { authorError } from '../../../i18n/app-errors'
-import { note } from '../../../shared/failure'
+import { authorOwned, note } from '../../../shared/failure'
 import { currentInterfaceLocale } from '../../../stores/locale-store'
 import type { Locale } from '../../../i18n/types'
 import type { FinalizedCharacterGenerationReceipt } from '../../../shared/finalized-character-generation'
@@ -459,11 +459,8 @@ export class RunFinalizePostProcessCommand extends BaseWorkflowCommand<PostProce
       },
     })) : selected
     if (steps.length === 0) {
-      throw new Error(workflowUiText(
-        context,
-        `未知的后处理步骤：${stepKeys?.join('、')}`,
-        `Unknown post-processing step: ${stepKeys?.join(', ')}`,
-      ))
+      const keys = authorOwned(stepKeys?.join(context.uiLocale === 'en-US' ? ', ' : '、') ?? '')
+      throw authorError(context.interfaceLocale, { note: note('未知的后处理步骤：{keys}', 'Unknown post-processing step: {keys}', { keys }) })
     }
     const status = await runPostProcessPipeline(
       this.params.project.path,
@@ -597,10 +594,8 @@ export class FinalizeChapterCommand extends BaseWorkflowCommand<PostProcessStatu
         .filter((step) => !step.ok)
         .map((step) => step.label)
       if (failedLabels.length > 0) {
-        throw new Error(uiText(
-          `后处理失败，批量创作已停止：${failedLabels.join('、')}`,
-          `Post-processing failed, so batch creation was stopped: ${failedLabels.join(', ')}`,
-        ))
+        const labels = authorOwned(failedLabels.join(context.uiLocale === 'en-US' ? ', ' : '、'))
+        throw authorError(context.interfaceLocale, { note: note('后处理失败，批量创作已停止：{labels}', 'Post-processing failed, so batch creation was stopped: {labels}', { labels }) })
       }
     }
 

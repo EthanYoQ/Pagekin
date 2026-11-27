@@ -50,7 +50,7 @@ import {
   type GenerationSession,
   TerminalProviderFailureError,
 } from '../../generation/generation-harness'
-import { networkFailureText } from '../../generation/prompt-budget-failure'
+import { networkFailureNote } from '../../generation/prompt-budget-failure'
 import { createBoundedCompletionError } from '../bounded-completion'
 import type { WritingLanguage } from '../../../shared/writing-language'
 import type { FinalizedContinuityProjection } from '../../../shared/finalized-continuity'
@@ -403,13 +403,11 @@ function draftTooShortError(
   units: number,
   targetUnits: number,
 ): Error {
-  return new Error(workflowUiText(
-    context,
-    `模型已声明生成结束，但正文仅约 ${units}/${targetUnits} 字，明显未达到章节目标，结果未保存。` +
-      '请提高最大输出 Tokens、降低本章目标字数，或改用输出能力更强的模型后重试。',
-    `The model reported completion, but the draft is only about ${units}/${targetUnits} units and clearly misses the chapter target, so it was not saved. ` +
-      'Increase the maximum output tokens, lower the chapter target, or use a model with greater output capacity and try again.',
-  ))
+  return authorError(context.interfaceLocale, { note: note(
+    '模型已声明生成结束，但正文仅约 {units}/{targetUnits} 字，明显未达到章节目标，结果未保存。请提高最大输出 Tokens、降低本章目标字数，或改用输出能力更强的模型后重试。',
+    'The model reported completion, but the draft is only about {units}/{targetUnits} units and clearly misses the chapter target, so it was not saved. Increase the maximum output tokens, lower the chapter target, or use a model with greater output capacity and try again.',
+    { units, targetUnits },
+  ) })
 }
 
 function chapterLengthContractText(writingLanguage: WritingLanguage, targetUnits: number): string {
@@ -1101,15 +1099,14 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
             // 作者取消时请求会被截断着返回，主进程不把取消码交给渲染端；带失败码的是真实失败，照常报短细纲失败。
             // 重试结果直接来自 IPC，不经过 keepReceiptFailuresOnCancel，所以这里自己分辨。
             if (!outlined.receipt.failureCode) this.assertNotCancelled(context)
-            const network = networkFailureText(outlined.receipt, context.interfaceLocale)
-            if (network) throw new Error(network)
-            const reason = outlined.finishReason === 'length'
-              ? uiText('模型输出被截断', 'the model output was truncated')
-              : !outlined.content.trim() ? uiText('模型未返回可见内容', 'the model returned no visible content')
-                : uiText('模型未正常完成输出', 'the model did not complete the output normally')
-            const diagnostic = `(GENERATION_DRAFT_SHORT_OUTLINE_FAILED; status=${outlined.status}; finishReason=${outlined.finishReason})`
-            throw new Error(uiText(`短细纲生成失败：${reason}。正文尚未开始。${diagnostic}`,
-              `The short chapter outline failed: ${reason}. Drafting has not started. ${diagnostic}`))
+            const network = networkFailureNote(outlined.receipt)
+            if (network) throw authorError(context.interfaceLocale, { note: network })
+            callbacks.log(`  GENERATION_DRAFT_SHORT_OUTLINE_FAILED; status=${outlined.status}; finishReason=${outlined.finishReason}`)
+            throw authorError(context.interfaceLocale, { note: outlined.finishReason === 'length'
+              ? note('短细纲生成失败：模型输出被截断。正文尚未开始。', 'The short chapter outline failed: the model output was truncated. Drafting has not started.')
+              : !outlined.content.trim()
+                ? note('短细纲生成失败：模型未返回可见内容。正文尚未开始。', 'The short chapter outline failed: the model returned no visible content. Drafting has not started.')
+                : note('短细纲生成失败：模型未正常完成输出。正文尚未开始。', 'The short chapter outline failed: the model did not complete the output normally. Drafting has not started.') })
           }
           if (recovery?.draftShortOutline && !shortOutline) throw new Error('GENERATION_DRAFT_SHORT_OUTLINE_FAILED')
           const reconciliationBlock = [recordedReconciliation ? draftReconciliationBlock(writingLanguage, recordedReconciliation) : '',
@@ -1495,14 +1492,10 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
       && lastFinishReason === 'length'
       && countDraftUnits(draft) < 100
     ) {
-      throw new Error(
-        uiText(
-          '模型的输出预算主要消耗在推理阶段，尚未产生足够正文。无法安全续接隐藏推理过程；' +
-            '请关闭模型思考模式、提高最大输出 Tokens，或改用更适合正文创作的非推理模型。',
-          'The model spent most of its output budget on reasoning and did not produce enough prose. Hidden reasoning cannot be continued safely. ' +
-            'Disable reasoning mode, increase the maximum output tokens, or use a non-reasoning model better suited to drafting.',
-        ),
-      )
+      throw authorError(params.context.interfaceLocale, { note: note(
+        '模型的输出预算主要消耗在推理阶段，尚未产生足够正文。无法安全续接隐藏推理过程；请关闭模型思考模式、提高最大输出 Tokens，或改用更适合正文创作的非推理模型。',
+        'The model spent most of its output budget on reasoning and did not produce enough prose. Hidden reasoning cannot be continued safely. Disable reasoning mode, increase the maximum output tokens, or use a non-reasoning model better suited to drafting.',
+      ) })
     }
 
     while (this.shouldAutoContinue(draft, params.targetChars, rounds, lastFinishReason)) {

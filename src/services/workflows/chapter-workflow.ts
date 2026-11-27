@@ -13,7 +13,7 @@ import { FINALIZATION_SHARED_WRITE_RESOURCE_KINDS, type WorkflowResourceClaims }
 import { normalizeChapterWordsTarget } from './chapter-creation-parameters'
 import { errorLocaleForRun, localize } from '../../i18n/core'
 import { authorError } from '../../i18n/app-errors'
-import { note } from '../../shared/failure'
+import { authorOwned, note } from '../../shared/failure'
 import type { Locale } from '../../i18n/types'
 import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
 import { FINALIZE_POST_PROCESS_KEY } from './stage-notice'
@@ -581,10 +581,12 @@ export function createRepairFinalizeWorkflow(
             .filter(([key, result]) => (!stepKeys || stepKeys.includes(key)) && !result.ok)
             .map(([, result]) => result.label)
           if (failedSteps.length > 0) {
-            throw new Error(text(
-              `后处理修复失败：${failedSteps.join('、')}。已定稿正文和已成功步骤已保留。`,
-              `Post-processing repair failed: ${failedSteps.join(', ')}. The finalized manuscript and successful steps were preserved.`,
-            ))
+            const labels = authorOwned(failedSteps.join(uiLocale === 'en-US' ? ', ' : '、'))
+            throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note(
+              '后处理修复失败：{labels}。已定稿正文和已成功步骤已保留。',
+              'Post-processing repair failed: {labels}. The finalized manuscript and successful steps were preserved.',
+              { labels },
+            ) })
           }
         },
       },

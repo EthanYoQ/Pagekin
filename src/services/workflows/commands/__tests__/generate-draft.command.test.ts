@@ -2939,7 +2939,7 @@ ${headingPrefix}第3章：潮门
           expect(calls.indexOf('generation:compose-visible')).toBeLessThan(calls.indexOf('generation:commit-draft'))
         } else {
           await expect(execution).rejects.toThrow(finish === 'cancelled' ? '工作流已取消' : finish === 'draft-changed' ? 'GENERATION_DRAFT_RECEIPT_INVALID'
-            : finish === 'outline-as-prose' ? 'GENERATION_COMPOSITION_SOURCE_INVALID' : 'GENERATION_DRAFT_SHORT_OUTLINE_FAILED')
+            : finish === 'outline-as-prose' ? 'GENERATION_COMPOSITION_SOURCE_INVALID' : finish === 'not-durable' ? 'GENERATION_DRAFT_SHORT_OUTLINE_FAILED' : '短细纲生成失败：')
           expect(f.invoke.mock.calls.some(([channel]) => channel === 'generation:commit-draft')).toBe(false)
           if (finish !== 'outline-as-prose') expect(f.invoke.mock.calls.some(([channel, request]) => channel === 'generation:execute'
             && (request as { task: GenerationTask }).task.purpose === 'chapter-draft')).toBe(false)
@@ -3036,9 +3036,25 @@ ${headingPrefix}第3章：潮门
       const runtime = fakeOutcomes(outcome('正文'.repeat(250), 'stop'))
       runtime.outline.mockResolvedValue(outcome('未完成的计划', 'length'))
       const f = setup({ runtime, wordsTarget: 500 })
-      await expect(f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })).rejects.toThrow('GENERATION_DRAFT_SHORT_OUTLINE_FAILED')
+      await expect(f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks })).rejects.toThrow('短细纲生成失败：模型输出被截断。正文尚未开始。')
       expect(runtime.complete).not.toHaveBeenCalled()
       expect(f.invoke.mock.calls.some(([channel]) => channel === 'db:draft-create' || channel === 'db:recovery-candidate-record')).toBe(false)
+    })
+    it('正文与定稿线的英文说明不含中文原因或裸码', async () => {
+      const cases = [
+        [outcome('未完成的计划', 'length'), 'The short chapter outline failed: the model output was truncated. Drafting has not started.'],
+        [outcome('', 'stop'), 'The short chapter outline failed: the model returned no visible content. Drafting has not started.'],
+        [outcome('未完成的计划', 'error'), 'The short chapter outline failed: the model did not complete the output normally. Drafting has not started.'],
+      ] as const
+      for (const [outlined, expected] of cases) {
+        const runtime = fakeOutcomes(outcome('正文'.repeat(250), 'stop'))
+        runtime.outline.mockResolvedValue(outlined)
+        const f = setup({ runtime, wordsTarget: 500, uiLocale: 'en-US' })
+        const error = await f.command.execute({ step: {}, context: f.context, callbacks: f.callbacks }).then(() => undefined, (value: unknown) => value as Error)
+        expect(error?.message).not.toMatch(/\p{Script=Han}|[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+/u)
+        expect(error?.message).toBe(expected)
+        expect((error as { code?: unknown }).code).toBeUndefined()
+      }
     })
   })
 
