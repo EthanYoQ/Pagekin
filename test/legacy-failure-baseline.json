@@ -43,6 +43,7 @@
     "appErrorMessage": 2
   },
   "src/components/editor/review-checklist.ts": {
+    "authorOwned": 1,
     "displayedErrorMessage": 3
   },
   "src/components/editor/use-architecture-overview.ts": {
@@ -57,8 +58,8 @@
     "englishWithReason": 1
   },
   "src/components/editor/use-draft-actions.ts": {
-    "displayedErrorMessage": 10,
-    "englishWithReason": 8
+    "displayedErrorMessage": 4,
+    "englishWithReason": 3
   },
   "src/components/editor/use-novel-config-form.ts": {
     "displayedErrorMessage": 2
@@ -184,6 +185,9 @@
     "displayedErrorMessage": 2,
     "englishWithReason": 3
   },
+  "src/services/workflows/chapter-workflow.ts": {
+    "authorOwned": 1
+  },
   "src/services/workflows/commands/architecture.command.ts": {
     "authorOwned": 2,
     "{ legacy:": 1
@@ -191,7 +195,11 @@
   "src/services/workflows/commands/base-command.ts": {
     "displayedErrorMessage": 1
   },
+  "src/services/workflows/commands/finalize-chapter.command.ts": {
+    "authorOwned": 2
+  },
   "src/services/workflows/commands/generate-draft.command.ts": {
+    "authorOwned": 1,
     "displayedErrorMessage": 1,
     "englishWithReason": 3
   },
@@ -205,7 +213,7 @@
     "{ legacy:": 1
   },
   "src/services/workflows/workflow-utils.ts": {
-    "displayedErrorMessage": 5
+    "displayedErrorMessage": 2
   },
   "src/stores/character-store.ts": {
     "displayedErrorMessage": 1
