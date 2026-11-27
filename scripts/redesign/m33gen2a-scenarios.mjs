@@ -15,6 +15,7 @@ export const M33GEN2A_SCENARIOS = {
       const handlers = ipcMain._invokeHandlers
       const original = handlers.get('generation:execute')
       if (!original) return false
+      globalThis.__m33gen2aExecute = original
       handlers.set('generation:execute', (event, request, context) =>
         original(event, { ...request, handle: { ...request.handle, rootActionId: 'forged-root' } }, context))
       return true
@@ -32,5 +33,11 @@ export const M33GEN2A_SCENARIOS = {
     assert.doesNotMatch(shown, /Error invoking|generation:|[A-Z][A-Z0-9]*_[A-Z0-9_]+/u, '英文界面的生成失败卡片不露 IPC 前缀和码')
     assert.match(shown, /something unexpected went wrong/u)
     return { shown }
+  }, after: async ({ app }) => {
+    // 还原 generation:execute，同一轮后面的场景照常生成。
+    await app.evaluate(({ ipcMain }) => {
+      ipcMain._invokeHandlers.set('generation:execute', globalThis.__m33gen2aExecute)
+      delete globalThis.__m33gen2aExecute
+    })
   } },
 }

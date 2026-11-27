@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
-import type { BeginGenerationRequest } from '../../../src/shared/generation-owner-contract'
+import type { BeginGenerationRequest, PrepareDraftContextRequest } from '../../../src/shared/generation-owner-contract'
 import type { ModelProfile, ProjectSessionContext } from '../../../src/shared/ipc-channels'
 import type { MainGenerationRunHandle } from '../../../src/services/generation/generation-runtime'
 import type { GenerationAttemptReceipt } from '../../../src/services/generation/generation-harness'
@@ -18,7 +18,7 @@ import { createProjectDatabase, initProjectDatabase, closeProjectDatabase, getPr
 import { ModelExecutionLeaseRegistry } from '../../services/model-execution-lease'
 
 type Handler = (event: unknown, ...args: unknown[]) => Promise<unknown>
-type OwnerOverrides = Partial<Record<'resume' | 'cancel', (...args: unknown[]) => unknown>>
+type OwnerOverrides = Partial<Record<'resume' | 'cancel' | 'draftPreparationBinding', (...args: unknown[]) => unknown>>
 const mocks = vi.hoisted(() => ({ handlers: new Map<string, Handler>(), globalRoot: '', overrides: {} as OwnerOverrides }))
 vi.mock('electron', () => ({ ipcMain: { handle: (channel: string, handler: Handler) => mocks.handlers.set(channel, handler) } }))
 vi.mock('../../services/app-data-locator', () => ({ getGlobalDataRoot: () => mocks.globalRoot }))
@@ -144,4 +144,9 @@ it('生成的取消、重试与预算判定与 master 相同', async () => {
   mocks.overrides.resume = () => { throw new Error('GENERATION_PLOT_OUTLINE_PREFIX_INVALID') }
   const resumed = await rejectionOf(ipc.invokeWithProjectSession(session, 'generation:resume', handle))
   expect(resumed.message).toContain('GENERATION_PLOT_OUTLINE_PREFIX_INVALID')
+  expect(displayedErrorMessage(shown('en-US'), resumed)).toBe('Something unexpected went wrong. Try again.')
+
+  mocks.overrides.draftPreparationBinding = () => { throw new Error('GENERATION_DRAFT_PREPARATION_CHANGED') }
+  const prepared = await rejectionOf(ipc.invokeWithProjectSession(session, 'generation:prepare-draft-context', { chapterNumber: 1 } as PrepareDraftContextRequest))
+  expect(prepared.message).toMatch(/(?:^|:\s)GENERATION_DRAFT_PREPARATION_CHANGED$/u)
 })

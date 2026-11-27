@@ -48,6 +48,8 @@ const UNEXPLAINED_FAILURE_KEYS = {
   CLOUD_BACKUP_DISCLOSURE_CONFIRMATION_REQUIRED: 'error.unregisteredCode',
   CLOUD_BACKUP_BINDING_READ_ONLY: 'error.unregisteredCode',
   CLOUD_BACKUP_OPERATION_CONFLICT: 'error.unregisteredCode',
+  // 恢复大纲任务时渲染端按这个码换成专用说明，码要过 handle()；别处抛出时原因各不相同，只说不清原因。
+  GENERATION_PLOT_OUTLINE_PREFIX_INVALID: 'error.unregisteredCode',
 } as const
 
 /**
@@ -239,7 +241,6 @@ const ERROR_KEYS = {
   GENERATION_REVIEW_SOURCE_CHANGED: 'error.sourceDraftChanged',
   GENERATION_SAVED_WITH_NEWER_AUTHOR_DRAFT: 'error.generationSavedWithNewerAuthorDraft',
   GENERATION_PLOT_OUTLINE_AUTHOR_SAVED: 'error.generationPlotOutlineAuthorSaved',
-  GENERATION_PLOT_OUTLINE_PREFIX_INVALID: 'error.generationPlotOutlinePrefixInvalid',
   // 生成途中关闭或切换了作品。
   GENERATION_PROJECT_CLOSED: 'error.generationProjectSessionStale',
   GENERATION_OWNER_CLOSED: 'error.generationProjectSessionStale',
@@ -529,22 +530,23 @@ const WRAPPED_CODE = /^(?:Error invoking remote method '[^']+': )?(?:[A-Za-z]*Er
 /** 码后面可以跟「:数字」的码。渲染端按这个数字拆批，所以数字要和码一起过 IPC。 */
 const COUNTED_CODES: ReadonlySet<string> = new Set(['TASK_BUDGET_SCOPE_SPLIT_REQUIRED'])
 
-function wrappedCode(error: unknown): { code: string; count?: string } | undefined {
+/** counted 为 false 时带数字的 message 不算码，errorCodeOf 的读者看到的与原来相同。 */
+function wrappedCode(error: unknown, counted: boolean): { code: string; count?: string } | undefined {
   const message = typeof error === 'string' ? error : error instanceof Error ? error.message : undefined
   const match = message === undefined ? null : WRAPPED_CODE.exec(message.trim())
-  if (!match || match[2] !== undefined && !COUNTED_CODES.has(match[1]!)) return undefined
+  if (!match || match[2] !== undefined && !(counted && COUNTED_CODES.has(match[1]!))) return undefined
   return { code: match[1]!, count: match[2] }
 }
 
 /** 整条 message 就是码（可带 IPC 前缀）时取 message 里的码，再取对象上的 code 或 errorCode。 */
-function codeCandidates(error: unknown): unknown[] {
-  const wrapped = wrappedCode(error)?.code
+function codeCandidates(error: unknown, counted = false): unknown[] {
+  const wrapped = wrappedCode(error, counted)?.code
   if (typeof error !== 'object' || error === null) return [wrapped]
   return [wrapped, 'code' in error ? error.code : 'errorCode' in error ? error.errorCode : undefined]
 }
 
 function readCode(error: unknown): KnownErrorCode | undefined {
-  return codeCandidates(error).find(isKnownCode)
+  return codeCandidates(error, true).find(isKnownCode)
 }
 
 /** 主进程的 IPC 入口（electron/ipc/handle.ts）把没登记的失败换成这个码。 */
@@ -556,7 +558,7 @@ export const registeredErrorCode: (error: unknown) => string | undefined = readC
 export function registeredErrorMessage(error: unknown): string | undefined {
   const code = readCode(error)
   if (!code) return undefined
-  const wrapped = wrappedCode(error)
+  const wrapped = wrappedCode(error, true)
   return wrapped?.code === code && wrapped.count !== undefined ? `${code}:${wrapped.count}` : code
 }
 

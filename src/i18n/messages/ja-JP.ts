@@ -168,7 +168,6 @@ export const jaJP = {
   'error.sourceDraftChanged': 'AI が作業している間に元の草稿が変更されたため、結果は保存されませんでした。現在の草稿を開き直してから、もう一度お試しください。',
   'error.generationSavedWithNewerAuthorDraft': '生成結果は保存されましたが、実行中に設定が編集されました。その編集は未保存の下書きとして残っています。確認してから保存してください。',
   'error.generationPlotOutlineAuthorSaved': 'このプロットのアウトラインは手動で保存されたため、以前の生成では続きを作れません。必要であれば、新しいアウトラインを生成してください。',
-  'error.generationPlotOutlinePrefixInvalid': 'When this run started, the outline chapter numbers did not line up with the selected range or a chapter was missing, so it cannot continue and the recovery draft cannot be saved. Copy the generated chapters, fix the outline, then generate again.',
   'error.generationCancelled': '生成はキャンセルされました。',
   'error.generationProviderFailed': 'モデルサービスが完全な結果を返しませんでした。ネットワークとモデルの設定を確認してから、もう一度お試しください。',
   'error.generationNetworkFailed': 'モデルサービスに接続できなかったか、応答が途中で途切れました。ネットワークまたはプロキシを確認してから、もう一度お試しください。',
