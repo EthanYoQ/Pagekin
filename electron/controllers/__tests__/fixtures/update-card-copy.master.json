@@ -1,0 +1,562 @@
+[
+  {
+    "code": "UPDATE_CONFIGURATION_MISSING",
+    "reason": "configuration-missing",
+    "retryable": false,
+    "retry": null,
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "测试/解压包缺少更新配置，请使用正式安装版或打开Release。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "This test or unpacked build lacks update configuration. Install the formal package or open Releases."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "This test or unpacked build lacks update configuration. Install the formal package or open Releases."
+      }
+    }
+  },
+  {
+    "code": "CHECK_FAILED",
+    "reason": "asset-missing",
+    "retryable": false,
+    "retry": null,
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "更新安装包不完整或缺失。请打开Release手动下载正式安装包。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "The update installer is incomplete or missing. Open Releases to download the formal installer manually."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "The update installer is incomplete or missing. Open Releases to download the formal installer manually."
+      }
+    }
+  },
+  {
+    "code": "CHECK_FAILED",
+    "reason": "metadata-invalid",
+    "retryable": false,
+    "retry": null,
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "更新元数据无效。请打开Release手动下载正式安装包。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "Update metadata is invalid. Open Releases to download the formal installer manually."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "Update metadata is invalid. Open Releases to download the formal installer manually."
+      }
+    }
+  },
+  {
+    "code": "CHECK_FAILED",
+    "reason": "http-forbidden",
+    "retryable": false,
+    "retry": null,
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "没有权限访问更新发布信息。请打开Release手动下载正式安装包。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "Access to update release information was denied. Open Releases to download the formal installer manually."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "Access to update release information was denied. Open Releases to download the formal installer manually."
+      }
+    }
+  },
+  {
+    "code": "CHECK_FAILED",
+    "reason": "http-not-found",
+    "retryable": false,
+    "retry": null,
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "未找到更新发布信息。请打开Release手动下载正式安装包。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "Update release information was not found. Open Releases to download the formal installer manually."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "Update release information was not found. Open Releases to download the formal installer manually."
+      }
+    }
+  },
+  {
+    "code": "CHECK_FAILED",
+    "reason": "http-rate-limited",
+    "retryable": true,
+    "retry": "check",
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "更新服务请求过于频繁。请稍后重试。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "Too many update requests were made. Please try again later."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "Too many update requests were made. Please try again later."
+      }
+    }
+  },
+  {
+    "code": "CHECK_FAILED",
+    "reason": "proxy",
+    "retryable": true,
+    "retry": "check",
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "更新请求无法通过代理连接。请检查代理设置后重试。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "The update request could not connect through the proxy. Check proxy settings and try again."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "The update request could not connect through the proxy. Check proxy settings and try again."
+      }
+    }
+  },
+  {
+    "code": "CHECK_FAILED",
+    "reason": "tls",
+    "retryable": true,
+    "retry": "check",
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "无法验证更新服务的安全连接。请检查系统时间、证书或网络拦截。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "Could not verify the secure update connection. Check system time, certificates, or network interception."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "Could not verify the secure update connection. Check system time, certificates, or network interception."
+      }
+    }
+  },
+  {
+    "code": "CHECK_FAILED",
+    "reason": "network",
+    "retryable": true,
+    "retry": "check",
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "无法连接更新服务。请检查网络连接后重试。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "Could not reach the update service. Check your network connection and try again."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "Could not reach the update service. Check your network connection and try again."
+      }
+    }
+  },
+  {
+    "code": "CHECK_FAILED",
+    "reason": "unknown",
+    "retryable": true,
+    "retry": "check",
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "更新操作暂时失败。请稍后重试。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "The update operation failed temporarily. Please try again later."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "The update operation failed temporarily. Please try again later."
+      }
+    }
+  },
+  {
+    "code": "DOWNLOAD_FAILED",
+    "reason": "asset-missing",
+    "retryable": false,
+    "retry": null,
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "更新安装包不完整或缺失。请打开Release手动下载正式安装包。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "The update installer is incomplete or missing. Open Releases to download the formal installer manually."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "The update installer is incomplete or missing. Open Releases to download the formal installer manually."
+      }
+    }
+  },
+  {
+    "code": "DOWNLOAD_FAILED",
+    "reason": "metadata-invalid",
+    "retryable": false,
+    "retry": null,
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "更新元数据无效。请打开Release手动下载正式安装包。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "Update metadata is invalid. Open Releases to download the formal installer manually."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "Update metadata is invalid. Open Releases to download the formal installer manually."
+      }
+    }
+  },
+  {
+    "code": "DOWNLOAD_FAILED",
+    "reason": "http-forbidden",
+    "retryable": false,
+    "retry": null,
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "没有权限访问更新发布信息。请打开Release手动下载正式安装包。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "Access to update release information was denied. Open Releases to download the formal installer manually."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "Access to update release information was denied. Open Releases to download the formal installer manually."
+      }
+    }
+  },
+  {
+    "code": "DOWNLOAD_FAILED",
+    "reason": "http-not-found",
+    "retryable": false,
+    "retry": null,
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "未找到更新发布信息。请打开Release手动下载正式安装包。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "Update release information was not found. Open Releases to download the formal installer manually."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "Update release information was not found. Open Releases to download the formal installer manually."
+      }
+    }
+  },
+  {
+    "code": "DOWNLOAD_FAILED",
+    "reason": "http-rate-limited",
+    "retryable": true,
+    "retry": "download",
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "更新服务请求过于频繁。请稍后重试。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "Too many update requests were made. Please try again later."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "Too many update requests were made. Please try again later."
+      }
+    }
+  },
+  {
+    "code": "DOWNLOAD_FAILED",
+    "reason": "proxy",
+    "retryable": true,
+    "retry": "download",
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "更新请求无法通过代理连接。请检查代理设置后重试。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "The update request could not connect through the proxy. Check proxy settings and try again."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "The update request could not connect through the proxy. Check proxy settings and try again."
+      }
+    }
+  },
+  {
+    "code": "DOWNLOAD_FAILED",
+    "reason": "tls",
+    "retryable": true,
+    "retry": "download",
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "无法验证更新服务的安全连接。请检查系统时间、证书或网络拦截。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "Could not verify the secure update connection. Check system time, certificates, or network interception."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "Could not verify the secure update connection. Check system time, certificates, or network interception."
+      }
+    }
+  },
+  {
+    "code": "DOWNLOAD_FAILED",
+    "reason": "network",
+    "retryable": true,
+    "retry": "download",
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "无法连接更新服务。请检查网络连接后重试。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "Could not reach the update service. Check your network connection and try again."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "Could not reach the update service. Check your network connection and try again."
+      }
+    }
+  },
+  {
+    "code": "DOWNLOAD_FAILED",
+    "reason": "unknown",
+    "retryable": true,
+    "retry": "download",
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "更新包暂时无法下载。请稍后重试。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "The update could not be downloaded right now. Please try again later."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "The update could not be downloaded right now. Please try again later."
+      }
+    }
+  },
+  {
+    "code": "DOWNLOAD_NOT_READY",
+    "reason": "not-ready",
+    "retryable": true,
+    "retry": "download",
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "当前没有可下载的更新。请重新检查版本。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "There is no update ready to download. Check for updates again."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "There is no update ready to download. Check for updates again."
+      }
+    }
+  },
+  {
+    "code": "OPEN_RELEASE_FAILED",
+    "reason": "not-ready",
+    "retryable": false,
+    "retry": null,
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "无法打开更新下载页。请稍后重试。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "Could not open the update download page. Please try again later."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "Could not open the update download page. Please try again later."
+      }
+    }
+  },
+  {
+    "code": "OPEN_RELEASE_FAILED",
+    "reason": "open-release-failed",
+    "retryable": true,
+    "retry": "open-release",
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "无法打开更新下载页。请稍后重试。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "Could not open the update download page. Please try again later."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "Could not open the update download page. Please try again later."
+      }
+    }
+  },
+  {
+    "code": "UPDATES_DISABLED",
+    "reason": "not-installed",
+    "retryable": false,
+    "retry": null,
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "更新检查仅在已安装的 Windows 或 macOS 应用中可用。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "Update checks are available in the installed Windows or macOS app only."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "Update checks are available in the installed Windows or macOS app only."
+      }
+    }
+  },
+  {
+    "code": "INVALID_REMINDER_DELAY",
+    "reason": "invalid-reminder-delay",
+    "retryable": false,
+    "retry": null,
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "提醒时间无效，请重新选择。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "That reminder period is unavailable. Please choose again."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "That reminder period is unavailable. Please choose again."
+      }
+    }
+  },
+  {
+    "code": "REMINDER_NOT_AVAILABLE",
+    "reason": "reminder-unavailable",
+    "retryable": false,
+    "retry": null,
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "当前没有可延后的更新提醒。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "There is no update reminder to postpone right now."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "There is no update reminder to postpone right now."
+      }
+    }
+  },
+  {
+    "code": "REMINDER_SAVE_FAILED",
+    "reason": "reminder-save-failed",
+    "retryable": true,
+    "retry": "defer",
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "无法保存提醒时间，请检查配置目录后重试。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "Could not save the reminder. Check the configuration folder and try again."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "Could not save the reminder. Check the configuration folder and try again."
+      }
+    }
+  },
+  {
+    "code": "INSTALL_NOT_READY",
+    "reason": "not-ready",
+    "retryable": true,
+    "retry": "check",
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "更新包尚未下载完成，暂时无法重启安装。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "The update has not finished downloading, so it cannot be installed yet."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "The update has not finished downloading, so it cannot be installed yet."
+      }
+    }
+  },
+  {
+    "code": "INSTALL_FAILED",
+    "reason": "install-failed",
+    "retryable": true,
+    "retry": "install",
+    "card": {
+      "zh-CN": {
+        "title": "无法完成更新操作",
+        "description": "无法启动更新安装。请稍后再试。"
+      },
+      "en-US": {
+        "title": "Could not complete update action",
+        "description": "The update installer could not be started. Please try again later."
+      },
+      "ja-JP": {
+        "title": "Could not complete update action",
+        "description": "The update installer could not be started. Please try again later."
+      }
+    }
+  }
+]
