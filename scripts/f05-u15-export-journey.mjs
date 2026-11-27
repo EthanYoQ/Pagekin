@@ -288,7 +288,7 @@ async function main() {
       chapterNumber: 4, title: '来源追踪', role: '', purpose: '', keyEvents: '', characters: [],
       suspenseHook: '', userGuidance: '', notes: '', notesUpdatedAt: '',
     }, projectPath, historySession)
-    assert.equal(blueprint.success, true, blueprint.error)
+    assert.equal(blueprint.success, true, blueprint.failure?.code)
     const sourceBody = '旧港来信'
     const sourceDraft = await invoke(session.page, 'db:draft-create', {
       chapterNumber: 3, version: 1, source: 'write', content: sourceBody, wordCount: sourceBody.length,

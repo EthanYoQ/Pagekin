@@ -379,7 +379,7 @@ describe('database controller project context guard', () => {
       'C:/projects/A',
     )).resolves.toEqual({
       success: false,
-      error: 'PROJECT_CORE_SYNOPSIS_CHANGED',
+      failure: { code: 'PROJECT_CORE_SYNOPSIS_CHANGED' },
     })
   })
 
@@ -1152,9 +1152,9 @@ describe('database controller project context guard', () => {
     mocks.closeProjectDatabase.mockClear()
     mocks.currentProjectPath = 'C:/projects/B'
     await expect(handler('db:close')({}, 'C:/projects/A'))
-      .resolves.toMatchObject({ success: false, error: 'Error: PROJECT_CONTEXT_CHANGED' })
+      .resolves.toMatchObject({ success: false, failure: { code: 'PROJECT_CONTEXT_CHANGED' } })
     await expect(rawHandler('db:close')({}))
-      .resolves.toMatchObject({ success: false, error: 'Error: PROJECT_SESSION_REQUIRED' })
+      .resolves.toMatchObject({ success: false, failure: { code: 'PROJECT_SESSION_REQUIRED' } })
     expect(mocks.closeProjectDatabase).not.toHaveBeenCalled()
     expect(mocks.invalidateCurrentSession).toHaveBeenCalledOnce()
   })

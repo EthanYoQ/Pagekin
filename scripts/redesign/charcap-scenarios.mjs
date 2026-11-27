@@ -125,7 +125,7 @@ async function seedEmpty(context, core) {
   if (core) {
     const session = { projectId: created.projectId, projectPath: created.projectPath, leaseId: opened.project.sessionLease }
     const updated = await invoke(page, 'db:project-core-update', core, created.projectPath, session)
-    assert.equal(updated.success, true, updated.error)
+    assert.equal(updated.success, true, updated.failure?.code)
   }
   await reload()
   await stage.openFromLibrary(page, '盐河旧事')
@@ -169,7 +169,7 @@ const seedFortyBook = (model = WIDE_MODEL) => async context => {
   const session = { projectId: created.projectId, projectPath: created.projectPath, leaseId: opened.project.sessionLease }
   const updated = await invoke(page, 'db:project-core-update', { premise: PREMISE, coreOutline: `${CORE_OUTLINE}另有盐河两岸二十六位相关人物，共四十位。`,
     totalChapters: 120, wordsPerChapter: 3000 }, created.projectPath, session)
-  assert.equal(updated.success, true, updated.error)
+  assert.equal(updated.success, true, updated.failure?.code)
   await reload()
   await stage.openFromLibrary(page, '盐河四十人')
 }

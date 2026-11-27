@@ -71,7 +71,7 @@ beforeEach(() => {
     if (channel === 'db:project-core-synopsis-commit' || channel === 'db:blueprint-commit-range') {
       savedPayload = args[0]
       if (pendingSave) return pendingSave()
-      return rejectSave ? { success: false, error: rejectSave } : { success: true }
+      return rejectSave ? { success: false, failure: { code: rejectSave } } : { success: true }
     }
     if (channel === 'db:project-core-get') return { ...sourceExpected, title: 'Recovery', synopsis: '完整大纲'.repeat(30), premise: '完整故事前提'.repeat(20), worldbuilding: '世界设定'.repeat(20) }
     if (channel === 'generation:list') return showCandidate ? [{ handle, status: 'failed', artifacts: [], candidates: [] }] : []
@@ -189,12 +189,12 @@ describe('planning recovery editors', () => {
     expect(alert).not.toMatch(/\p{Script=Han}/u)
     expect(savedPayload).toBeUndefined()
   })
-  it('英文界面下主进程以中文诊断拒绝保存时，提示只给英文说明（#474）', async () => {
+  it('英文界面下主进程拒绝保存时，提示只给英文说明（#474）', async () => {
     useLocaleStore.setState({ locale: 'en-US' })
     context = fixture('blueprint')
     await render('blueprint')
     await edit(blueprintText)
-    rejectSave = 'StructuredContractDiagnostic: 结构化合同诊断 code=missing_field path=blueprints[0].relationships field=relationships'
+    rejectSave = 'BLUEPRINT_WRITE_FAILED'
     await act(async () => button('Save recovered blueprints').click())
     const alert = await vi.waitFor(() => {
       const found = container.querySelector('[role="alert"]')?.textContent
@@ -502,7 +502,7 @@ describe('planning recovery editors', () => {
       expect(useEditorStore.getState().tabs[0]).toMatchObject({ savedContent: validText(), content: later, dirty: true }); noModel()
     })
     it(`${kind} explicit uncommitted rejection permits corrected text on retry`, async () => {
-      context = fixture(kind); rejectSave = '作者内容未通过检查'; await render(kind); await edit(validText())
+      context = fixture(kind); rejectSave = 'GENERATION_SOURCE_CHANGED'; await render(kind); await edit(validText())
       await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(useEditorStore.getState().tabs[0].dirty).toBe(true)
       const later = validText().replace('找到信件', '找到新的信件')
@@ -518,7 +518,7 @@ describe('planning recovery editors', () => {
       await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       const first = structuredClone(savedPayload)
       await edit(validText().replace('找到信件', '找到新的信件'))
-      pendingSave = async () => ({ success: false, error: 'AUTHOR_RECEIPT_CONFLICT' })
+      pendingSave = async () => ({ success: false, failure: { code: 'IPC_HANDLER_FAILED' } })
       await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(savedPayload).toEqual(first)
       expect(useEditorStore.getState().tabs[0].savedContent).toBe('')
@@ -540,12 +540,12 @@ describe('planning recovery editors', () => {
       expect(invoke.mock.calls.some(([name]) => /upsert|project-core-update/.test(name))).toBe(false); noModel()
     })
     it(`${kind} preserves dirty and operation identity after conflict and retry`, async () => {
-      context = fixture(kind); rejectSave = '来源已变化'; await render(kind); await edit(validText())
+      context = fixture(kind); rejectSave = 'GENERATION_SOURCE_CHANGED'; await render(kind); await edit(validText())
       await act(async () => button(kind === 'outline' ? '保存恢复大纲' : '保存恢复蓝图').click())
       expect(useEditorStore.getState().tabs[0].dirty).toBe(true)
       const first = savedPayload
-      await act(async () => { await expect(saveDirtyEditorChangesForExit(session.projectPath)).rejects.toThrow('来源已变化') })
-      expect(savedPayload).toEqual(first); expect(container.textContent).toContain('来源已变化'); noModel()
+      await act(async () => { await expect(saveDirtyEditorChangesForExit(session.projectPath)).rejects.toThrow('有了变化') })
+      expect(savedPayload).toEqual(first); expect(container.textContent).toContain('有了变化'); noModel()
     })
     it(`${kind} exit-save keeps later input dirty while the snapshot saves`, async () => {
       context = fixture(kind); await render(kind); await edit(validText())

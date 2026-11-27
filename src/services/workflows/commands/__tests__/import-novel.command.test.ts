@@ -222,7 +222,7 @@ describe('InferBlueprintsPerChapterCommand', () => {
     const malformed = `${valid.slice(0, -1)},}`
     const observed: Array<Array<{ role: string; content: string }>> = []
     stubIpcInvoke((channel) => {
-      if (channel === 'db:blueprint-commit-range') return { success: false, error: 'captured after repair' }
+      if (channel === 'db:blueprint-commit-range') return { success: false, failure: { code: 'BLUEPRINT_WRITE_FAILED', note: { key: 'error.blueprintWriteFailed' } } }
       throw new Error(`unexpected IPC ${channel}`)
     })
     useProjectStore.setState(state => ({
@@ -256,7 +256,7 @@ describe('InferBlueprintsPerChapterCommand', () => {
       step: {},
       context,
       callbacks,
-    })).rejects.toThrow('captured after repair')
+    })).rejects.toThrow('导入蓝图未能作为完整范围一次提交并回读')
 
     expect(observed).toHaveLength(2)
     expect(observed[0]?.[0]?.content).toContain('professional fiction-structure analyst')
@@ -291,7 +291,7 @@ describe('InferBlueprintsPerChapterCommand', () => {
 
   it('performs zero per-chapter writes and throws when the one range commit fails', async () => {
     const invoke = stubIpcInvoke((channel) => {
-      if (channel === 'db:blueprint-commit-range') return { success: false, error: 'DB 写入失败' }
+      if (channel === 'db:blueprint-commit-range') return { success: false, failure: { code: 'BLUEPRINT_WRITE_FAILED', note: { key: 'error.blueprintWriteFailed' } } }
       return { success: true }
     })
     useLLMStore.setState({ defaultModelId: 'model-a' })
@@ -312,7 +312,7 @@ describe('InferBlueprintsPerChapterCommand', () => {
       }) })
     const command = new InferBlueprintsPerChapterCommand()
 
-    await expect(command.execute({ step: {}, context: createContext(), callbacks })).rejects.toThrow(/DB 写入失败/)
+    await expect(command.execute({ step: {}, context: createContext(), callbacks })).rejects.toThrow('导入蓝图未能作为完整范围一次提交并回读')
     expect(invoke.mock.calls.map(([channel]) => channel)).not.toContain('db:blueprint-upsert')
   })
 
@@ -1222,9 +1222,9 @@ describe('导入 slot 的输出没通过校验', () => {
 
   it('输出合法、只是提交失败：不丢弃，「继续导入」复用这次结果', async () => {
     const { runtime, discarded, context } = mainOwnedImport(JSON.stringify({ blueprints: [blueprint] }),
-      channel => channel === 'db:blueprint-commit-range' ? { success: false, error: 'DB 写入失败' } : { success: true })
+      channel => channel === 'db:blueprint-commit-range' ? { success: false, failure: { code: 'BLUEPRINT_WRITE_FAILED', note: { key: 'error.blueprintWriteFailed' } } } : { success: true })
     await expect(new RuntimeInferBlueprintsPerChapterCommand({ createRuntime: async () => runtime } as never)
-      .execute({ step: {}, context, callbacks })).rejects.toThrow(/DB 写入失败/)
+      .execute({ step: {}, context, callbacks })).rejects.toThrow('导入蓝图未能作为完整范围一次提交并回读')
     expect(discarded()).toEqual([])
   })
 })

@@ -367,7 +367,7 @@ const completeReader = completeWriteProof || completeReadProof ? `
 const completeWrite = completeWriteProof ? `
   const seed = ${JSON.stringify(completeSourceSeed)}
   const blueprintSaved = await window.velaAPI.invoke('db:blueprint-upsert', seed.blueprint, result.project.path, context)
-  if (blueprintSaved?.success !== true) throw new Error(blueprintSaved?.error || 'complete source blueprint save failed')
+  if (blueprintSaved?.success !== true) throw new Error(blueprintSaved?.failure?.code || 'complete source blueprint save failed')
   const first = await window.velaAPI.invoke('db:draft-create',
     { chapterNumber: 1, version: 1, source: 'write', content: seed.draft1, wordCount: seed.draft1.length }, result.project.path, context)
   if (first?.success !== true || !Number.isInteger(first.id)) throw new Error(first?.failure?.code || 'complete source first draft save failed')

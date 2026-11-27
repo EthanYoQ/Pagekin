@@ -643,7 +643,7 @@ describe('generation public IPC with actual project authority and SQLite', () =>
     const before = ProjectCoreRepository.get()
     const result = await mocks.handlers.get('db:project-core-commit-generated')!({ sender },
       { data: { worldbuilding: '不得覆盖的生成设定' }, aiSources: { worldSetting: { kind: 'filled', hash: '0000abcd' } }, generationRunHandle: run.handle }, session.projectPath, session)
-    expect(result).toMatchObject({ success: false, error: expect.stringContaining('GENERATION_SOURCE_CHANGED') })
+    expect(result).toMatchObject({ success: false, failure: { code: 'GENERATION_SOURCE_CHANGED' } })
     expect(ProjectCoreRepository.get()).toEqual(before)
     expect(ProjectCoreRepository.getAiSources()).toEqual({})
     expect((await invoke('generation:read', run.handle)).candidates?.[0].text).toBe('中文候选')
@@ -684,7 +684,7 @@ describe('generation public IPC with actual project authority and SQLite', () =>
     expect(await handler({ sender }, { synopsis: '正式大纲', expected, generationRunHandle: run.handle }, session.projectPath, session)).toEqual({ success: true })
     expect(ProjectCoreRepository.get()?.synopsis).toBe('正式大纲')
     commit.mockClear()
-    expect(await handler({ sender }, { synopsis: '重复旧候选', expected, generationRunHandle: run.handle }, session.projectPath, session)).toMatchObject({ success: false, error: expect.stringContaining('GENERATION_SOURCE_CHANGED') })
+    expect(await handler({ sender }, { synopsis: '重复旧候选', expected, generationRunHandle: run.handle }, session.projectPath, session)).toMatchObject({ success: false, failure: { code: 'GENERATION_SOURCE_CHANGED' } })
     expect(commit).not.toHaveBeenCalled()
   })
   it('exposes begin, execute, read, list and durable snapshot without leaking model credentials', async () => {
@@ -900,7 +900,7 @@ describe('chapter outline command through registered main IPC and formal CAS', (
       authorRecovery: { sourceHandle: handle, leaseEpoch: session.leaseId, operationId: 'author-recovery-1', committedRange: { from: 1, to: 1 } } }
     const commit = mocks.handlers.get('db:project-core-synopsis-commit')!
     expect(await commit({ sender }, { ...payload, authorRecovery: { ...payload.authorRecovery, leaseEpoch: handle.epoch } }, session.projectPath, session))
-      .toMatchObject({ success: false, error: expect.stringContaining('GENERATION_EPOCH_STALE') })
+      .toMatchObject({ success: false, failure: { code: 'GENERATION_EPOCH_STALE' } })
     const saved = await commit({ sender }, payload, session.projectPath, session)
     expect(saved).toMatchObject({ success: true, receipt: { kind: 'author-edit', committedRange: { from: 1, to: 1 }, remainingRange: { from: 2, to: 3 }, idempotent: false } })
     expect(await commit({ sender }, payload, session.projectPath, session)).toMatchObject({ success: true, receipt: { idempotent: true } })

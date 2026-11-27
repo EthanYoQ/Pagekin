@@ -111,7 +111,7 @@ async function seed(context, fakeMode, chapters) {
   assert.equal((await invoke(page, 'db:character-roster-commit', { operationId: randomUUID(), expectedRevision: roster.revision,
     expectedIdentityRevision: roster.identityRevision, schemaVersion: 1, intent: 'manual_edit', entries }, projectPath, session)).success, true)
   const core = await invoke(page, 'db:project-core-update', { ...STAGE_SAMPLE.core, totalChapters: TOTAL_CHAPTERS, wordsPerChapter: 1000 }, projectPath, session)
-  assert.equal(core.success, true, core.error)
+  assert.equal(core.success, true, core.failure?.code)
   const title = number => QUALITY_CHAPTERS[number]?.title ?? stageChapterTitle(number)
   for (let chapterNumber = 1; chapterNumber <= TOTAL_CHAPTERS; chapterNumber++) {
     assert.equal((await invoke(page, 'db:blueprint-upsert', { chapterNumber, title: title(chapterNumber), role: '发展',

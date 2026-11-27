@@ -1002,7 +1002,7 @@ describe('蓝图阶段', () => {
 
       const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
       invoke.mockImplementation(async (channel: string, ...args: unknown[]) => channel === 'db:blueprint-upsert'
-        ? { success: false, error: '磁盘已满' } : base(channel, ...args))
+        ? { success: false, failure: { code: 'BLUEPRINT_WRITE_FAILED', note: { key: 'error.blueprintWriteFailed' } } } : base(channel, ...args))
       await act(async () => page.getByRole('button', { name: '保存此章' }).click())
       await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
       expect(refreshes).toHaveLength(2)

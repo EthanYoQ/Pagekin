@@ -67,7 +67,7 @@ export async function seedLargeBook(context, finalized, { blueprints: withBluepr
       relationships: [], arc: '', notes: '' })) }, projectPath, session)
   assert.equal(committed.success, true, committed.failure?.code)
   const updated = await invoke(page, 'db:project-core-update', { ...core, totalChapters: BLUEPRINTS, wordsPerChapter: CHAPTER_UNITS }, projectPath, session)
-  assert.equal(updated.success, true, updated.error)
+  assert.equal(updated.success, true, updated.failure?.code)
   const blueprints = Array.from({ length: BLUEPRINTS }, (_, index) => ({ chapterNumber: index + 1, title: chapterTitle(index + 1), role: '发展',
     purpose: '推进灯塔与沉船的线索', keyEvents: '林岚在灯塔里找到新的线索', characters: CHARACTERS.slice(0, 3), suspenseHook: '', userGuidance: '', notes: '' }))
   if (withBlueprints) assert.equal((await invoke(page, 'db:blueprint-upsert-many', blueprints, projectPath, session)).success, true)

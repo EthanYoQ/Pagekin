@@ -29,7 +29,7 @@ const partialOutline = () => renderPlotOutlineSynopsis(
 const updateSynopsis = synopsis => async ({ page, invoke, path: projectPath, session }) => {
   const updated = await invoke(page, 'db:project-core-update', { ...STAGE_SAMPLE.core, synopsis, totalChapters: STAGE_SAMPLE.totalChapters,
     wordsPerChapter: STAGE_SAMPLE.wordsPerChapter }, projectPath, session)
-  assert.equal(updated.success, true, updated.error)
+  assert.equal(updated.success, true, updated.failure?.code)
 }
 
 async function seedOutlineBook(context, name, { blueprints = false, finalized = false, emptyDraft = false }) {

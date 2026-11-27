@@ -43,7 +43,7 @@ const withRelationConflict = context => seedStageSample(context, { beforeReload:
     { chapterNumber: 4, title: STAGE_SAMPLE.titles[3], ...RELATION_PLAN, relationshipHints: [] },
     { chapterNumber: 5, title: STAGE_SAMPLE.titles[4], ...RELATION_PLAN },
   ] }, path, session)
-  assert.equal(committed.success, true, committed.error)
+  assert.equal(committed.success, true, committed.failure?.code)
 } })
 
 async function injectDeadKeeper(app) {

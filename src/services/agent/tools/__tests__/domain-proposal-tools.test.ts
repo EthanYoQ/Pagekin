@@ -123,7 +123,7 @@ describe('explicit Agent domain proposals', () => {
     invoke.mockImplementation(async (_session, channel: string) => {
       if (channel === 'project:update-config') return { success: true }
       if (channel === 'db:blueprint-get') return blueprint
-      if (channel === 'db:blueprint-upsert') return { success: false, error: 'blueprint storage unavailable' }
+      if (channel === 'db:blueprint-upsert') return { success: false, failure: { code: 'BLUEPRINT_WRITE_FAILED', note: { key: 'error.blueprintWriteFailed' } } }
       throw new Error(`unexpected channel ${channel}`)
     })
     const confirmation = vi.fn()
@@ -158,7 +158,7 @@ describe('explicit Agent domain proposals', () => {
       ],
       [],
     )
-    expect(JSON.stringify(callbacks.onDone.mock.calls)).not.toContain('blueprint storage unavailable')
+    expect(JSON.stringify(callbacks.onDone.mock.calls)).not.toContain('BLUEPRINT_WRITE_FAILED')
   })
 
   it('commits an approved novel-config proposal through the existing project adapter', async () => {

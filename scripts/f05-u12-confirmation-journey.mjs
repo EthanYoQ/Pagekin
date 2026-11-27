@@ -332,7 +332,7 @@ async function main() {
     const session = { projectId: project.projectId, projectPath, leaseId: opened.project.sessionLease }
     const seededBlueprint = await invoke(page, 'db:blueprint-upsert', { chapterNumber: 1, title: '港口灯塔',
       role: '发展', purpose: '核对审稿决定', keyEvents: '林岚离开港口', characters: [] }, projectPath, session)
-    assert.equal(seededBlueprint.success, true, seededBlueprint.error)
+    assert.equal(seededBlueprint.success, true, seededBlueprint.failure?.code)
     const draft = await invoke(page, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
       content: body, wordCount: body.length }, projectPath, session)
     assert.equal(draft.success, true, draft.failure?.code)
@@ -434,7 +434,7 @@ async function main() {
       leaseId: openedLive.project.sessionLease }
     const liveBlueprint = await invoke(page, 'db:blueprint-upsert', { chapterNumber: 1, title: '港口灯塔',
       role: '发展', purpose: '核对审稿决定', keyEvents: '林岚离开港口', characters: [] }, liveProjectPath, liveSession)
-    assert.equal(liveBlueprint.success, true, liveBlueprint.error)
+    assert.equal(liveBlueprint.success, true, liveBlueprint.failure?.code)
     const liveDraft = await invoke(page, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
       content: body, wordCount: body.length }, liveProjectPath, liveSession)
     assert.equal(liveDraft.success, true, liveDraft.failure?.code)
