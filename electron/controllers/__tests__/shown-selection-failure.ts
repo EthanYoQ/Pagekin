@@ -5,7 +5,7 @@ import type { Failure } from '../../../src/shared/failure'
 type Handler = (...args: unknown[]) => unknown
 type ShownHandler = (...args: unknown[]) => Promise<unknown>
 
-/** 选文件失败按导入对话框的显法换成作者看到的那句，放回 error，好与 master 上的整句比对。 */
+/** 把选文件失败换成导入对话框显示给作者的整句，放回 error 字段。 */
 export function shownSelectionFailure(handler: Handler): ShownHandler {
   return async (...args) => {
     const result = receivedIpcResult(await handler(...args)) as { success?: boolean; failure?: Failure; locale?: 'zh-CN' | 'en-US' } | null

@@ -122,7 +122,6 @@ const FIXED_SELECTION_COPY: Record<string, SelectionCopy['key']> = {
   EPUB_INVALID_ARCHIVE: 'error.epubInvalidArchive',
 }
 
-/** 选文件失败里作者能照着改的几种，说明交给渲染端或记进导入运行时用的是同一份。 */
 function selectionCopy(error: unknown, limits: ImportResourceLimits): SelectionCopy | undefined {
   const code = error instanceof Error ? error.message : ''
   const duplicate = /^AUTHOR_MANUSCRIPT_DUPLICATE_CHAPTER:(\d+)$/u.exec(code)

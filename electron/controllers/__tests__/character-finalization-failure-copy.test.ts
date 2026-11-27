@@ -53,7 +53,6 @@ const snapshot = { tabId: 'tab-3', projectPath: PATH, projectSession: session, d
 const sqliteFailure = () => Object.assign(new Error('database disk image is malformed'), { name: 'SqliteError', code: 'SQLITE_CORRUPT' })
 const RAW = /SqliteError|malformed|SQLITE_|EBUSY|C:[\\/]|CHARACTER_APPROVAL_INVALID/u
 
-/** 角色面板按 appErrorMessage 说明抛出的错误，审稿修订与旧名册的工作流按 displayedErrorMessage 说明。 */
 async function thrownText(pending: Promise<unknown>, locale: InterfaceLocale, show: typeof appErrorMessage = appErrorMessage): Promise<string> {
   const error = await pending.then(() => undefined, (caught: unknown) => caught)
   expect(error).toBeInstanceOf(Error)

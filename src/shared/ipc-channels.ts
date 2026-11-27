@@ -1208,7 +1208,7 @@ export interface ImportChannels {
       inspection?: ImportInspectionSummary
       preparation?: ImportRunPreparationResult
       failure?: Failure
-      /** 失败说明的语言：续上未完成的导入运行时是那次运行的语言。 */
+      /** 失败说明所用语言；续上未完成的导入时沿用原运行的语言。 */
       locale?: ImportRunLocale
     } | null
   }

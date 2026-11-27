@@ -44,7 +44,6 @@ export interface FinalizationResult {
   error?: string
 }
 
-/** 过 IPC 的定稿结果：原因只剩已登记的码。 */
 export type FinalizationIpcResult = Omit<FinalizationResult, 'error'> & { failure?: Failure }
 
 export interface FinalizationPublisher {
