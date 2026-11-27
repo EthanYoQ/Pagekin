@@ -24,7 +24,6 @@ async function switchToEnglish(context) {
 }
 
 export const PRH1_SCENARIOS = {
-  // #922：中文界面先审稿、修稿、稍后再合并；换英文界面后主进程拒绝合并（登记码），通知要带原因。
   'prh1-merge-failure-en': { model: true, shell: 'stage', setup: seedStageSample, run: async context => {
     const { app, page, fake, shoot } = context
     fake.replyReview(prompt => prompt.includes('【已确认纳入本次修稿的审稿项】') ? REVISED : null)
@@ -63,7 +62,7 @@ export const PRH1_SCENARIOS = {
     return observed
   } },
 
-  // 项目里的审稿提示词文件缺字段（主进程只核对 key 与语言，放行；渲染端判为结构不对）：英文界面点 AI 审稿，作者看到目录说明和文件路径，不露码。坏 JSON 在主进程先失败成 GENERATION_REQUEST_FAILED，走不到这里。
+  // 夹具用缺字段而非坏 JSON：坏 JSON 在主进程先失败，到不了渲染端诊断。
   'prh1-prompt-unreadable-en': { model: true, shell: 'stage', setup: seedStageSample, run: async context => {
     const dir = join(context.samplePath, '.ai-novel', 'prompts')
     await mkdir(dir, { recursive: true })
