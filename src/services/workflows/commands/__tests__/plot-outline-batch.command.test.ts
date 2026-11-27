@@ -166,7 +166,7 @@ interface IpcHarness {
 }
 
 interface HarnessOptions {
-  commitResult?: { success: boolean; error?: string }
+  commitResult?: { success: boolean; failure?: { code: string } }
   concurrentPartialUpdate?: Record<string, unknown>
   afterPartialWrite?: (
     checkpoint: CheckpointSnapshot,
@@ -970,7 +970,7 @@ ${'宗门封锁前夜，林舟发现了旧铁锤里的秘密，并沿着灵脉�
       synopsis_facts_fingerprint: 'old-fingerprint',
       world_building_result: 'old world phase',
     }, '', {
-      commitResult: { success: false, error: 'PROJECT_CORE_SYNOPSIS_CHANGED' },
+      commitResult: { success: false, failure: { code: 'PROJECT_CORE_SYNOPSIS_CHANGED' } },
       concurrentPartialUpdate: { world_building_result: 'concurrent world phase' },
     })
     const body = `第1–100章：完整终局\n${'主角遵循明确条件行动，结果逐章承接至终局。'.repeat(5)}`
@@ -999,7 +999,7 @@ ${'宗门封锁前夜，林舟发现了旧铁锤里的秘密，并沿着灵脉�
       synopsis_range: { from: 1, to: 100 },
       synopsis_facts_fingerprint: 'old-fingerprint',
     }, '', {
-      commitResult: { success: false, error: 'PROJECT_CORE_SYNOPSIS_CHANGED' },
+      commitResult: { success: false, failure: { code: 'PROJECT_CORE_SYNOPSIS_CHANGED' } },
     })
     const body = `第1–100章：完整终局\n${'主角遵循明确条件行动，结果逐章承接至终局。'.repeat(5)}`
     useLLMStore.setState({ defaultModelId: 'model-1' })

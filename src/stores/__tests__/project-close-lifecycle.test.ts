@@ -568,7 +568,7 @@ describe('project close lifecycle', () => {
   })
 
   it('keeps project state and tabs when database close reports a business failure', async () => {
-    mocks.invoke.mockResolvedValue({ success: false, error: 'database busy' })
+    mocks.invoke.mockResolvedValue({ success: false, failure: { code: 'IPC_HANDLER_FAILED' } })
 
     await expect(useProjectStore.getState().closeProject()).resolves.toBe(false)
 
@@ -576,7 +576,7 @@ describe('project close lifecycle', () => {
     expect(useEditorStore.getState().tabs).toHaveLength(1)
     expect(mocks.onProjectClosed).not.toHaveBeenCalled()
     expect(mocks.alertError).toHaveBeenCalledWith(
-      expect.stringContaining('database busy'),
+      expect.stringContaining('这次操作没有完成'),
       expect.objectContaining({ title: '关闭项目失败' }),
     )
   })
@@ -586,7 +586,7 @@ describe('project close lifecycle', () => {
       tabs: state.tabs.map(tab => ({ ...tab, content: '仍需保留', dirty: true })),
     }))
     mocks.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(true)
-    mocks.invoke.mockResolvedValue({ success: false, error: 'database busy' })
+    mocks.invoke.mockResolvedValue({ success: false, failure: { code: 'IPC_HANDLER_FAILED' } })
 
     await expect(useProjectStore.getState().closeProject()).resolves.toBe(false)
 

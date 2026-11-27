@@ -29,6 +29,7 @@ import type {
 } from '../../../electron/repositories/blueprint-repository'
 import { stripThinkingTags } from './workflow-utils'
 import { requireWorkflowProjectSession, workflowMainProcessError } from './workflow-project-session'
+import { specificWriteFailure } from '../specific-write-failure'
 import { authorError, caughtFailure, errorCodeOf } from '../../i18n/app-errors'
 import { failureCode, note } from '../../shared/failure'
 import { isWorkflowCancellation, WorkflowCancelledError } from './workflow-cancellation'
@@ -198,7 +199,7 @@ export async function saveChapterBlueprint(
 ): Promise<void> {
   const result = await ipc.invokeWithProjectSession(projectSession, 'db:blueprint-upsert', blueprint, expectedProjectPath)
   if (!result.success) {
-    throw workflowMainProcessError(interfaceLocale, result.error, '保存章节蓝图失败', 'Could not save the chapter blueprint.')
+    throw workflowMainProcessError(interfaceLocale, specificWriteFailure(result), '保存章节蓝图失败', 'Could not save the chapter blueprint.')
   }
 }
 
@@ -210,7 +211,7 @@ export async function saveAllBlueprints(
 ): Promise<void> {
   const result = await ipc.invokeWithProjectSession(projectSession, 'db:blueprint-upsert-many', blueprints, expectedProjectPath)
   if (!result.success) {
-    throw workflowMainProcessError(interfaceLocale, result.error, '保存章节蓝图失败', 'Could not save the chapter blueprints.')
+    throw workflowMainProcessError(interfaceLocale, specificWriteFailure(result), '保存章节蓝图失败', 'Could not save the chapter blueprints.')
   }
 }
 
@@ -238,7 +239,7 @@ export async function commitDirectoryBlueprintRange(
     expectedProjectPath,
   )
   if (!result.success || !result.receipt) {
-    throw workflowMainProcessError(interfaceLocale, result.error, '提交章节蓝图失败', 'Could not commit the chapter blueprints.')
+    throw workflowMainProcessError(interfaceLocale, specificWriteFailure(result), '提交章节蓝图失败', 'Could not commit the chapter blueprints.')
   }
   globalEventBus.emit('REFRESH_RESOURCE', {
     resources: ['blueprints'],

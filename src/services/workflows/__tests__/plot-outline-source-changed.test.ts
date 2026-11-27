@@ -37,8 +37,8 @@ function arrangeOutlineRejectedAtChapter7(rejection: string, lastChapterDone = f
   const view = { handle, status: 'running', operation: 'generate-plot-outline', nonReplayable: false, artifacts: [], plotOutline,
     budget: { maxAttempts: 32, maxRequestedOutputTokens: 2097152, maxRequestedOutputTokensPerAttempt: 32768, deadlineAt: 9999999999999 } } as MainGenerationRunView
   const execute = vi.fn(async () => { throw new Error(`Error invoking remote method 'generation:execute': Error: ${rejection}`) })
-  // 写库通道把异常收成失败值（db-controller 的 MUTATING_DATABASE_CHANNELS），不会让 invoke 拒绝。
-  const commit = vi.fn(async () => ({ success: false, error: String(new Error(rejection)) }))
+  // 写库通道把已登记的码收成失败值（db-controller 的 MUTATING_DATABASE_CHANNELS），不会让 invoke 拒绝。
+  const commit = vi.fn(async () => ({ success: false, failure: { code: rejection } }))
   const invoke = vi.fn(async (channel: string): Promise<unknown> => {
     if (channel === 'generation:begin' || channel === 'generation:read') return structuredClone(view)
     if (channel === 'generation:read-context') return { handle, modelId: 'model', operation: 'generate-plot-outline', plotOutline: structuredClone(plotOutline),

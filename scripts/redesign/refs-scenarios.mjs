@@ -134,7 +134,7 @@ const seedHundredChapters = context => seedStageSample(context, { totalChapters:
   for (let chapterNumber = STAGE_SAMPLE.titles.length + 1; chapterNumber <= 100; chapterNumber++) {
     const upserted = await invoke(page, 'db:blueprint-upsert', { chapterNumber, title: `潮汐第${chapterNumber}夜`, role: '发展', purpose: '推进灯塔与沉船的线索',
       keyEvents: '林岚在灯塔里找到新的线索', characters: [] }, projectPath, session)
-    assert.equal(upserted.success, true, upserted.error)
+    assert.equal(upserted.success, true, upserted.failure?.code)
   }
   for (let chapterNumber = 1; chapterNumber <= 100; chapterNumber++) {
     const drafts = await invoke(page, 'db:draft-list', chapterNumber, projectPath, session)

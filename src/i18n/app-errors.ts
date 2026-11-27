@@ -430,6 +430,10 @@ const ERROR_KEYS = {
   CONSISTENCY_EXEMPTION_WRITE_FAILED: 'error.consistencyExemptionWriteFailed',
   CHARACTER_ROSTER_WRITE_FAILED: 'error.characterRosterWriteFailed',
   DRAFT_WRITE_FAILED: 'error.draftWriteFailed',
+  BLUEPRINT_WRITE_FAILED: 'error.blueprintWriteFailed',
+  PROJECT_CORE_WRITE_FAILED: 'error.projectCoreWriteFailed',
+  PROJECT_CLEAR_FAILED: 'error.projectClearFailed',
+  PROJECT_CLEAR_RESTORE_FAILED: 'error.projectClearRestoreFailed',
   // 知识库与检索索引（#474 B3）：知识库页、设置里的检索索引检查、导入创作资料与定稿收入知识库按码说明。
   EMBEDDING_REQUEST_FAILED: 'error.embeddingRequestFailed',
   EMBEDDING_OLLAMA_NATIVE_URL: 'error.embeddingOllamaNativeUrl',

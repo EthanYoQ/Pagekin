@@ -152,9 +152,6 @@
   "src/services/generation/prompt-budget-failure.ts": {
     "knownAppErrorMessage": 1
   },
-  "src/services/project-clear-service.ts": {
-    "knownAppErrorMessage": 1
-  },
   "src/services/project-service.ts": {
     "displayedErrorMessage": 2,
     "englishWithReason": 3

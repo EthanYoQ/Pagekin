@@ -864,7 +864,7 @@ import type {
 } from './import-global-facts'
 
 export interface DatabaseChannels {
-  'db:close': { args: [expectedProjectPath: string]; return: { success: boolean } }
+  'db:close': { args: [expectedProjectPath: string]; return: { success: boolean; failure?: Failure } }
 
   'db:project-core-get': {
     args: [expectedProjectPath: string]
@@ -872,21 +872,21 @@ export interface DatabaseChannels {
   }
   'db:project-core-update': {
     args: [data: Partial<ProjectCoreData>, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'db:project-core-commit-generated': {
     args: [request: { data: Partial<ProjectCoreData>; aiSources?: AiSources; generationRunHandle: import('../services/generation/generation-runtime').MainGenerationRunHandle }, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'db:project-core-synopsis-commit': {
     args: [request: ProjectCoreSynopsisCommitRequest, expectedProjectPath: string]
-    return: { success: boolean; receipt?: import('./plot-outline-contract').PlotOutlineAuthorEditReceipt; error?: string }
+    return: { success: boolean; receipt?: import('./plot-outline-contract').PlotOutlineAuthorEditReceipt; failure?: Failure }
   }
   'db:import-global-facts-commit': {
     args: [request: ImportGlobalFactsRequest, expectedProjectPath: string]
     return: { success: boolean; receipt?: ImportGlobalFactsReceipt; failure?: Failure }
   }
-  'db:project-clear-generated-data': { args: [options: ProjectClearOptions, expectedProjectPath: string]; return: { success: boolean; cleared?: ProjectClearScope[]; physicalFilesDeleted?: number; error?: string } }
+  'db:project-clear-generated-data': { args: [options: ProjectClearOptions, expectedProjectPath: string]; return: { success: boolean; cleared?: ProjectClearScope[]; physicalFilesDeleted?: number; failure?: Failure } }
   'db:import-run-prepare-inspection': {
     args: [request: ImportRunPrepareFromInspectionRequest, expectedProjectPath: string]
     return: ImportRunPrepareFromInspectionResult
@@ -938,11 +938,11 @@ export interface DatabaseChannels {
 
   'db:blueprint-get-all': { args: [expectedProjectPath: string]; return: BlueprintData[] }
   'db:blueprint-get': { args: [chapterNumber: number, expectedProjectPath: string]; return: BlueprintData | null }
-  'db:blueprint-upsert': { args: [data: BlueprintData, expectedProjectPath: string]; return: { success: boolean; error?: string } }
-  'db:blueprint-upsert-many': { args: [items: BlueprintData[], expectedProjectPath: string]; return: { success: boolean; error?: string } }
+  'db:blueprint-upsert': { args: [data: BlueprintData, expectedProjectPath: string]; return: { success: boolean; failure?: Failure } }
+  'db:blueprint-upsert-many': { args: [items: BlueprintData[], expectedProjectPath: string]; return: { success: boolean; failure?: Failure } }
   'db:blueprint-commit-range': {
     args: [request: BlueprintRangeCommitRequest, expectedProjectPath: string]
-    return: { success: boolean; receipt?: BlueprintRangeCommitReceipt; error?: string }
+    return: { success: boolean; receipt?: BlueprintRangeCommitReceipt; failure?: Failure }
   }
   'db:blueprint-character-sync-list-pending': {
     args: [expectedProjectPath: string]
@@ -959,9 +959,9 @@ export interface DatabaseChannels {
     ]
     return: { success: boolean; operation?: BlueprintCharacterSyncOperation; failure?: Failure }
   }
-  'db:blueprint-update-notes': { args: [chapterNumber: number, notes: string, expectedProjectPath: string]; return: { success: boolean; updated?: boolean; error?: string } }
-  'db:blueprint-delete': { args: [chapterNumber: number, expectedProjectPath: string]; return: { success: boolean; error?: string } }
-  'db:blueprint-clear-all': { args: [expectedProjectPath: string]; return: { success: boolean; error?: string } }
+  'db:blueprint-update-notes': { args: [chapterNumber: number, notes: string, expectedProjectPath: string]; return: { success: boolean; updated?: boolean; failure?: Failure } }
+  'db:blueprint-delete': { args: [chapterNumber: number, expectedProjectPath: string]; return: { success: boolean; failure?: Failure } }
+  'db:blueprint-clear-all': { args: [expectedProjectPath: string]; return: { success: boolean; failure?: Failure } }
 
   'db:character-get-all': { args: [expectedProjectPath: string]; return: CharacterData[] }
   'db:character-roster-read': {

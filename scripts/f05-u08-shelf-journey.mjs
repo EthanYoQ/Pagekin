@@ -131,7 +131,7 @@ async function seed(app, page, roots) {
   const context = { projectId: projects.a.id, projectPath: projects.a.path, leaseId: opened.project.sessionLease }
   const blueprint = await invoke(page, 'db:blueprint-upsert', { chapterNumber: 1, title: '旧车站', role: '发展',
     purpose: '调查来信', keyEvents: '发现线索', characters: [] }, projects.a.path, context)
-  assert.equal(blueprint.success, true, blueprint.error)
+  assert.equal(blueprint.success, true, blueprint.failure?.code)
   const draft = await invoke(page, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
     content: excerpt, wordCount: 12 }, projects.a.path, context)
   assert.equal(draft.success, true, draft.failure?.code)

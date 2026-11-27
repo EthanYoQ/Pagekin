@@ -160,9 +160,9 @@ describe('clearProjectData', () => {
   })
 
   it('surfaces failed clear operations', async () => {
-    vi.mocked(ipc.invokeWithProjectSession).mockResolvedValueOnce({ success: false, error: '数据库忙' } as never)
+    vi.mocked(ipc.invokeWithProjectSession).mockResolvedValueOnce({ success: false, failure: { code: 'PROJECT_CLEAR_FAILED', note: { key: 'error.projectClearFailed' } } } as never)
 
-    await expect(clearProjectData({ generatedText: true }, projectSession)).rejects.toThrow('数据库忙')
+    await expect(clearProjectData({ generatedText: true }, projectSession)).rejects.toThrow('作品内容没有被清除。这次清除没能完成，请再试一次。')
     expect(openProject).not.toHaveBeenCalled()
   })
 

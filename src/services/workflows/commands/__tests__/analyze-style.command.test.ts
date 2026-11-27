@@ -34,7 +34,7 @@ function modelReply(command: RuntimeAnalyzeWritingStyleCommand) {
   return { mockResolvedValue: (content: string) => spy.mockResolvedValue({ content, finishReason: 'stop', receipt: {} }) }
 }
 
-function stubIpcInvoke(updateResult: { success: boolean; error?: string } = { success: true }) {
+function stubIpcInvoke(updateResult: { success: boolean; failure?: { code: string; note?: { key: string } } } = { success: true }) {
   const invoke = vi.fn((channel: string) => {
     if (channel === 'prompt:load-global') return Promise.resolve({ templates: [], diagnostics: [] })
     if (channel === 'db:project-core-update') return Promise.resolve(updateResult)
@@ -178,7 +178,7 @@ describe('AnalyzeWritingStyleCommand with imported samples', () => {
   })
 
   it('does not update in-memory writing style when DB persistence fails', async () => {
-    stubIpcInvoke({ success: false, error: '项目数据库未打开' })
+    stubIpcInvoke({ success: false, failure: { code: 'PROJECT_CORE_WRITE_FAILED', note: { key: 'error.projectCoreWriteFailed' } } })
     const command = new AnalyzeWritingStyleCommand({
       sampleTexts: ['短句密集，动作推进快，对话有压迫感。'],
     })
@@ -186,12 +186,12 @@ describe('AnalyzeWritingStyleCommand with imported samples', () => {
       '节奏偏快，动作描写密集，对话短促有压迫感。',
     )
 
-    await expect(command.execute({ step: {}, context, callbacks })).rejects.toThrow('项目数据库未打开')
+    await expect(command.execute({ step: {}, context, callbacks })).rejects.toThrow(/^文风特征保存失败$/u)
     expect(useProjectStore.getState().currentProject?.novelConfig.writingStyle).toBe('')
   })
 
   it('英文界面下主进程拒绝保存文风：报英文说明，不转出主进程的中文原文（#466）', async () => {
-    stubIpcInvoke({ success: false, error: '项目数据库未打开' })
+    stubIpcInvoke({ success: false, failure: { code: 'PROJECT_CORE_WRITE_FAILED', note: { key: 'error.projectCoreWriteFailed' } } })
     const command = new AnalyzeWritingStyleCommand({ sampleTexts: ['短句密集，动作推进快。'] })
     modelReply(command).mockResolvedValue('Tight pacing.')
 

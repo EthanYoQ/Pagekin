@@ -4,7 +4,8 @@ import { useDraftStore } from '../stores/draft-store'
 import { useEditorStore, type EditorTab } from '../stores/editor-store'
 import { useWorkflowStore } from '../stores/workflow-store'
 import { currentInterfaceLocale, useLocaleStore } from '../stores/locale-store'
-import { knownAppErrorMessage } from '../i18n/app-errors'
+import { failureText, resultFailure } from '../i18n/app-errors'
+import { note, type Failure } from '../shared/failure'
 import { globalEventBus } from '../shared/event-bus'
 import { parseJsonOrUndefined } from '../shared/ignore-failure'
 import { ledgerProjectKeys } from '../stores/editor-unsaved'
@@ -96,11 +97,11 @@ function affectedHiddenDraftLabels(
   return [...labels]
 }
 
-function assertResult(result: { success: boolean; error?: string }): void {
+function assertResult(result: { success: boolean; failure?: Failure }): void {
   if (!result.success) {
-    const { locale, text } = useLocaleStore.getState()
-    throw new Error(knownAppErrorMessage(currentInterfaceLocale(), result.error)
-      ?? (result.error && locale !== 'en-US' ? result.error : text('清除项目生成内容失败', 'The generated content could not be cleared.')))
+    throw new Error(failureText(currentInterfaceLocale(), resultFailure(result), {
+      fallback: note('清除项目生成内容失败', 'The generated content could not be cleared.'),
+    }))
   }
 }
 

@@ -63,12 +63,22 @@ function moveGeneratedFilesToTrash(projectPath: string): MovedFile[] {
     }
 }
 
+/** 挪不回去的文件留在废纸篓里，其余照挪；有留下的就报码，让作者知道去哪找。 */
 function restoreMovedFiles(moved: MovedFile[]): void {
+    let stranded = false
     for (const item of [...moved].reverse()) {
-        if (fs.existsSync(item.to) && !fs.existsSync(item.from)) {
+        if (!fs.existsSync(item.to)) continue
+        if (fs.existsSync(item.from)) {
+            stranded = true
+            continue
+        }
+        try {
             fs.renameSync(item.to, item.from)
+        } catch {
+            stranded = true
         }
     }
+    if (stranded) throw new Error('PROJECT_CLEAR_RESTORE_FAILED')
 }
 
 function removeMovedFiles(moved: MovedFile[]): void {

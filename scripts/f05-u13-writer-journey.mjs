@@ -116,7 +116,7 @@ async function waitLastRunFailed(page, title) {
 }
 async function setWordsPerChapter(page, projectPath, context, wordsPerChapter) {
   const result = await invoke(page, 'db:project-core-update', { wordsPerChapter }, projectPath, context)
-  assert.equal(result.success, true, result.error)
+  assert.equal(result.success, true, result.failure?.code)
 }
 
 async function main() {
@@ -353,7 +353,7 @@ async function main() {
     for (const [chapterNumber, title] of [[1, '潮门'], [2, '回声']]) {
       const saved = await invoke(page, 'db:blueprint-upsert', { chapterNumber, title, role: '发展',
         purpose: '调查潮门', keyEvents: '发现线索', characters: [] }, batchCreated.projectPath, batchContext)
-      assert.equal(saved.success, true, saved.error)
+      assert.equal(saved.success, true, saved.failure?.code)
     }
     exits.push({ phase: 'before-batch', ...await quit(app) }); app = null
     session = await launch(fixturePort)
@@ -470,7 +470,7 @@ async function main() {
     await setWordsPerChapter(page, candidateCreated.projectPath, candidateContext, 200)
     const candidateBlueprint = await invoke(page, 'db:blueprint-upsert', { chapterNumber: 1, title: '石墙',
       role: '发展', purpose: '寻找暗门', keyEvents: '发现通道', characters: [] }, candidateCreated.projectPath, candidateContext)
-    assert.equal(candidateBlueprint.success, true, candidateBlueprint.error)
+    assert.equal(candidateBlueprint.success, true, candidateBlueprint.failure?.code)
     exits.push({ phase: 'before-candidate', ...await quit(app) }); app = null
     session = await launch(fixturePort)
     app = session.app
@@ -573,7 +573,7 @@ async function main() {
     await setWordsPerChapter(page, cancelCreated.projectPath, cancelContext, 100)
     const cancelBlueprint = await invoke(page, 'db:blueprint-upsert', { chapterNumber: 1, title: '灯影',
       role: '发展', purpose: '沿岸观察', keyEvents: '发现异常', characters: [] }, cancelCreated.projectPath, cancelContext)
-    assert.equal(cancelBlueprint.success, true, cancelBlueprint.error)
+    assert.equal(cancelBlueprint.success, true, cancelBlueprint.failure?.code)
     exits.push({ phase: 'before-cancel', ...await quit(app) }); app = null
     session = await launch(fixturePort)
     app = session.app

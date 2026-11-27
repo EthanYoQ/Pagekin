@@ -458,7 +458,7 @@ describe('workflow mutation failure boundaries', () => {
   it('stops the chapter-notes post-process step when blueprint persistence fails', async () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'db:blueprint-update-notes') {
-        return { success: false, error: 'notes rejected' }
+        return { success: false, failure: { code: 'IPC_HANDLER_FAILED' } }
       }
       throw new Error(`unexpected IPC: ${channel}`)
     })
@@ -479,7 +479,7 @@ describe('workflow mutation failure boundaries', () => {
     const stepCallbacks = callbacks()
 
     await expect(step!.executor(stepCallbacks, context()))
-      .rejects.toThrow('notes rejected')
+      .rejects.toMatchObject({ code: 'IPC_HANDLER_FAILED' })
     expect(stepCallbacks.log).not.toHaveBeenCalledWith(expect.stringContaining('剧情要点提取完成'))
   })
 
@@ -489,7 +489,7 @@ describe('workflow mutation failure boundaries', () => {
       if (channel === 'db:blueprint-update-notes') {
         persistenceAttempts += 1
         return persistenceAttempts === 1
-          ? { success: false, error: 'transient notes failure' }
+          ? { success: false, failure: { code: 'IPC_HANDLER_FAILED' } }
           : { success: true }
       }
       throw new Error(`unexpected IPC: ${channel}`)
@@ -500,7 +500,7 @@ describe('workflow mutation failure boundaries', () => {
       { path: PROJECT_PATH }, 1, '第一章', '正文', { complete },
     ).find(candidate => candidate.key === 'chapter_notes')!
 
-    await expect(step.executor(callbacks(), context())).rejects.toThrow('transient notes failure')
+    await expect(step.executor(callbacks(), context())).rejects.toMatchObject({ code: 'IPC_HANDLER_FAILED' })
     await expect(step.executor(callbacks(), context())).resolves.toBeUndefined()
 
     expect(complete).toHaveBeenCalledOnce()
