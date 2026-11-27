@@ -9,9 +9,11 @@ const notifySwitch = page => page.getByRole('switch', { name: '在后台时通�
 
 export const M33SMALL_SCENARIOS = {
   'm33small-config-damaged': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ page, roots, onCleanup }) => {
-    const config = path.join(roots.canonical, 'config.json')
-    const original = fs.readFileSync(config)
-    onCleanup(() => fs.writeFileSync(config, original))
+    const recent = fs.readdirSync(roots.canonical, { recursive: true }).find(file => path.basename(file) === 'recent-projects.json')
+    assert.ok(recent, '打开示例作品后全局数据目录里有最近项目文件')
+    const config = path.join(roots.canonical, path.dirname(recent), 'config.json')
+    const original = fs.existsSync(config) ? fs.readFileSync(config) : undefined
+    onCleanup(() => original ? fs.writeFileSync(config, original) : fs.rmSync(config))
     fs.writeFileSync(config, '{"locale":')
     await stage.openSettings(page)
     await stage.showSettingsPage(page, '外观')
