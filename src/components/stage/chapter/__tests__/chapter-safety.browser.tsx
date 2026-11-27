@@ -392,7 +392,9 @@ describe('标签与外壳', () => {
     await mount()
     await act(async () => openChapterPlan(3, BLUEPRINT.title, SESSION))
     await expect.element(page.getByText('删除正文后的清理没有完成')).toBeVisible()
-    await expect.element(page.getByText('正文文件被占用')).toBeVisible()
+    // 旧版本记下的中文原因也是主进程原文，同样只给通用说明。
+    await expect.element(page.getByText(translate('zh-CN', 'error.unregisteredCode'), { exact: false })).toBeVisible()
+    expect(document.body.textContent).not.toContain('正文文件被占用')
     const success = vi.spyOn(toast, 'success')
     await click('重试清理')
     await vi.waitFor(() => expect(backend.writes('chapter:retry-deletion').map(args => args[0])).toEqual(['deletion-1']))
@@ -430,6 +432,17 @@ describe('标签与外壳', () => {
     await expect.element(page.getByText(translate(locale, 'error.unregisteredCode'), { exact: false })).toBeVisible()
     await expect.element(page.getByText(nativeReason, { exact: false })).toBeVisible()
     expect(document.body.textContent).not.toMatch(/CHAPTER_DELETE_|KNOWLEDGE_BASE_NATIVE_UNAVAILABLE|EBUSY|resource busy/u)
+  })
+
+  it.each(['zh-CN', 'en-US'] as const)('删除清理记下的系统原文带着中文路径也不显示（%s）', async locale => {
+    useLocaleStore.setState({ locale })
+    backend.state.incompleteDeletions = [{ operationId: 'deletion-1', chapterNumber: 3, draftId: 9, chapterTitle: '雨夜车站', status: 'failed',
+      manuscriptStatus: 'failed', manuscriptError: "EBUSY: resource busy or locked, unlink 'D:\\小说\\第3章.md'",
+      knowledgeStatus: 'done', legacyKnowledgeAuthorization: 'not-required' }]
+    await mount()
+    await act(async () => openChapterPlan(3, BLUEPRINT.title, SESSION))
+    await expect.element(page.getByText(translate(locale, 'error.unregisteredCode'), { exact: false })).toBeVisible()
+    expect(document.body.textContent).not.toMatch(/EBUSY|resource busy|小说\\第3章/u)
   })
 
   it('删除正文后清理没做完、这一章另有未定稿的稿：那一稿的单章视图也提示并可以重试清理', async () => {
