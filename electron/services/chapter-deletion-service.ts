@@ -100,8 +100,6 @@ function purgeTargets(request: PurgeTrashRequest): readonly string[] | 'all' | n
     : null
 }
 
-const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error)
-
 export class ChapterDeletionService {
   private readonly createOperationId: () => string
   private readonly cleaner: ChapterDeletionProjectionCleaner
@@ -242,10 +240,11 @@ export class ChapterDeletionService {
         return {
           ...restored,
           publicationStatus: published.publicationStatus ?? 'pending',
-          ...(published.success ? {} : { publicationError: published.error ?? 'FINALIZATION_PUBLICATION_FAILED' }),
+          ...(published.success ? {} : { publicationFailed: true }),
         }
       } catch (error) {
-        return { ...restored, publicationStatus: 'pending', publicationError: messageOf(error) }
+        console.warn('[chapter-deletion] 恢复后重发实体稿失败：', error)
+        return { ...restored, publicationStatus: 'pending', publicationFailed: true }
       }
     })
   }

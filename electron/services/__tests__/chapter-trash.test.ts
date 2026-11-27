@@ -193,7 +193,7 @@ describe('恢复', () => {
     const restored = await s.restore(projectRoot, 'project', { deletionId: 'delete-a', draftId: current, expectedMode: 'into-gap' })
 
     expect(restored).toEqual({ success: true, outcome: 'restored', chapterNumber: 2, draftId: current,
-      finalizationId: currentRecord.finalizationId, publicationStatus: 'pending', publicationError: 'PROJECT_CONTEXT_CHANGED' })
+      finalizationId: currentRecord.finalizationId, publicationStatus: 'pending', publicationFailed: true })
     expect(statuses(old, current)).toEqual(['superseded', 'finalized'])
     expect(FinalizationRepository.getByDraftId(current)).toMatchObject({ publicationStatus: 'pending' })
   })
@@ -661,7 +661,7 @@ describe('排队的回收站操作跨作品切换', () => {
     publish.release()
 
     expect(await restoring).toMatchObject({ success: true, outcome: 'restored', publicationStatus: 'pending',
-      publicationError: expect.stringContaining('PROJECT_CONTEXT_CHANGED') })
+      publicationFailed: true })
     expect(FinalizationRepository.get(record.finalizationId)).toEqual(otherBefore)
     initProjectDatabase(projectRoot)
     expect(FinalizationRepository.get(record.finalizationId)).toMatchObject({ publicationStatus: 'pending' })
