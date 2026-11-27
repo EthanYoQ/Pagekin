@@ -3,6 +3,7 @@ import { ipc } from '../../../services/ipc-client'
 import { launchCreativeWorkflow } from '../../../services/workflows/creative-workflow-launcher'
 import { parseTextBlueprintsStrict } from '../../../services/workflows/directory-workflow'
 import { workflowMainProcessError } from '../../../services/workflows/workflow-project-session'
+import { specificWriteFailure } from '../../../services/specific-write-failure'
 import { authorError, displayedErrorMessage } from '../../../i18n/app-errors'
 import { note } from '../../../shared/failure'
 import { copyLocale } from '../../../i18n/core'
@@ -81,7 +82,7 @@ export function useBlueprintRecovery(tab: EditorTab, projectKey: string) {
         ...submission.request, authorRecovery: { ...submission.request.authorRecovery, leaseEpoch: candidate.leaseEpoch },
       }, projectKey)
       if (!result.success && !pending && isCurrentProjectSession(session)) useEditorStore.getState().setPlanningSaveSnapshot(tab.id, undefined)
-      if (!result.success) throw workflowMainProcessError(currentInterfaceLocale(), result.error, '保存恢复蓝图失败', 'Could not save the recovered blueprints.')
+      if (!result.success) throw workflowMainProcessError(currentInterfaceLocale(), specificWriteFailure(result), '保存恢复蓝图失败', 'Could not save the recovered blueprints.')
       if (!isCurrentProjectSession(session)) return
       useEditorStore.getState().setPlanningSaveSnapshot(tab.id, { ...submission, status: 'saved' })
       useEditorStore.getState().settleTabSave(tab.id, submission)

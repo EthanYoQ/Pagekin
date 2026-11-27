@@ -1,6 +1,7 @@
 import { authorError, failureText, importStopFailure, resultFailure } from '../../../i18n/app-errors'
 import type { ErrorDisplayLocale } from '../../../i18n/types'
 import { AuthorError, codeOf, note, type Failure } from '../../../shared/failure'
+import { specificWriteFailure } from '../../specific-write-failure'
 import { IMPORT_SLOT_MAX_REQUESTS } from '../../../shared/import-generation'
 import type { NovelConfig } from '../../../shared/ipc-channels'
 import type { ImportGenerationContext, ImportGenerationSlot } from '../../../shared/import-generation'
@@ -844,7 +845,7 @@ export class InferBlueprintsPerChapterCommand extends BaseWorkflowCommand<void> 
       if (!commit.success || !commit.receipt) {
         throw workflowMainProcessError(
           context.interfaceLocale,
-          commit.error,
+          specificWriteFailure(commit),
           '导入蓝图未能作为完整范围一次提交并回读。',
           'The imported blueprints could not be committed and read back as one complete range.',
         )

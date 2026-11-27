@@ -5,6 +5,7 @@ import { useProjectStore } from '../../../stores/project-store'
 import { composePromptSystemRole, resolvePromptTemplate } from '../../prompt-templates'
 import { BasePromptBuilder } from '../../prompts/prompt-builder'
 import { ipc } from '../../ipc-client'
+import { specificWriteFailure } from '../../specific-write-failure'
 import { projectSessionContextFromProject, sameProjectSessionContext } from '../../../shared/project-session-context'
 import {
   requireWorkflowProjectSession,
@@ -158,7 +159,7 @@ export class AnalyzeWritingStyleCommand extends BaseWorkflowCommand<string> {
       } else {
         const saveResult = await ipc.invokeWithProjectSession(projectSession, 'db:project-core-update',
           { writingStyle: cleanResult }, context.projectPath)
-        if (!saveResult.success) throw workflowMainProcessError(context.interfaceLocale, saveResult.error, '文风特征保存失败', 'Failed to save the writing-style profile.')
+        if (!saveResult.success) throw workflowMainProcessError(context.interfaceLocale, specificWriteFailure(saveResult), '文风特征保存失败', 'Failed to save the writing-style profile.')
       }
       if (!sameProjectSessionContext(
         projectSession,

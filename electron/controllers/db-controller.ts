@@ -1,4 +1,4 @@
-import { ipcMain, type IpcMainInvokeEvent } from 'electron'
+import type { IpcMainInvokeEvent } from 'electron'
 import { IPC_HANDLER_FAILED, registeredErrorCode, wireNote } from '../../src/i18n/app-errors'
 import { failureCode, type WireFailure } from '../../src/shared/failure'
 import { isProjectSessionContext } from '../../src/shared/project-session-context'
@@ -144,18 +144,6 @@ async function inProjectSession(handler: ProjectDatabaseHandler, event: unknown,
   return await (handler as (event: unknown, ...handlerArgs: unknown[]) => unknown)(event, ...args)
 }
 
-function registerProjectDatabaseHandler(channel: string, handler: ProjectDatabaseHandler): void {
-  ipcMain.handle(channel, async (event, ...received: unknown[]) => {
-    const [context, args] = withoutSessionContext(received)
-    try {
-      return await inProjectSession(handler, event, context, args)
-    } catch (error) {
-      if (MUTATING_DATABASE_CHANNELS.has(channel)) return { success: false, error: String(error) }
-      throw error
-    }
-  })
-}
-
 function registerMigratedDatabaseHandler(channel: string, handler: ProjectDatabaseHandler, writeFailed: WireFailure): void {
   handle(channel, async (event, ...received: unknown[]) => {
     try {
@@ -170,9 +158,18 @@ function registerMigratedDatabaseHandler(channel: string, handler: ProjectDataba
 }
 
 export function registerDatabaseController() {
-  // 所有 db:* 都通过同一会话门禁；下面现有 handler 保留业务参数与错误语义。
-  const ipcMain = { handle: registerProjectDatabaseHandler }
-  ipcMain.handle('db:close', async (_event, expectedProjectPath: string) => {
+  const unexplained = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, { code: IPC_HANDLER_FAILED }),
+  }
+  // 失败时故事设定没有改动：update、大纲提交各是一条语句，生成提交与作者恢复各在一个事务里。
+  const projectCore = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
+      code: 'PROJECT_CORE_WRITE_FAILED',
+      note: wireNote('error.projectCoreWriteFailed'),
+    }),
+  }
+
+  unexplained.handle('db:close', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     // 导出 worker 还在读这本书时不能关库；等它停完后作品可能已换或被重新打开，路径和会话都再核对一次。
     // 导出登记用的是会话作品根；传入路径的大小写可能与它不同。
@@ -188,43 +185,36 @@ export function registerDatabaseController() {
   // ============================================================
   // 1. project_core — 项目主台账
   // ============================================================
-  ipcMain.handle('db:project-core-get', async (_event, expectedProjectPath: string) => {
+  projectCore.handle('db:project-core-get', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return ProjectCoreRepository.get()
   })
 
-  ipcMain.handle('db:project-core-update', async (
+  projectCore.handle('db:project-core-update', async (
     _event,
     data: Partial<ProjectCoreData>,
     expectedProjectPath: string,
   ) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      ProjectCoreRepository.update(data)
-      return { success: true }
-    } catch (err) {
-      console.error('[db:project-core-update] 失败:', err)
-      return { success: false, error: String(err) }
-    }
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    ProjectCoreRepository.update(data)
+    return { success: true }
   })
 
-  ipcMain.handle('db:project-core-commit-generated', async (
+  projectCore.handle('db:project-core-commit-generated', async (
     _event, request: { data: Partial<ProjectCoreData>; aiSources?: AiSources; generationRunHandle: MainGenerationRunHandle }, expectedProjectPath: string,
   ) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      const database = getProjectDb()
-      if (!database || !request.generationRunHandle) throw new Error('GENERATION_OWNER_REQUIRED')
-      database.transaction(() => withGenerationAgentChildEffect(request.generationRunHandle, () => {
-        assertGenerationSourcesCurrent(request.generationRunHandle)
-        ProjectCoreRepository.update(request.data)
-        if (request.aiSources) ProjectCoreRepository.setAiSources(request.aiSources)
-      })).immediate()
-      return { success: true }
-    } catch (error) { return { success: false, error: String(error) } }
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    const database = getProjectDb()
+    if (!database || !request.generationRunHandle) throw new Error('GENERATION_OWNER_REQUIRED')
+    database.transaction(() => withGenerationAgentChildEffect(request.generationRunHandle, () => {
+      assertGenerationSourcesCurrent(request.generationRunHandle)
+      ProjectCoreRepository.update(request.data)
+      if (request.aiSources) ProjectCoreRepository.setAiSources(request.aiSources)
+    })).immediate()
+    return { success: true }
   })
 
-  ipcMain.handle('db:project-core-synopsis-commit', async (
+  projectCore.handle('db:project-core-synopsis-commit', async (
     _event,
     request: ProjectCoreSynopsisCommitRequest,
     expectedProjectPath: string,
@@ -245,7 +235,7 @@ export function registerDatabaseController() {
     const database = getProjectDb()
     if (request.generationRunHandle && !database) throw new Error('GENERATION_DATABASE_NOT_READY')
     if (!(request.generationRunHandle ? database!.transaction(() => withGenerationAgentChildEffect(request.generationRunHandle!, commit)).immediate() : commit())) {
-      return { success: false, error: 'PROJECT_CORE_SYNOPSIS_CHANGED' }
+      return { success: false, failure: { code: 'PROJECT_CORE_SYNOPSIS_CHANGED' } }
     }
     return { success: true }
   })
@@ -266,22 +256,18 @@ export function registerDatabaseController() {
     return { success: true, receipt: ImportGlobalFactsRepository.commit(request) }
   })
 
-  ipcMain.handle('db:project-clear-generated-data', async (
+  // 失败时什么都没清：库内清除在一个事务里，挪进废纸篓的文件在事务失败时挪回原处。
+  registerMigratedDatabaseHandler('db:project-clear-generated-data', async (
     _event,
     options: ProjectClearOptions,
     expectedProjectPath: string,
   ) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      const session = projectAccess.captureCurrentSession()
-      const result = ProjectClearRepository.clearGeneratedData(options,
-        session ? { projectId: session.projectId, epoch: session.leaseId } : undefined)
-      return { success: true, ...result }
-    } catch (err) {
-      console.error('[db:project-clear-generated-data] 失败:', err)
-      return { success: false, error: String(err) }
-    }
-  })
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    const session = projectAccess.captureCurrentSession()
+    const result = ProjectClearRepository.clearGeneratedData(options,
+      session ? { projectId: session.projectId, epoch: session.leaseId } : undefined)
+    return { success: true, ...result }
+  }, { code: 'PROJECT_CLEAR_FAILED', note: wireNote('error.projectClearFailed') })
 
   importRuns.handle('db:import-run-prepare-inspection', async (
     event,
@@ -557,64 +543,60 @@ export function registerDatabaseController() {
   // ============================================================
   // 2. blueprints — 章节蓝图
   // ============================================================
-  ipcMain.handle('db:blueprint-get-all', async (_event, expectedProjectPath: string) => {
+  // 失败时已有的蓝图都还在：upsert、delete 各是一条语句，批量写、按范围提交、清空各在一个事务里。
+  const blueprints = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
+      code: 'BLUEPRINT_WRITE_FAILED',
+      note: wireNote('error.blueprintWriteFailed'),
+    }),
+  }
+
+  blueprints.handle('db:blueprint-get-all', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return BlueprintRepository.getAll()
   })
 
-  ipcMain.handle('db:blueprint-get', async (_event, chapterNumber: number, expectedProjectPath: string) => {
+  blueprints.handle('db:blueprint-get', async (_event, chapterNumber: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return BlueprintRepository.getByChapter(chapterNumber)
   })
 
-  ipcMain.handle('db:blueprint-upsert', async (_event, data: BlueprintData, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      BlueprintRepository.upsert(data)
-      return { success: true }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  blueprints.handle('db:blueprint-upsert', async (_event, data: BlueprintData, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    BlueprintRepository.upsert(data)
+    return { success: true }
   })
 
-  ipcMain.handle('db:blueprint-upsert-many', async (_event, items: BlueprintData[], expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      BlueprintRepository.upsertMany(items)
-      return { success: true }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  blueprints.handle('db:blueprint-upsert-many', async (_event, items: BlueprintData[], expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    BlueprintRepository.upsertMany(items)
+    return { success: true }
   })
 
-  ipcMain.handle('db:blueprint-commit-range', async (
+  blueprints.handle('db:blueprint-commit-range', async (
     _event,
     request: BlueprintRangeCommitRequest,
     expectedProjectPath: string,
   ) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      if (request.authorRecovery) {
-        const database = getProjectDb()
-        if (!database) throw new Error('GENERATION_DATABASE_NOT_READY')
-        return { success: true, receipt: database.transaction(() => commitGenerationBlueprintAuthorEdit(request)).immediate() }
-      }
-      if (!request.generationRunHandle) return { success: true, receipt: BlueprintRepository.commitRange(request) }
-      const database = getProjectDb(), requested = request.generationRequestedRange ?? { startChapter: request.startChapter, endChapter: request.endChapter }
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    if (request.authorRecovery) {
+      const database = getProjectDb()
       if (!database) throw new Error('GENERATION_DATABASE_NOT_READY')
-      if (!Number.isSafeInteger(requested.startChapter) || !Number.isSafeInteger(requested.endChapter)
-        || requested.startChapter !== request.startChapter || requested.endChapter < request.endChapter || requested.endChapter - requested.startChapter >= 10000)
-        throw new Error('GENERATION_DIRECTORY_RANGE_INVALID')
-      const commit = () => {
-        const committed = BlueprintRepository.commitRange(request, () => assertGenerationSourcesCurrent(request.generationRunHandle!, requested))
-        return { ...committed, generationProgress: recordGenerationDirectoryCommit(request.generationRunHandle!, requested, committed) }
-      }
-      const receipt = database.transaction(() => BlueprintRepository.getCommittedRangeOperation(request.operationId)
-        ? commit() : withGenerationAgentChildEffect(request.generationRunHandle!, commit)).immediate()
-      return { success: true, receipt }
-    } catch (err) {
-      return { success: false, error: String(err) }
+      return { success: true, receipt: database.transaction(() => commitGenerationBlueprintAuthorEdit(request)).immediate() }
     }
+    if (!request.generationRunHandle) return { success: true, receipt: BlueprintRepository.commitRange(request) }
+    const database = getProjectDb(), requested = request.generationRequestedRange ?? { startChapter: request.startChapter, endChapter: request.endChapter }
+    if (!database) throw new Error('GENERATION_DATABASE_NOT_READY')
+    if (!Number.isSafeInteger(requested.startChapter) || !Number.isSafeInteger(requested.endChapter)
+      || requested.startChapter !== request.startChapter || requested.endChapter < request.endChapter || requested.endChapter - requested.startChapter >= 10000)
+      throw new Error('GENERATION_DIRECTORY_RANGE_INVALID')
+    const commit = () => {
+      const committed = BlueprintRepository.commitRange(request, () => assertGenerationSourcesCurrent(request.generationRunHandle!, requested))
+      return { ...committed, generationProgress: recordGenerationDirectoryCommit(request.generationRunHandle!, requested, committed) }
+    }
+    const receipt = database.transaction(() => BlueprintRepository.getCommittedRangeOperation(request.operationId)
+      ? commit() : withGenerationAgentChildEffect(request.generationRunHandle!, commit)).immediate()
+    return { success: true, receipt }
   })
 
   const roster = {
@@ -653,34 +635,22 @@ export function registerDatabaseController() {
     }
   })
 
-  ipcMain.handle('db:blueprint-update-notes', async (_event, _chapterNumber: number, _notes: string, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      // Derived finalization notes are committed with their artifact and ACK in one main transaction.
-      throw new Error('GENERATION_FINALIZATION_ADMISSION_REQUIRED')
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  unexplained.handle('db:blueprint-update-notes', async (_event, _chapterNumber: number, _notes: string, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    // Derived finalization notes are committed with their artifact and ACK in one main transaction.
+    throw new Error('GENERATION_FINALIZATION_ADMISSION_REQUIRED')
   })
 
-  ipcMain.handle('db:blueprint-delete', async (_event, chapterNumber: number, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      BlueprintRepository.delete(chapterNumber)
-      return { success: true }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  blueprints.handle('db:blueprint-delete', async (_event, chapterNumber: number, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    BlueprintRepository.delete(chapterNumber)
+    return { success: true }
   })
 
-  ipcMain.handle('db:blueprint-clear-all', async (_event, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      BlueprintRepository.clearAll()
-      return { success: true }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  blueprints.handle('db:blueprint-clear-all', async (_event, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    BlueprintRepository.clearAll()
+    return { success: true }
   })
 
   // ============================================================

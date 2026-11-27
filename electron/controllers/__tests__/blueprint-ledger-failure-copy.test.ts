@@ -143,7 +143,7 @@ describe('蓝图与作品台账失败时作者看不到主进程原文', () => {
 
   it('目录工作流保存蓝图失败，中文提示里没有原文', async () => {
     mocks.blueprints.upsert.mockImplementation(() => { throw sqliteFailure() })
-    const error = await saveChapterBlueprint(BLUEPRINT as never, PATH, session, 'zh-CN').then(() => undefined, (reason: Error) => reason)
+    const error = await saveChapterBlueprint(BLUEPRINT as never, PATH, session, shown('zh-CN')).then(() => undefined, (reason: Error) => reason)
     expect(error?.message).toBe('保存章节蓝图失败')
   })
 
@@ -178,7 +178,7 @@ describe('蓝图与作品台账失败的说明与 master 逐字相同', () => {
 
   it('目录工作流保存蓝图失败，英文提示与 master 相同', async () => {
     mocks.blueprints.upsert.mockImplementation(() => { throw sqliteFailure() })
-    const error = await saveChapterBlueprint(BLUEPRINT as never, PATH, session, 'en-US').then(() => undefined, (reason: Error) => reason)
+    const error = await saveChapterBlueprint(BLUEPRINT as never, PATH, session, shown('en-US')).then(() => undefined, (reason: Error) => reason)
     expect(error?.message).toBe('Could not save the chapter blueprint.')
   })
 
