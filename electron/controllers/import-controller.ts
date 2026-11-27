@@ -37,6 +37,7 @@ import type {
   ImportRunLocale,
   ImportSourceFileIdentity,
 } from '../../src/shared/import-run'
+import { storedImportFailure } from '../../src/shared/import-run'
 import type { ProjectSessionContext } from '../../src/shared/ipc-channels'
 import { countDraftUnits } from '../../src/shared/draft-units'
 import { getCurrentProjectPath, getProjectDb } from '../database'
@@ -534,7 +535,7 @@ export function registerImportController(
                 ImportRunRepository.failParsedSource(
                   parsingRun.id,
                   opaqueSourceId,
-                  importText(responseLocale, '所选来源文件为空', 'Selected source file is empty'),
+                  storedImportFailure(importText(responseLocale, '所选来源文件为空', 'Selected source file is empty')),
                 )
               }
               continue
@@ -561,11 +562,11 @@ export function registerImportController(
               ImportRunRepository.failParsedSource(
                 parsingRun.id,
                 opaqueSourceId,
-                importText(
+                storedImportFailure(importText(
                   responseLocale,
                   '所选来源文件只有章节标题，没有可导入的正文',
                   'The selected source file contains chapter headings but no body text',
-                ),
+                )),
               )
             }
             continue
@@ -616,7 +617,7 @@ export function registerImportController(
             ImportRunRepository.failParsedSource(
               parsingRun.id,
               opaqueSourceId,
-              importSelectionErrorMessage(error, responseLocale, limits),
+              storedImportFailure(importSelectionErrorMessage(error, responseLocale, limits)),
             )
           }
           throw error

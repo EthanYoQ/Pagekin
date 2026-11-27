@@ -42,7 +42,7 @@ import type { FinalizedDraftImportRequest } from '../../src/shared/finalized-dra
 import { ImportGlobalFactsRepository } from '../repositories/import-global-facts-repository'
 import type { ImportGlobalFactsRequest } from '../../src/shared/import-global-facts'
 import { ImportRunRepository } from '../repositories/import-run-repository'
-import { importRunLocale, persistedImportRunFailure } from './import-run-failure'
+import { persistedImportRunFailure } from './import-run-failure'
 import type {
   ImportRunExecutionLease,
   ImportRunPrepareEffectReceiptRequest,
@@ -52,6 +52,7 @@ import type {
 import {
   AUTHOR_IMPORT_PREVIEW_STALE,
   isImportRunDirectCheckpointStage,
+  storedImportFailure,
 } from '../../src/shared/import-run'
 import { ImportSourceIdentityRepository } from '../repositories/import-source-identity-repository'
 import { importInspectionStore } from '../services/import-inspection-store'
@@ -350,7 +351,7 @@ export function registerDatabaseController() {
         ImportRunRepository.failParsedSource(
           parsingRun.id,
           sourceId,
-          persistedImportRunFailure(error instanceof Error ? error.message : String(error), request.locale),
+          persistedImportRunFailure(error, request.locale),
         )
         throw error
       }
@@ -524,9 +525,8 @@ export function registerDatabaseController() {
     expectedProjectPath: string,
   ) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-    const reason = typeof errorMessage === 'string'
-      ? persistedImportRunFailure(errorMessage, () => importRunLocale(runId))
-      : errorMessage
+    // 渲染端交来的是已经写好、可以给作者看的说明。
+    const reason = typeof errorMessage === 'string' ? storedImportFailure(errorMessage) : errorMessage
     return { success: true, run: ImportRunRepository.fail(runId, stage, reason, execution) }
   })
 

@@ -12,6 +12,7 @@ import type {
   ImportRunPrepareFromInspectionRequest,
   ImportRunSnapshot,
 } from '../../shared/import-run'
+import { writtenImportFailure } from '../../shared/import-run'
 import type { AuthorManuscriptImportPreview } from '../../shared/author-manuscript-import'
 import {
   createImportWorkflow,
@@ -95,8 +96,10 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
   const resumableRun = resumableRuns.find(run => run.id === selectedResumableRunId)
     ?? resumableRuns[0]
     ?? null
-  // 存下的失败原因按导入运行的语言写好，也可能是旧版本留下的错误码：登记过的码按界面语言说明。
-  const resumableFailure = resumableRun?.lastError ? displayedErrorMessage(currentInterfaceLocale(), resumableRun.lastError) : ''
+  // 取消的运行也可能留着取消前的失败原因，不写「上次失败」。旧版本存的可能是报错原文，没有标记就只给通用说明。
+  const resumableFailure = resumableRun?.status === 'failed' && resumableRun.lastError
+    ? writtenImportFailure(resumableRun.lastError) ?? failureText(currentInterfaceLocale(), undefined)
+    : ''
   const resumableRunIsActive = resumableRun
     ? activeWorkflows.some(workflow => workflow.id === resumableRun.id)
     : false

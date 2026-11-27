@@ -54,6 +54,8 @@ vi.mock('../../services/import-inspection-store', () => ({ importInspectionStore
 vi.mock('../../services/import-source-identity-secret', () => ({ loadApplicationImportSourceSecret: () => 'secret' }))
 
 import { registerDatabaseController } from '../db-controller'
+import { persistedImportRunFailure } from '../import-run-failure'
+import { writtenImportFailure } from '../../../src/shared/import-run'
 import { failureText, receivedIpcResult, resultFailure } from '../../../src/i18n/app-errors'
 import { errorLocaleForRun } from '../../../src/i18n/core'
 import type { Locale } from '../../../src/i18n/types'
@@ -189,5 +191,19 @@ describe('仓储写好的导入说明登记成目录文案后逐字不变', () =
     expect(shownFor(result, 'zh-CN')).toBe('项目或作者原稿清单已变化，请重新选择文件并确认预览。')
     expect(shownFor(result, 'en-US')).toBe('The project or author manuscript changed. Select the files again and confirm the preview.')
     expect(mocks.inspection.consume).not.toHaveBeenCalled()
+  })
+})
+
+// #845 PR-H2：主进程自己捕获的失败存进 last_error 前换成带标记的说明，原文只进日志。
+describe('主进程存进导入运行的失败原因', () => {
+  it('SQLite 原文换成通用说明', () => {
+    const stored = persistedImportRunFailure(sqliteFailure(), 'en-US')
+    expect(stored).not.toMatch(RAW)
+    expect(writtenImportFailure(stored)).toBe(failureText(shown('en-US'), undefined))
+  })
+
+  it('认得出的码存登记的说明', () => {
+    const stored = persistedImportRunFailure(new Error('IMPORT_RUN_EXECUTION_STALE'), 'zh-CN')
+    expect(writtenImportFailure(stored)).toBe(failureText(shown('zh-CN'), { code: 'IMPORT_RUN_EXECUTION_STALE' }))
   })
 })

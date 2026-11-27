@@ -324,6 +324,20 @@ export interface ImportRunSnapshot {
   completedAt?: string
 }
 
+// 旧版本存进 last_error 的可能是报错原文，看不出来；所以新写入的说明都带这个标记，没有标记的一律不显示原文。
+const WRITTEN_FAILURE_MARK = 'author-safe:v1:'
+const STORED_FAILURE_LIMIT = 2_000
+
+/** 把可以给作者看的说明存进导入运行的 last_error。 */
+export function storedImportFailure(sentence: string): string {
+  return WRITTEN_FAILURE_MARK + sentence.slice(0, STORED_FAILURE_LIMIT - WRITTEN_FAILURE_MARK.length)
+}
+
+/** 存下的说明；旧记录没有标记时返回 undefined。 */
+export function writtenImportFailure(stored: string): string | undefined {
+  return stored.startsWith(WRITTEN_FAILURE_MARK) ? stored.slice(WRITTEN_FAILURE_MARK.length) : undefined
+}
+
 export type ImportRunClassification = 'exact-duplicate' | 'new' | 'conflict' | 'resumable'
 
 export interface ImportRunPreparationResult {

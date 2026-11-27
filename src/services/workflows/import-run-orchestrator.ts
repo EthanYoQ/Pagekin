@@ -20,7 +20,7 @@ import {
 } from '../../shared/import-run'
 import type { StepCallbacks } from '../../stores/workflow-store'
 import type { FinalizedDraftImportDraftReceipt, FinalizedDraftImportReceipt } from '../../shared/finalized-draft-import'
-import { authorError, errorCodeOf, importStopFailure } from '../../i18n/app-errors'
+import { authorError, errorCodeOf, failureText, importStopFailure, reasonOf } from '../../i18n/app-errors'
 import { localize } from '../../i18n/core'
 import type { ErrorDisplayLocale } from '../../i18n/types'
 import { note, type AuthorError, type Literal, type NoteParams } from '../../shared/failure'
@@ -354,7 +354,8 @@ export class ImportRunOrchestrator {
           await this.dependencies.fail(
             runId,
             requestedStage,
-            failure instanceof Error ? failure.message : String(failure),
+            // 存进运行的只有可以给作者看的说明；认不出的报错存通用说明，原文不进记录。
+            failureText(this.dependencies.interfaceLocale, reasonOf(failure)),
             execution.current,
           )
         } catch (leaseError) {

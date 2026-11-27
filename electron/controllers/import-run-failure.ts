@@ -3,6 +3,7 @@ import { knownAppErrorMessage } from '../../src/i18n/app-errors'
 import { errorLocaleForRun, resolveLocale, translate } from '../../src/i18n/core'
 import type { ErrorDisplayLocale, Locale } from '../../src/i18n/types'
 import { failureCode, type WireFailure } from '../../src/shared/failure'
+import { storedImportFailure } from '../../src/shared/import-run'
 import { getMainLocale, mainErrorDisplayLocale } from '../i18n'
 import { ImportRunRepository } from '../repositories/import-run-repository'
 
@@ -42,9 +43,12 @@ export function explainImportRunFailure(error: unknown, locale: Locale | (() => 
   }
 }
 
-/** 存进 last_error 的失败原因：去掉 Electron 的调用通道与错误类名前缀，认得出的码换成说明。 */
-export function persistedImportRunFailure(reason: string, locale: Locale | (() => Locale)): string {
-  return explainImportRunFailure(reason, locale)?.error ?? rawReason(reason)
+/** 主进程捕获的失败存进 last_error：认得出的码换成说明，其余存通用说明，原文只进日志。 */
+export function persistedImportRunFailure(error: unknown, locale: Locale | (() => Locale)): string {
+  const explained = explainImportRunFailure(error, locale)?.error
+  if (explained) return storedImportFailure(explained)
+  console.error('[AI Novel] 导入运行失败，原文不存进记录：', error)
+  return storedImportFailure(translate(importErrorLocale(typeof locale === 'function' ? locale() : locale), 'error.unregisteredCode'))
 }
 
 /** 导入的运行语言来自请求或运行记录，界面语言取主进程配置。 */

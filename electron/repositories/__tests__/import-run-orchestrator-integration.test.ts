@@ -23,6 +23,7 @@ import {
 import type { ImportRunChapterSnapshot } from '../../../src/shared/import-run'
 import type { CharacterRosterEntry } from '../../../src/shared/character-roster'
 import { shown } from '../../../src/i18n/__tests__/shown-locale'
+import { failureText } from '../../../src/i18n/app-errors'
 
 let root = ''
 
@@ -354,7 +355,8 @@ describe('ImportRunOrchestrator with the real import repository', () => {
     expect(failedRun).toMatchObject({
       stage: 'blueprints',
       status: 'failed',
-      lastError: 'injected crash after durable blueprint commit',
+      // #845 PR-H2：认不出的报错只存通用说明，原文不进记录。
+      lastError: failureText(shown('zh-CN'), undefined),
       completedBatches: { blueprints: [expect.stringMatching(/^1-2-[a-f0-9]{8}\.[a-f0-9]{8}$/u)] },
     })
     const checkpoint = failedRun.completedBatches.blueprints![0]!
@@ -454,7 +456,8 @@ describe('ImportRunOrchestrator with the real import repository', () => {
       id: runId,
       stage: 'blueprints',
       status: 'failed',
-      lastError: 'injected later blueprint model failure',
+      // #845 PR-H2：认不出的报错只存通用说明，原文不进记录。
+      lastError: failureText(shown('zh-CN'), undefined),
       completedBatches: {
         knowledge: [expect.any(String)],
         global: ['done'],

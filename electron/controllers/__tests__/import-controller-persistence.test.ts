@@ -28,6 +28,7 @@ import type { WindowsSafeFileSystem } from '../../security/windows-safe-file-sys
 import { nodeTestSecureFileSystem } from '../../../test/helpers/node-test-secure-file-system'
 import { registerImportController } from '../import-controller'
 import { countDraftUnits } from '../../../src/shared/draft-units'
+import { storedImportFailure } from '../../../src/shared/import-run'
 
 let parent = ''
 let projectRoot = ''
@@ -337,7 +338,7 @@ describe('current-project import parsing persistence', () => {
     const snapshots = ImportRunRepository.listResumable()
     expect(snapshots).toHaveLength(1)
     expect(snapshots[0]).toMatchObject({
-      id: 'frozen-english-run', locale: 'en-US', lastError: expectedSafeError,
+      id: 'frozen-english-run', locale: 'en-US', lastError: storedImportFailure(expectedSafeError),
     })
     expect(JSON.stringify(snapshots)).not.toContain(source)
     expect(JSON.stringify(snapshots)).not.toContain(privateDiagnostic)

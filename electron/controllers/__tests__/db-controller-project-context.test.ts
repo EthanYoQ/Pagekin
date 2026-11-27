@@ -228,6 +228,7 @@ vi.mock('../../services/import-source-identity-secret', () => ({
 }))
 
 import { registerDatabaseController } from '../db-controller'
+import { storedImportFailure } from '../../../src/shared/import-run'
 
 function currentSession() {
   return {
@@ -596,24 +597,11 @@ describe('database controller project context guard', () => {
   })
 
   describe('import run failures shown in the import dialog and run card (#474)', () => {
-    it('stores a readable failure reason instead of the IPC wrapper or a bare code', async () => {
-      mocks.importRunGet.mockReturnValue({ locale: 'en-US' })
+    // #845 PR-H2：渲染端只交写好的说明，主进程加上标记存下，对话框认标记才显示。
+    it('stores the written sentence from the renderer with the author-safe mark', async () => {
       const execution = { owner: 'renderer', epoch: 1, expiresAt: 1 }
-      await handler('db:import-run-fail')(
-        {}, 'run', 'knowledge',
-        "Error invoking remote method 'db:import-run-effect-receipt-get': Error: IMPORT_RUN_EXECUTION_STALE",
-        execution, 'C:/projects/A',
-      )
-      expect(mocks.importRunFail).toHaveBeenLastCalledWith('run', 'knowledge', expect.not.stringMatching(/IPC|remote method|IMPORT_RUN_/), execution)
-      const reason = mocks.importRunFail.mock.lastCall?.[2] as string
-      expect(reason).toMatch(/^This import was taken over by another window/)
-
-      await handler('db:import-run-fail')(
-        {}, 'run', 'knowledge',
-        "Error invoking remote method 'kb:import-reference-text': Error: Chapter 3 could not be written.",
-        execution, 'C:/projects/A',
-      )
-      expect(mocks.importRunFail).toHaveBeenLastCalledWith('run', 'knowledge', 'Chapter 3 could not be written.', execution)
+      await handler('db:import-run-fail')({}, 'run', 'knowledge', 'Chapter 3 could not be written.', execution, 'C:/projects/A')
+      expect(mocks.importRunFail).toHaveBeenLastCalledWith('run', 'knowledge', storedImportFailure('Chapter 3 could not be written.'), execution)
     })
   })
 
