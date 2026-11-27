@@ -424,7 +424,6 @@ const ERROR_KEYS = {
   MCP_REQUEST_TIMEOUT: 'error.mcpRequestTimeout',
   MCP_SERVER_NOT_CONNECTED: 'error.mcpServerNotConnected',
   // 导入运行与导入回执（#474 B1）：导入对话框、导入运行卡片与可继续的导入列表里作者能照着处理的原因。
-  // db:import-* 只回码，渲染端按导入运行的语言说明；kb:import-reference-text 仍在主进程写成句子。
   IMPORT_RUN_EXECUTION_STALE: 'error.importRunExecutionStale',
   IMPORT_RUN_EXECUTOR_BUSY: 'error.importRunExecutorBusy',
   IMPORT_RUN_ANOTHER_RUNNING: 'error.importRunAnotherRunning',

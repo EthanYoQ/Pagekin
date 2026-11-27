@@ -102,7 +102,6 @@ async function received(channel: string, args: readonly unknown[]): Promise<Rece
   return receivedIpcResult(await invoke(channel, ...args)) as Received
 }
 
-/** 渲染端按导入运行的语言说明：界面是中文时，英文运行仍用英文。 */
 const shownFor = (result: Received, runLocale: Locale) => failureText(errorLocaleForRun(runLocale, shown('zh-CN')), resultFailure(result))
 
 beforeAll(() => registerDatabaseController())

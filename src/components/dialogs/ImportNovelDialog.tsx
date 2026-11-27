@@ -41,7 +41,6 @@ interface ImportNovelDialogProps {
 
 const kTokens = (tokens: number) => `${(tokens / 1_000).toFixed(0)}K`
 
-/** 这次导入的失败按导入运行的语言说明，不随当前界面语言（#474 B1）。 */
 const importFailureText = (runLocale: Locale, error: unknown) =>
   failureText(errorLocaleForRun(runLocale, currentInterfaceLocale()), caughtFailure(error))
 
