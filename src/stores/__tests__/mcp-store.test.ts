@@ -109,11 +109,11 @@ describe('MCP 连接失败的说明', () => {
   it.each([
     ['zh-CN', '项目已切换或重新打开', '连接失败'],
     ['en-US', 'The project was switched or reopened', 'Connection failed'],
-  ] as const)('%s 界面：登记的码换成说明，没有原因时用这里的兜底', async (locale, stale, fallback) => {
+  ] as const)('%s 界面：登记的码换成说明，通用码和没有原因时都用这里的兜底', async (locale, stale, fallback) => {
     useLocaleStore.setState({ locale })
     for (const [error, shown] of [
       ['PROJECT_SESSION_STALE', expect.stringContaining(stale)],
-      ['IPC_HANDLER_FAILED', expect.not.stringContaining('IPC_HANDLER_FAILED')],
+      ['IPC_HANDLER_FAILED', fallback],
       [undefined, fallback],
     ] as const) {
       mocks.invoke.mockResolvedValue({ success: false, ...(error ? { failure: { code: error } } : {}) })

@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { ipc } from '../services/ipc-client'
 import { ignoreFailure } from '../shared/ignore-failure'
 import { toolRegistry } from '../services/agent/tool-registry'
-import { caughtFailure, failureText, resultFailure } from '../i18n/app-errors'
+import { caughtFailure, failureText, IPC_HANDLER_FAILED, resultFailure } from '../i18n/app-errors'
 import { note, type AuthorNote, type Failure } from '../shared/failure'
 import { currentInterfaceLocale, useLocaleStore } from './locale-store'
 import type {
@@ -32,8 +32,10 @@ interface MCPState {
   registerMCPToolsToRegistry: () => void
 }
 
+/** IPC_HANDLER_FAILED 只是笼统失败，让给这里的兜底句，与迁移前相同。 */
 function mcpErrorText(result: { failure?: Failure }, fallback: AuthorNote): string {
-  return failureText(currentInterfaceLocale(), resultFailure(result), { fallback })
+  const failure = resultFailure(result)
+  return failureText(currentInterfaceLocale(), failure?.code === IPC_HANDLER_FAILED ? undefined : failure, { fallback })
 }
 
 export const useMCPStore = create<MCPState>()((set, get) => ({
