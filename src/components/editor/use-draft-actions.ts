@@ -9,7 +9,8 @@ import { toast } from '../ui/Toast'
 import { actionToast, type ActionToastAction } from '../ui/ActionToast'
 import { chapterLabel } from '../../shared/chapter-label'
 import { authorError, displayedErrorMessage, englishWithReason, failureText } from '../../i18n/app-errors'
-import { failureOr, reasonOf } from '../../services/failure-reason'
+import { failureOr } from '../../services/failure-reason'
+import { reasonOf } from '../../services/workflows/commands/architecture.command'
 import { note } from '../../shared/failure'
 import {
   draftAIResourceClaims,
@@ -287,7 +288,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
     } catch (error) {
       if (isProjectSessionCurrent(projectSession)) {
         setSaveOutcome('failed')
-        toast.error(failureText(currentInterfaceLocale(), failureOr(SAVE_FAILED, reasonOf(currentInterfaceLocale(), error)), { fallback: SAVE_FAILED }))
+        toast.error(failureText(currentInterfaceLocale(), failureOr(SAVE_FAILED, reasonOf(currentInterfaceLocale(), error))))
       }
       if (propagateFailure) throw error
     } finally {

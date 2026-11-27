@@ -175,9 +175,6 @@
   "src/services/export-service.ts": {
     "displayedErrorMessage": 1
   },
-  "src/services/failure-reason.ts": {
-    "{ legacy:": 1
-  },
   "src/services/generation/prompt-budget-failure.ts": {
     "knownAppErrorMessage": 1
   },
@@ -192,7 +189,8 @@
     "authorOwned": 1
   },
   "src/services/workflows/commands/architecture.command.ts": {
-    "authorOwned": 2
+    "authorOwned": 2,
+    "{ legacy:": 1
   },
   "src/services/workflows/commands/base-command.ts": {
     "displayedErrorMessage": 1
