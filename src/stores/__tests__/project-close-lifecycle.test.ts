@@ -1505,7 +1505,7 @@ describe('project close lifecycle', () => {
     expect(useEditorStore.getState().tabs).toHaveLength(1)
     expect(mocks.onProjectClosed).not.toHaveBeenCalled()
     expect(mocks.alertError).toHaveBeenCalledWith(
-      expect.stringContaining('target project is invalid'),
+      '出了意外问题，暂时说不清原因。请再试一次。',
       expect.objectContaining({ title: '打开作品失败' }),
     )
   })
@@ -1848,9 +1848,10 @@ describe('project close lifecycle', () => {
     expect(useProjectStore.getState().currentProject?.path).toBe(project('B').path)
     expect(mocks.alertError).toHaveBeenCalledOnce()
     expect(mocks.alertError).toHaveBeenCalledWith(
-      expect.stringMatching(/重复的定稿没能修复[\s\S]*SQLITE_BUSY: database is locked/),
+      expect.stringMatching(/重复的定稿没能修复，后面的章节可能写不了；下次打开项目会再试一次。$/u),
       expect.objectContaining({ title: '项目已打开，部分数据加载失败' }),
     )
+    expect(mocks.alertError.mock.calls[0]![0]).not.toMatch(/SQLITE_BUSY|database is locked|原因/u)
   })
 
   it('keeps the committed project open and continues Layer 2 when the recent-project list fails', async () => {

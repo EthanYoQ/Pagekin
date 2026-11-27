@@ -16,7 +16,7 @@ import { showFinalizationRepairNotice } from '../components/finalization-repair-
 import { showLedgerSealedNotice } from '../components/ledger-sealed-notice'
 import { confirm } from '../components/ui/Confirm'
 import { pushToast } from '../components/ui/ToastStack'
-import { appErrorMessage, displayedErrorMessage, englishWithReason, legacyImportFailureMessage, projectDeleteFailureMessage, projectOpenFailureMessage } from '../i18n/app-errors'
+import { appErrorMessage, displayedErrorMessage, englishWithReason, failureText, legacyImportFailureMessage, projectDeleteFailureMessage, projectOpenFailureMessage, resultFailure } from '../i18n/app-errors'
 import { saveDirtyEditorChangesForExit, useEditorStore } from './editor-store'
 import { countUnsavedEditorItemsForProject } from './editor-unsaved'
 import { useLayoutStore } from './layout-store'
@@ -745,9 +745,10 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
           .map(warning => projectError(warning))
         const repair = result.finalizationRepair
         if (repair?.status === 'failed') {
-          const reason = displayedErrorMessage(currentInterfaceLocale(), repair.error)
+          const failure = resultFailure({ error: repair.error })
+          const reason = failure ? failureText(currentInterfaceLocale(), failure) : ''
           warnings.push(projectText(
-            `重复的定稿没能修复，后面的章节可能写不了；下次打开项目会再试一次。原因：${reason}`,
+            `重复的定稿没能修复，后面的章节可能写不了；下次打开项目会再试一次。${reason && `原因：${reason}`}`,
             englishWithReason(currentInterfaceLocale(), 'Duplicate final versions could not be repaired, so later chapters may stay blocked. Opening the project again will retry.', reason),
           ))
         }
@@ -1035,7 +1036,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       const result = await ipc.invoke('project:recent-remove', projectPath)
       if (!result.success) {
         alertError(
-          projectError(result.error),
+          failureText(currentInterfaceLocale(), resultFailure(result)),
           { title: projectText('移除最近项目失败', 'Failed to remove recent project') },
         )
         return false

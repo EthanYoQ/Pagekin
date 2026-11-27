@@ -512,7 +512,7 @@ const OPEN_RETRY_CODES: ReadonlySet<string> = new Set(['PROJECT_OPEN_FILES_BUSY'
 
 /** 打开作品失败的说明。作品文件暂时读不了时接上下一步：书架上有书名就指向「打开《书名》」这个按钮。 */
 export function projectOpenFailureMessage(locale: ErrorDisplayLocale, error: unknown, title?: string): string {
-  const message = appErrorMessage(locale, error)
+  const message = failureText(locale, caughtFailure(error))
   if (!OPEN_RETRY_CODES.has(readCode(error) ?? '')) return message
   const next = title ? translate(locale, 'error.projectOpenRetryBook', { title }) : translate(locale, 'error.projectOpenRetry')
   return joinSentences(locale, message, next)
@@ -522,7 +522,7 @@ const DELETE_LEFTOVER_CODES: ReadonlySet<string> = new Set(['PROJECT_DELETE_FAIL
 
 /** 删除作品失败的说明。文件夹没删完时接上作品现在的状态：还开着就再删一次；已关闭（closedTitle）就自己删文件夹。 */
 export function projectDeleteFailureMessage(locale: ErrorDisplayLocale, error: unknown, closedTitle?: string): string {
-  const message = appErrorMessage(locale, error)
+  const message = failureText(locale, caughtFailure(error))
   if (!DELETE_LEFTOVER_CODES.has(readCode(error) ?? '')) return message
   const next = closedTitle === undefined
     ? translate(locale, 'error.projectDeleteStillOpen')

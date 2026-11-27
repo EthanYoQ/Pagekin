@@ -1,7 +1,4 @@
 {
-  "src/components/backups/ProjectBackupPanel.tsx": {
-    "displayedErrorMessage": 1
-  },
   "src/components/characters/CharacterCardImportButton.tsx": {
     "appErrorMessage": 2
   },
@@ -155,9 +152,6 @@
   "src/components/stage/trash/TrashDialog.tsx": {
     "displayedErrorMessage": 1
   },
-  "src/components/stage/trash/trash-actions.ts": {
-    "displayedErrorMessage": 1
-  },
   "src/components/stage/use-stage-work.ts": {
     "displayedErrorMessage": 1
   },
@@ -168,12 +162,8 @@
     "displayedErrorMessage": 1
   },
   "src/i18n/app-errors.ts": {
-    "appErrorMessage": 2,
     "displayedErrorMessage": 1,
     "knownAppErrorMessage": 6
-  },
-  "src/services/export-service.ts": {
-    "displayedErrorMessage": 1
   },
   "src/services/generation/prompt-budget-failure.ts": {
     "knownAppErrorMessage": 1
@@ -218,9 +208,6 @@
   "src/stores/character-store.ts": {
     "displayedErrorMessage": 1
   },
-  "src/stores/llm-store.ts": {
-    "displayedErrorMessage": 5
-  },
   "src/stores/locale-store.ts": {
     "displayedErrorMessage": 1
   },
@@ -232,7 +219,7 @@
   },
   "src/stores/project-store.ts": {
     "appErrorMessage": 1,
-    "displayedErrorMessage": 2,
+    "displayedErrorMessage": 1,
     "englishWithReason": 1
   },
   "src/stores/workflow-store.ts": {

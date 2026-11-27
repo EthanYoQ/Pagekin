@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useState } from 'react'
 import { Archive, Cloud, Download, Loader2, Upload } from 'lucide-react'
 
-import { archiveFailureMessage, displayedErrorMessage, omittedReviewCyclesMessage } from '../../i18n/app-errors'
+import { archiveFailureMessage, caughtFailure, failureText, omittedReviewCyclesMessage } from '../../i18n/app-errors'
 import { localize } from '../../i18n/core'
 import { ipc } from '../../services/ipc-client'
 import type {
@@ -25,7 +25,7 @@ const EXPORT_PHASES: readonly PortableExportPhase[] = ['snapshot', 'check', 'tid
 type ExportProgress = { phase: PortableExportPhase; round: number }
 const progressStep = ({ phase, round }: ExportProgress) => round * EXPORT_PHASES.length + EXPORT_PHASES.indexOf(phase)
 
-const errorText = (error: unknown) => displayedErrorMessage(currentInterfaceLocale(), error)
+const errorText = (error: unknown) => failureText(currentInterfaceLocale(), caughtFailure(error))
 const failureReason = (operation: 'export' | 'restore', code: string, damaged?: DamagedReviewCycle) =>
   archiveFailureMessage(currentInterfaceLocale(), operation, code, damaged)
 const withOmitted = (message: string, omitted?: readonly DamagedReviewCycle[]) => {
@@ -78,6 +78,7 @@ function ProjectBackupPanelSession({
   const [confirmClearCredential, setConfirmClearCredential] = useState(false)
   const [sessionOnlyCredential, setSessionOnlyCredential] = useState(false)
   const [bindingRefreshFailed, setBindingRefreshFailed] = useState(false)
+  const fail = (message: string) => setNotice({ kind: 'error', text: message })
 
   const matchesGenerationSource = (accountId: string, bookId: string) =>
     generationSource?.localEndpointAccountId === accountId && generationSource.cloudBookId === bookId
@@ -141,7 +142,7 @@ function ProjectBackupPanelSession({
     const target = await ipc.invoke('dialog:select-project-restore-target', project ? `${project.name}-恢复副本` : text('恢复副本', 'Restored copy', '復元したコピー'))
     if (!target) return
     const result = await ipc.invoke('project:archive-restore', { archiveGrantId: archive.grantId, targetGrantId: target.grantId })
-    if (!result.success) throw new Error(failureReason('restore', result.errorCode || result.error))
+    if (!result.success) return fail(failureReason('restore', result.errorCode || result.error))
     setNotice({ kind: 'success', text: text(`已恢复新副本 ${result.receipt.targetProjectId}：${result.receipt.targetProjectRoot}`, `Restored copy ${result.receipt.targetProjectId}: ${result.receipt.targetProjectRoot}`, `新しいコピー ${result.receipt.targetProjectId} として復元しました：${result.receipt.targetProjectRoot}`) })
   })
 
@@ -169,13 +170,13 @@ function ProjectBackupPanelSession({
     })
     const result = await ipc.invoke('project:archive-export', { targetArchiveGrantId: target.grantId, projectSession, exportId })
       .finally(() => { stopListening(); setExportProgress(null) })
-    if (!result.success) throw new Error(failureReason('export', result.errorCode || result.error, result.damagedReviewCycle))
+    if (!result.success) return fail(failureReason('export', result.errorCode || result.error, result.damagedReviewCycle))
     setNotice({ kind: 'success', text: withOmitted(text(`本地存档已导出：${result.receipt.targetSha256}`, `Local archive exported: ${result.receipt.targetSha256}`, `ローカルアーカイブをエクスポートしました：${result.receipt.targetSha256}`), result.receipt.omittedReviewCycles) })
   })
 
   const connectAndBind = () => run(async () => {
-    if (bindingRefreshFailed) throw new Error(text('本机凭据已清除，但绑定状态刷新失败。请关闭并重新打开设置后再连接。', 'The local credential was cleared, but the binding state could not be refreshed. Close and reopen settings before connecting.', 'このコンピューターの認証情報は削除しましたが、紐付けの状態を更新できませんでした。設定を閉じて開き直してから接続してください。'))
-    if (!endpoint.trim() || !username.trim() || !secret || !cloudBookId.trim()) throw new Error(text('请填写 WebDAV 地址、用户名、密钥和云书标识。', 'Enter the WebDAV endpoint, username, secret, and cloud book ID.', 'WebDAV のアドレス、ユーザー名、パスワード、クラウドブック ID を入力してください。'))
+    if (bindingRefreshFailed) return fail(text('本机凭据已清除，但绑定状态刷新失败。请关闭并重新打开设置后再连接。', 'The local credential was cleared, but the binding state could not be refreshed. Close and reopen settings before connecting.', 'このコンピューターの認証情報は削除しましたが、紐付けの状態を更新できませんでした。設定を閉じて開き直してから接続してください。'))
+    if (!endpoint.trim() || !username.trim() || !secret || !cloudBookId.trim()) return fail(text('请填写 WebDAV 地址、用户名、密钥和云书标识。', 'Enter the WebDAV endpoint, username, secret, and cloud book ID.', 'WebDAV のアドレス、ユーザー名、パスワード、クラウドブック ID を入力してください。'))
     const connected = await ipc.invoke('cloud-backup:connect', {
       endpoint: endpoint.trim(), username: username.trim(), secret,
     })
@@ -192,7 +193,7 @@ function ProjectBackupPanelSession({
     if (!confirmed.success) {
       const cleared = await ipc.invoke('cloud-backup:clear-credential', connected.account.accountId)
       if (!cleared.success) {
-        throw new Error(errorText(confirmed.errorCode) + (isSessionOnly
+        return fail(errorText(confirmed.errorCode) + (isSessionOnly
           ? text('刚填的密码没能清掉，还记在书童里，退出书童后就不在了。', ' The password you just entered could not be cleared; Pagekin still holds it until you quit.', '入力したパスワードを消去できませんでした。Pagekin を終了するまで保持されます。')
           : text('刚填的密码没能从这台电脑上删掉，仍加密存在书童的数据文件夹里。', ' The password you just entered could not be removed from this computer; it is still stored encrypted in the Pagekin data folder.', '入力したパスワードをこのコンピューターから削除できませんでした。Pagekin のデータフォルダーに暗号化されたまま保存されています。')))
       }
@@ -213,7 +214,7 @@ function ProjectBackupPanelSession({
   })
 
   const confirmRebind = () => run(async () => {
-    if (!account?.accountId || !cloudBookId.trim()) throw new Error(text('请先明确连接账号并填写云书标识。', 'Connect an account and enter a cloud book ID first.', '先にアカウントに接続し、クラウドブック ID を入力してください。'))
+    if (!account?.accountId || !cloudBookId.trim()) return fail(text('请先明确连接账号并填写云书标识。', 'Connect an account and enter a cloud book ID first.', '先にアカウントに接続し、クラウドブック ID を入力してください。'))
     const result = await ipc.invoke('cloud-backup:confirm-binding', {
       projectSession,
       localEndpointAccountId: account.accountId,
@@ -229,7 +230,7 @@ function ProjectBackupPanelSession({
   const listGenerations = () => run(async () => {
     const localEndpointAccountId = account?.accountId ?? binding?.localEndpointAccountId
     const bookId = cloudBookId.trim() || binding?.cloudBookId
-    if (!localEndpointAccountId || !bookId) throw new Error(text('请先连接并绑定云端账号。', 'Connect and bind a cloud account first.', '先にクラウドのアカウントに接続して紐付けてください。'))
+    if (!localEndpointAccountId || !bookId) return fail(text('请先连接并绑定云端账号。', 'Connect and bind a cloud account first.', '先にクラウドのアカウントに接続して紐付けてください。'))
     const result = await ipc.invoke('cloud-backup:list', { localEndpointAccountId, cloudBookId: bookId })
     if (!result.success) throw new Error(result.errorCode)
     if (!matchesGenerationSource(localEndpointAccountId, bookId)) {
@@ -242,13 +243,13 @@ function ProjectBackupPanelSession({
   })
 
   const backupNow = () => run(async () => {
-    if (!disclosureConfirmed) throw new Error(text('请先确认云端披露说明。', 'Confirm the cloud disclosure first.', '先にクラウドに関する説明を確認してください。'))
-    if (binding?.mode !== 'writable') throw new Error(text('当前绑定不可写，请先重新绑定。', 'This binding is not writable. Rebind it first.', '現在の紐付けには書き込めません。先に紐付け直してください。'))
+    if (!disclosureConfirmed) return fail(text('请先确认云端披露说明。', 'Confirm the cloud disclosure first.', '先にクラウドに関する説明を確認してください。'))
+    if (binding?.mode !== 'writable') return fail(text('当前绑定不可写，请先重新绑定。', 'This binding is not writable. Rebind it first.', '現在の紐付けには書き込めません。先に紐付け直してください。'))
     const operationId = randomUUID()
     setActiveOperationId(operationId)
     try {
       const result = await ipc.invoke('cloud-backup:backup', { operationId, projectSession, disclosureConfirmed: true })
-      if (!result.success) throw new Error(failureReason('export', result.errorCode, result.damagedReviewCycle))
+      if (!result.success) return fail(failureReason('export', result.errorCode, result.damagedReviewCycle))
       if (result.binding) updateBinding(result.binding)
       setNotice({ kind: 'success', text: withOmitted(text(`云备份完成：${result.generation.generationId}；备份点 ${result.backupPoint}${result.bindingSaved ? '' : '；绑定未保存'}`, `Cloud backup complete: ${result.generation.generationId}; backup point ${result.backupPoint}${result.bindingSaved ? '' : '; binding not saved'}`, `クラウドバックアップが完了しました：${result.generation.generationId}。バックアップポイント ${result.backupPoint}${result.bindingSaved ? '' : '。紐付けは保存されていません'}`), result.omittedReviewCycles) })
     } finally {
@@ -259,7 +260,7 @@ function ProjectBackupPanelSession({
   const restoreCloudCopy = () => run(async () => {
     const localEndpointAccountId = account?.accountId ?? binding?.localEndpointAccountId
     const bookId = cloudBookId.trim() || binding?.cloudBookId
-    if (!localEndpointAccountId || !bookId || !selectedGenerationId) throw new Error(text('请先选择一个云端世代。', 'Select a cloud generation first.', '先にクラウド世代を選んでください。'))
+    if (!localEndpointAccountId || !bookId || !selectedGenerationId) return fail(text('请先选择一个云端世代。', 'Select a cloud generation first.', '先にクラウド世代を選んでください。'))
     const target = await ipc.invoke('dialog:select-project-restore-target', `${project.name}-恢复副本`)
     if (!target) return
     const operationId = randomUUID()
@@ -288,7 +289,7 @@ function ProjectBackupPanelSession({
 
   const clearCredential = () => run(async () => {
     const accountId = account?.accountId ?? binding?.localEndpointAccountId
-    if (!accountId) throw new Error(text('当前没有可清除的本机凭据。', 'There is no local credential to clear.', '削除できる認証情報はこのコンピューターにありません。'))
+    if (!accountId) return fail(text('当前没有可清除的本机凭据。', 'There is no local credential to clear.', '削除できる認証情報はこのコンピューターにありません。'))
     const result = await ipc.invoke('cloud-backup:clear-credential', accountId)
     if (!result.success) throw new Error(result.errorCode)
     setAccount(null)
@@ -300,7 +301,7 @@ function ProjectBackupPanelSession({
     setConfirmClearCredential(false)
     setBindingRefreshFailed(true)
     const refreshed = await ipc.invoke('cloud-backup:view', projectSession)
-    if (!refreshed.success) throw new Error(text('本机凭据已清除，但绑定状态刷新失败。请关闭并重新打开设置后再连接。', 'The local credential was cleared, but the binding state could not be refreshed. Close and reopen settings before connecting.', 'このコンピューターの認証情報は削除しましたが、紐付けの状態を更新できませんでした。設定を閉じて開き直してから接続してください。'))
+    if (!refreshed.success) return fail(text('本机凭据已清除，但绑定状态刷新失败。请关闭并重新打开设置后再连接。', 'The local credential was cleared, but the binding state could not be refreshed. Close and reopen settings before connecting.', 'このコンピューターの認証情報は削除しましたが、紐付けの状態を更新できませんでした。設定を閉じて開き直してから接続してください。'))
     updateBinding(refreshed.binding)
     setAccount(refreshed.account)
     setCloudBookId(refreshed.binding?.cloudBookId ?? '')

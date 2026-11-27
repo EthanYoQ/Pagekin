@@ -231,6 +231,40 @@ describe('回收站对话框（#564）', () => {
     await expect.element(dialog().getByRole('button', { name: '彻底删除…' }).first()).toBeEnabled()
   })
 
+  it('回收站操作失败不显示异常原文', async () => {
+    // 这三个通道直连，主进程会把异常 message 原样放进 error（electron/services/chapter-deletion-service.ts 的 messageOf）。
+    const raw = 'database is locked'
+    const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) =>
+      ['chapter:trash-restore', 'chapter:trash-purge', 'chapter:retry-deletion'].includes(channel) ? { success: false, error: raw } : base(channel, ...args))
+    const error = vi.spyOn(toast, 'error')
+    await render()
+    await expect.element(dialog()).toHaveAccessibleName('回收站（3）')
+    await act(async () => item('第 3 章').querySelector('button')!.click())
+    await vi.waitFor(() => expect(error).toHaveBeenCalledTimes(1))
+    await act(async () => dialog().getByRole('button', { name: '重试清理' }).click())
+    await vi.waitFor(() => expect(error).toHaveBeenCalledTimes(2))
+    await act(async () => dialog().getByRole('button', { name: '彻底删除…' }).first().click())
+    await act(async () => page.getByRole('dialog', { name: '彻底删除第 3 章「灯塔3」？' }).getByRole('button', { name: '彻底删除' }).click())
+    await vi.waitFor(() => expect(error).toHaveBeenCalledTimes(3))
+    expect(error.mock.calls.map(call => call[0])).toEqual([
+      '第 3 章「灯塔3」没有恢复\n\n出了意外问题，暂时说不清原因。请再试一次。',
+      '重试清理没有完成\n\n出了意外问题，暂时说不清原因。请再试一次。',
+      '彻底删除没有完成\n\n出了意外问题，暂时说不清原因。请再试一次。',
+    ])
+  })
+
+  it('回收站操作失败带已登记的码时，说明与 master 相同', async () => {
+    restoreResult = { success: false, error: 'CHAPTER_RESTORE_CLEANUP_INCOMPLETE' } as RestoreTrashedChapterResult
+    const error = vi.spyOn(toast, 'error')
+    await render()
+    await expect.element(dialog()).toHaveAccessibleName('回收站（3）')
+    await act(async () => item('第 3 章').querySelector('button')!.click())
+    await vi.waitFor(() => expect(error).toHaveBeenCalledTimes(1))
+    expect(error.mock.calls[0][0]).toMatch(/^第 3 章「灯塔3」没有恢复\n\n/u)
+    expect(error.mock.calls[0][0]).not.toMatch(/CHAPTER_RESTORE|出了意外问题/u)
+  })
+
   it('恢复后重读草稿列表 reject：恢复照常报成功，不留未处理的 rejection（#592）', async () => {
     const unhandled: unknown[] = []
     const onUnhandled = (event: PromiseRejectionEvent) => {
