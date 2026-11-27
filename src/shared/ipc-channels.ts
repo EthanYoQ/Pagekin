@@ -102,6 +102,9 @@ export interface ConfigChannels {
   }
 }
 
+/** 更新失败过 IPC 只带码和目录说明；能否重试由主进程判定，和码分开带。 */
+export type UpdateIpcResult<T> = Omit<T, 'error'> & { failure?: Failure; retryable?: boolean }
+
 export interface UpdateChannels {
   'update:get-state': {
     args: []
@@ -109,23 +112,23 @@ export interface UpdateChannels {
   }
   'update:check': {
     args: []
-    return: UpdateCheckResponse
+    return: UpdateIpcResult<UpdateCheckResponse>
   }
   'update:download': {
     args: []
-    return: UpdateActionResponse
+    return: UpdateIpcResult<UpdateActionResponse>
   }
   'update:open-release': {
     args: []
-    return: UpdateActionResponse
+    return: UpdateIpcResult<UpdateActionResponse>
   }
   'update:defer-reminder': {
     args: [days: UpdateReminderDelay]
-    return: UpdateActionResponse
+    return: UpdateIpcResult<UpdateActionResponse>
   }
   'update:quit-and-install': {
     args: []
-    return: UpdateActionResponse
+    return: UpdateIpcResult<UpdateActionResponse>
   }
 }
 

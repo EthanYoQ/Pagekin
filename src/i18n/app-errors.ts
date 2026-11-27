@@ -499,6 +499,17 @@ const ERROR_KEYS = {
   IMPORT_RUN_AUTHOR_PREVIOUS_RUNNING: 'error.importRunAuthorPreviousRunning',
   IMPORT_RUN_AUTHOR_STATE_CHANGED: 'error.importRunAuthorStateChanged',
   AUTHOR_IMPORT_PREVIEW_STALE: 'error.authorImportPreviewStale',
+  UPDATES_DISABLED: 'error.updatesDisabled',
+  UPDATE_CONFIGURATION_MISSING: 'error.updateConfigurationMissing',
+  CHECK_FAILED: 'error.updateOperationFailed',
+  DOWNLOAD_NOT_READY: 'error.updateDownloadNotReady',
+  DOWNLOAD_FAILED: 'error.updateDownloadFailed',
+  INSTALL_NOT_READY: 'error.updateInstallNotReady',
+  INSTALL_FAILED: 'error.updateInstallFailed',
+  OPEN_RELEASE_FAILED: 'error.updateOpenReleaseFailed',
+  REMINDER_NOT_AVAILABLE: 'error.updateReminderNotAvailable',
+  REMINDER_SAVE_FAILED: 'error.updateReminderSaveFailed',
+  INVALID_REMINDER_DELAY: 'error.updateReminderDelayInvalid',
 } as const
 
 type KnownErrorCode = keyof typeof ERROR_KEYS

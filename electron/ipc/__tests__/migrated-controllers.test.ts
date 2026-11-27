@@ -17,6 +17,7 @@ const MIGRATED = [
   'electron/controllers/project-archive-controller.ts',
   'electron/controllers/project-controller.ts',
   'electron/controllers/stage-notification-controller.ts',
+  'electron/controllers/update-controller.ts',
   'electron/controllers/startup-controller.ts',
   'electron/controllers/window-controller.ts',
 ]

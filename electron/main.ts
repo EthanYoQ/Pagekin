@@ -287,7 +287,7 @@ app.whenReady().then(async () => {
       : createGitHubReleaseUpdateBackend,
     createPreferences: () => new GlobalConfigUpdatePreferencesStore(),
     registerController: updateService => {
-      registerUpdateController(updateService, { ipc: ipcMain, publish: publishUpdateState })
+      registerUpdateController(updateService, { ipc: { handle }, publish: publishUpdateState })
     },
     reportFailure: (operation, error) => {
       console.warn(`[AI Novel Update] ${operation}失败，已降级并继续启动应用。`, error)

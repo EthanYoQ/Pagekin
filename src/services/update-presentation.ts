@@ -1,8 +1,26 @@
+import type { Failure } from '../shared/failure'
 import type { UpdateChannels } from '../shared/ipc-channels'
+import { resultFailure } from '../i18n/app-errors'
+import { updateFailure } from '../i18n/update-failure'
 
 export type UpdateState = UpdateChannels['update:get-state']['return']
 export type UpdateErrorCode = NonNullable<UpdateState['error']>['code']
 export type UpdateError = NonNullable<UpdateState['error']>
+
+/** 卡片要显示的失败：说明按 failure，重试按钮看 retryable。 */
+export interface UpdateProblem {
+  readonly failure: Failure
+  readonly retryable: boolean
+}
+
+export function responseProblem(response: { failure?: Failure; retryable?: boolean }): UpdateProblem | undefined {
+  const failure = resultFailure(response)
+  return failure && { failure, retryable: response.retryable === true }
+}
+
+export function stateProblem(error: UpdateError | undefined): UpdateProblem | undefined {
+  return error && { failure: updateFailure(error), retryable: error.retryable }
+}
 
 export type UpdatePresentationKind =
   | 'hidden'
@@ -28,7 +46,7 @@ export interface UpdatePresentation {
 export interface UpdatePresentationInput {
   state?: UpdateState | null
   manualCheckRequested: boolean
-  manualActionError?: UpdateError
+  manualActionError?: UpdateProblem
 }
 
 const hiddenPresentation: UpdatePresentation = {
