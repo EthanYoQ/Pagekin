@@ -304,10 +304,8 @@ export function useDirectoryConfigForm({ isOpen, onClose, existingCount, onConfi
     if (!isProjectSessionCurrent(projectSession)) return
     setIsConfirming(true)
     try {
-      try {
-        const saved = await ipc.invoke('config:set', { blueprintTargetUnits: target })
-        if (!saved.success) throw new Error(saved.error)
-      } catch {
+      const saved = await ipc.invoke('config:set', { blueprintTargetUnits: target }).then(result => result.success, () => false)
+      if (!saved) {
         setLaunchError(text('目标字数偏好保存失败。请重试，输入已保留。', 'Could not save the target preference. Your input is retained. Please retry.'))
         return
       }

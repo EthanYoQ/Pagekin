@@ -23,7 +23,7 @@ export interface ReleaseOfficialHomepageSmokeEvidence {
   }
   failedOpenExternal: {
     success: false
-    controllerError: string
+    controllerFailureCode: string
     shellOpenExternalCalls: 1
     rendererError: {
       zhCN: string
@@ -79,13 +79,13 @@ function assertSmokeResult(condition: unknown, detail: string): asserts conditio
   if (!condition) throw new Error(`Packaged official homepage smoke failed: ${detail}`)
 }
 
-function isHomepageResponse(value: unknown): value is { success: boolean; error?: string } {
+function isHomepageResponse(value: unknown): value is { success: boolean; failure?: { code?: unknown } } {
   return value != null
     && typeof value === 'object'
     && typeof (value as { success?: unknown }).success === 'boolean'
 }
 
-async function invokeOfficialHomepageFromRenderer(window: OfficialHomepageSmokeWindow): Promise<{ success: boolean; error?: string }> {
+async function invokeOfficialHomepageFromRenderer(window: OfficialHomepageSmokeWindow): Promise<{ success: boolean; failure?: { code?: unknown } }> {
   // The string contains only the fixed no-argument trusted intent. The token,
   // URL, and any arbitrary renderer data never cross this renderer boundary.
   const response = await window.webContents.executeJavaScript(
@@ -149,8 +149,8 @@ export async function runReleaseOfficialHomepageSmoke(
       'failing shell.openExternal probe did not receive the fixed homepage URL exactly once',
     )
     assertSmokeResult(
-      typeof failedResult.error === 'string' && failedResult.error.length > 0,
-      'shell.openExternal rejection did not provide a controlled controller error',
+      failedResult.failure?.code === 'OFFICIAL_HOMEPAGE_OPEN_FAILED',
+      'shell.openExternal rejection did not provide a controlled controller failure code',
     )
 
     return {
@@ -165,7 +165,7 @@ export async function runReleaseOfficialHomepageSmoke(
       },
       failedOpenExternal: {
         success: false,
-        controllerError: failedResult.error,
+        controllerFailureCode: failedResult.failure.code,
         shellOpenExternalCalls: 1,
         rendererError: {
           zhCN: getOfficialHomepageOpenError('zh-CN'),

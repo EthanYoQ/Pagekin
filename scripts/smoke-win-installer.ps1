@@ -747,7 +747,7 @@ function Invoke-AiNovelPackagedOfficialHomepageSmoke {
       $null -ne $result.failedOpenExternal -and
       $result.failedOpenExternal.success -eq $false -and
       $result.failedOpenExternal.shellOpenExternalCalls -eq 1 -and
-      $result.failedOpenExternal.controllerError -eq 'Unable to open the official homepage.' -and
+      $result.failedOpenExternal.controllerFailureCode -eq 'OFFICIAL_HOMEPAGE_OPEN_FAILED' -and
       $result.failedOpenExternal.rendererError.zhCN -eq '无法打开官方主页，请稍后重试。' -and
       $result.failedOpenExternal.rendererError.enUS -eq 'Unable to open the official homepage. Please try again later.'
     )

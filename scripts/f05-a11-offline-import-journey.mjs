@@ -460,7 +460,7 @@ async function launch(roots) {
     if (macMode || officialWindows) {
       await page.evaluate(async () => {
         const saved = await window.aiNovelAPI.invoke('config:set', { locale: 'zh-CN' })
-        if (!saved.success) throw new Error(saved.error || 'Mac A11 locale configuration failed')
+        if (!saved.success) throw new Error(saved.failure?.code || 'Mac A11 locale configuration failed')
         const config = await window.aiNovelAPI.invoke('config:get')
         if (config.locale !== 'zh-CN') throw new Error('Mac A11 locale configuration was not persisted')
       })

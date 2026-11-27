@@ -5,9 +5,16 @@ import DIRECT_CHANNELS from '../direct-channels.json'
 import { REPO_ROOT, repoSourceFiles } from '../../../test/helpers/repo-source-files'
 
 const MIGRATED = [
+  'electron/controllers/character-avatar-controller.ts',
+  'electron/controllers/config-controller.ts',
   'electron/controllers/external-file-grant-controller.ts',
   'electron/controllers/fs-controller.ts',
   'electron/controllers/kb-controller.ts',
+  'electron/controllers/model-provider-resource-controller.ts',
+  'electron/controllers/official-homepage-controller.ts',
+  'electron/controllers/stage-notification-controller.ts',
+  'electron/controllers/startup-controller.ts',
+  'electron/controllers/window-controller.ts',
 ]
 
 it('迁移后的控制器不在直连基线里', () => {
@@ -37,6 +44,9 @@ const MIGRATED_DATABASE_CHANNELS = [
   'db:narrative-thread-assignment-remove',
   'db:plot-tree-read',
   'db:plot-tree-clear',
+  'db:log-llm-call',
+  'db:get-llm-stats',
+  'db:get-llm-history',
 ]
 
 it('迁移后的数据库处理器不在直连基线里', () => {

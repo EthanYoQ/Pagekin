@@ -42,7 +42,7 @@ afterEach(async () => {
 
 describe('settings persistence truthfulness', () => {
   it.each([
-    ['business failure', () => Promise.resolve({ success: false, error: 'disk full' })],
+    ['business failure', () => Promise.resolve({ success: false, failure: { code: 'CONFIG_WRITE_FAILED' } })],
     ['transport rejection', () => Promise.reject(new Error('IPC unavailable'))],
   ] as const)('does not report proxy settings as saved after a %s', async (_label, failure) => {
     invoke.mockImplementation(async (channel: string) => {
@@ -61,7 +61,7 @@ describe('settings persistence truthfulness', () => {
   it('rolls back the auto-open-next setting when persistence fails', async () => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === 'config:get') return { autoOpenNextChapterAfterFinalize: false }
-      if (channel === 'config:set') return { success: false, error: 'read only' }
+      if (channel === 'config:set') return { success: false, failure: { code: 'CONFIG_FILE_DAMAGED' } }
       throw new Error(`Unexpected IPC channel: ${channel}`)
     })
     await renderSection('appearance')
@@ -71,7 +71,7 @@ describe('settings persistence truthfulness', () => {
     await act(async () => (toggle.element() as HTMLInputElement).click())
 
     await expect.element(toggle).not.toBeChecked()
-    await expect.element(page.getByText(/自动打开下一章设置保存失败/)).toBeVisible()
+    await expect.element(page.getByText(/自动打开下一章设置保存失败.*全局配置文件已损坏，已拒绝覆盖。请修复或删除应用数据目录里的 config.json 后重试。/u)).toBeVisible()
   })
 
   it('后台通知默认开着，关掉后写进配置', async () => {

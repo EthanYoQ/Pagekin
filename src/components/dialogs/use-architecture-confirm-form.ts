@@ -230,10 +230,8 @@ export function useArchitectureConfirmForm({
           setGuardError(text(`每章大纲目标须为 1–${PLANNING_TARGET_UNITS_LIMIT} 的整数。`, `The outline target must be an integer from 1 to ${PLANNING_TARGET_UNITS_LIMIT}.`))
           return
         }
-        try {
-          const saved = await ipc.invoke('config:set', { outlineTargetUnits: target })
-          if (!saved.success) throw new Error(saved.error)
-        } catch {
+        const saved = await ipc.invoke('config:set', { outlineTargetUnits: target }).then(result => result.success, () => false)
+        if (!saved) {
           setGuardError(text('目标字数偏好保存失败。请重试，输入已保留。', 'Could not save the target preference. Your input is retained. Please retry.'))
           return
         }

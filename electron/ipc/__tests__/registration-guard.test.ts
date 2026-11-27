@@ -41,7 +41,7 @@ vi.mock('../../services/app-data-locator', async importOriginal => ({
 }))
 
 import { ipcMain } from 'electron'
-import { guardIpcRegistration, rejectUnlistedIpc } from '../handle'
+import { guardIpcRegistration, handle, rejectUnlistedIpc } from '../handle'
 import { directRegistrations, throughHandle } from './fixtures/direct-registration'
 
 beforeAll(() => {
@@ -59,7 +59,7 @@ describe('应用启动时的整套 IPC 注册经过守卫', () => {
     const { registerUpdateController } = await import('../../controllers/update-controller')
     expect(fake.registrations).toEqual([])
 
-    registerStartupController({ ipc: ipcMain as never, getTrustedSender: () => null, rendererUrl: '',
+    registerStartupController({ ipc: { handle }, getTrustedSender: () => null, rendererUrl: '',
       getGlobalGeneration: () => null, getBlockedCode: () => undefined })
     registerIPCHandlers()
     registerMCPHandlers()

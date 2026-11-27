@@ -47,7 +47,7 @@ describe('character avatar controller', () => {
     const resolveService = vi.fn(() => fakeService() as unknown as CharacterAssetService)
     registerCharacterAvatarController({ resolveService })
     expect(await mocks.handlers.get('character-avatar:read-batch')!(event, ['stable-a'], { projectId: 'project-a' })).toMatchObject({
-      success: false, error: { code: 'PROJECT_NOT_OPEN' },
+      success: false, failure: { code: 'CHARACTER_AVATAR_PROJECT_NOT_OPEN' },
     })
     expect(resolveService).not.toHaveBeenCalled()
   })
@@ -69,7 +69,7 @@ describe('character avatar controller', () => {
     registerCharacterAvatarController({ resolveService: () => service as unknown as CharacterAssetService })
     const result = await mocks.handlers.get('character-avatar:read-batch')!(event,
       Array.from({ length: 257 }, (_, index) => `stable-${index}`), context)
-    expect(result).toMatchObject({ success: false, error: { code: 'INVALID_CHARACTER_ID' } })
+    expect(result).toMatchObject({ success: false, failure: { code: 'CHARACTER_AVATAR_ID_INVALID' } })
     expect(service.repository.readMany).not.toHaveBeenCalled()
   })
 })

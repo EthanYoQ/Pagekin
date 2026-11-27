@@ -202,9 +202,9 @@ describe('locale store', () => {
     [false, true].map(secondSettlesFirst => [first, second, secondSettlesFirst] as const)))
   it.each(outcomes)('shows the saved language once both saves settle (first ok %s, second ok %s, second settles first %s)', async (firstOk, secondOk, secondSettlesFirst) => {
     const settle: Array<() => void> = []
-    const saveLocale = vi.fn(() => new Promise<{ success: boolean; error?: string }>(resolve => {
+    const saveLocale = vi.fn(() => new Promise<{ success: boolean; failure?: { code: 'CONFIG_WRITE_FAILED' } }>(resolve => {
       const ok = settle.length === 0 ? firstOk : secondOk
-      settle.push(() => resolve(ok ? { success: true } : { success: false, error: 'disk full' }))
+      settle.push(() => resolve(ok ? { success: true } : { success: false, failure: { code: 'CONFIG_WRITE_FAILED' } }))
     }))
     const reportError = vi.fn()
     const state = createStore(createLocaleState({
@@ -228,7 +228,7 @@ describe('locale store', () => {
   })
 
   it.each([
-    ['business failure', async () => ({ success: false, error: 'disk full' })],
+    ['business failure', async () => ({ success: false, failure: { code: 'CONFIG_WRITE_FAILED' } as const })],
     ['transport rejection', async () => { throw new Error('IPC unavailable') }],
   ] as const)('rolls back and reports a visible error after a %s', async (_label, saveLocale) => {
     const setDocumentLanguage = vi.fn()
@@ -246,7 +246,7 @@ describe('locale store', () => {
     expect(state.getState().locale).toBe('zh-CN')
     expect(setDocumentLanguage).toHaveBeenLastCalledWith('zh-CN')
     expect(reportError).toHaveBeenCalledWith(
-      expect.stringMatching(/disk full|IPC unavailable/),
+      expect.stringMatching(/语言设置保存失败：(?:设置没能写进配置文件。请确认磁盘还有空间、应用数据目录可写，再重试。|IPC unavailable)$/u),
       '语言设置保存失败',
     )
   })

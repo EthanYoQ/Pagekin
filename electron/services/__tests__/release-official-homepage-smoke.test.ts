@@ -72,7 +72,7 @@ describe('packaged official homepage smoke', () => {
           await openExternal(OFFICIAL_HOMEPAGE_URL)
           return { success: true }
         } catch {
-          return { success: false, error: 'Unable to open the official homepage.' }
+          return { success: false, failure: { code: 'OFFICIAL_HOMEPAGE_OPEN_FAILED' } }
         }
       }
     })
@@ -95,7 +95,7 @@ describe('packaged official homepage smoke', () => {
       },
       failedOpenExternal: {
         success: false,
-        controllerError: 'Unable to open the official homepage.',
+        controllerFailureCode: 'OFFICIAL_HOMEPAGE_OPEN_FAILED',
         shellOpenExternalCalls: 1,
         rendererError: {
           zhCN: '无法打开官方主页，请稍后重试。',

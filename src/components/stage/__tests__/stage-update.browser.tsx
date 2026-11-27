@@ -56,7 +56,7 @@ beforeEach(() => {
     if (channel === 'update:get-state') return state
     if (channel === 'update:quit-and-install' || channel === 'update:download' || channel === 'update:open-release') return { success: true, state }
     if (channel === 'update:defer-reminder') return { success: true, state: { ...state, isReminderDeferred: true } }
-    if (channel === 'official-homepage:open') return homepageFails ? { success: false, error: 'blocked' } : { success: true }
+    if (channel === 'official-homepage:open') return homepageFails ? { success: false, failure: { code: 'OFFICIAL_HOMEPAGE_OPEN_FAILED' } } : { success: true }
     return undefined
   })
   win.aiNovelAPI = { invoke, on: () => () => undefined }

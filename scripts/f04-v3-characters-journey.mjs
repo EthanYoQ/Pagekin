@@ -714,7 +714,7 @@ async function main() {
     const context = { projectId: created.projectId, projectPath, leaseId: opened.project?.sessionLease }
     assert(context.leaseId, 'project session lease missing')
     const avatar = await invoke(rolePage, 'character-avatar:commit', firstId, avatarBase64, context)
-    assert.equal(avatar.success, true, JSON.stringify(avatar.error))
+    assert.equal(avatar.success, true, JSON.stringify(avatar.failure))
     const avatarRoot = path.join(projectPath, '.ai-novel', 'avatars')
     const persistedAvatarFiles = fs.readdirSync(avatarRoot, { recursive: true })
       .map(name => path.join(avatarRoot, name)).filter(file => fs.statSync(file).isFile())
@@ -863,7 +863,7 @@ async function main() {
     const reopenedContext = { projectId: created.projectId, projectPath, leaseId: reopened.project?.sessionLease }
     assert(reopenedContext.leaseId, 'reopened project session lease missing')
     const batch = await invoke(profilePage, 'character-avatar:read-batch', [firstId], reopenedContext)
-    assert.equal(batch.success, true, JSON.stringify(batch.error))
+    assert.equal(batch.success, true, JSON.stringify(batch.failure))
     assert.equal(batch.avatars.length, 1)
     assert.equal(batch.avatars[0].characterId, firstId)
     assert(Buffer.from(batch.avatars[0].base64, 'base64').equals(persistedAvatarBytes), 'read-batch bytes differ from persisted asset')

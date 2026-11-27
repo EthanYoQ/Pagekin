@@ -24,13 +24,15 @@ const mocks = vi.hoisted(() => {
   })
   Object.assign(BrowserWindow, { getAllWindows: vi.fn(() => windows) })
 
+  const ipcHandle = vi.fn()
   return {
     calls,
     userData: '',
     appData: '',
     windows,
     BrowserWindow,
-    ipcHandle: vi.fn(),
+    ipcHandle,
+    ipcMain: { removeHandler: vi.fn(), handle: ipcHandle as unknown, handleOnce: vi.fn() as unknown },
     registerIPCHandlers: vi.fn(() => calls.push('ipc')),
     registerMCPHandlers: vi.fn(() => calls.push('mcp')),
     startUpdateRuntime: vi.fn((options: unknown) => {
@@ -61,7 +63,7 @@ const mocks = vi.hoisted(() => {
 vi.mock('electron', () => ({
   app: mocks.app,
   BrowserWindow: mocks.BrowserWindow,
-  ipcMain: { removeHandler: vi.fn(), handle: mocks.ipcHandle, handleOnce: vi.fn() },
+  ipcMain: mocks.ipcMain,
   shell: { openExternal: mocks.openExternal },
 }))
 vi.mock('../ipc-handlers', () => ({ registerIPCHandlers: mocks.registerIPCHandlers }))
@@ -108,6 +110,9 @@ describe('interactive Electron startup', () => {
     mocks.registerIPCHandlers.mockClear()
     mocks.registerMCPHandlers.mockClear()
     mocks.ipcHandle.mockClear()
+    // 每次重新导入 main 都会再套一层注册守卫；还原成未套的 handle，旧模块的守卫才不会拦新模块经 handle() 的注册。
+    mocks.ipcMain.handle = mocks.ipcHandle
+    mocks.ipcMain.handleOnce = vi.fn()
     mocks.startUpdateRuntime.mockReset()
     mocks.startUpdateRuntime.mockImplementation(() => mocks.calls.push('update-runtime'))
     mocks.isMacUpdateReminderEnabled.mockReturnValue(false)

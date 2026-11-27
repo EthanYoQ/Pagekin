@@ -1,4 +1,5 @@
-import { ipcMain, shell } from 'electron'
+import { shell } from 'electron'
+import { handle } from '../ipc/handle'
 
 import {
   isModelProviderResourceId,
@@ -8,17 +9,15 @@ import {
 export interface ModelProviderResourceControllerOptions {
   /** Injectable boundary for deterministic handling without exposing shell to the renderer. */
   openExternal?: (url: string) => Promise<void>
-  ipc?: Pick<typeof ipcMain, 'handle'>
 }
 
 /** Opens only fixed, allowlisted model-provider destinations in the system browser. */
 export function registerModelProviderResourceController({
   openExternal = url => shell.openExternal(url),
-  ipc = ipcMain,
 }: ModelProviderResourceControllerOptions = {}) {
-  ipc.handle('model-provider-resource:open', async (_event, resource: unknown) => {
+  handle('model-provider-resource:open', async (_event, resource: unknown) => {
     if (!isModelProviderResourceId(resource)) {
-      return { success: false, error: 'Unsupported model provider resource.' }
+      return { success: false, failure: { code: 'MODEL_PROVIDER_RESOURCE_OPEN_FAILED' } }
     }
 
     try {
@@ -26,7 +25,7 @@ export function registerModelProviderResourceController({
       return { success: true }
     } catch (error) {
       console.warn('[AI Novel Writer] Unable to open model provider resource.', error)
-      return { success: false, error: 'Unable to open the model provider resource.' }
+      return { success: false, failure: { code: 'MODEL_PROVIDER_RESOURCE_OPEN_FAILED' } }
     }
   })
 }

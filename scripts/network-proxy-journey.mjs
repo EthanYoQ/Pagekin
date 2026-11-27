@@ -136,7 +136,7 @@ try {
     assert.equal((await calls['test-connection http']()).success, true, `IPv6 proxy host ${host} carries requests`)
   }
   assert.deepEqual(await setProxy({ enabled: true, host: 'http://127.0.0.1', port: proxyPort }),
-    { success: false, error: 'NETWORK_PROXY_INVALID' }, 'a host with a scheme is rejected before it is saved')
+    { success: false, failure: { code: 'NETWORK_PROXY_INVALID' } }, 'a host with a scheme is rejected before it is saved')
   assert.equal((await invoke('config:get')).proxy.host, '::1', 'the rejected proxy was not saved')
 
   const appPid = app.process().pid

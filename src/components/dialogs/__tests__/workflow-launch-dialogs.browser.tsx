@@ -572,7 +572,7 @@ it.each(['outline', 'blueprint'] as const)('rejects eleven chapters and target 1
 it.each(['outline', 'blueprint'] as const)('retains %s input and does not start generation when saving preferences fails', async kind => {
   const original = invoke.getMockImplementation()!
   invoke.mockImplementation(async (channel, ...args) => {
-    if (channel === 'config:set') return { success: false, error: 'disk unavailable' }
+    if (channel === 'config:set') return { success: false, failure: { code: 'CONFIG_WRITE_FAILED' } }
     return original(channel, ...args)
   })
   const onConfirm = vi.fn().mockResolvedValue(true)

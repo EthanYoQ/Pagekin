@@ -52,7 +52,7 @@ describe('official homepage controller', () => {
 
     await expect(handler('official-homepage:open')({})).resolves.toMatchObject({
       success: false,
-      error: expect.any(String),
+      failure: { code: 'OFFICIAL_HOMEPAGE_OPEN_FAILED' },
     })
   })
 })
