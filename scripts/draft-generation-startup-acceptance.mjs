@@ -43,6 +43,11 @@ export function assertShortOutlineRecovery(recovery, expected, proseStarted) {
 async function invoke(page, channel, ...args) {
   return page.evaluate(({ channel, args }) => window.aiNovelAPI.invoke(channel, ...args), { channel, args })
 }
+/** handle() 把没登记的码换成通用码，原码只进主进程日志；从日志核对是哪条门禁拒绝的。 */
+async function rejectsWithMainCode(session, promise, code) {
+  await assert.rejects(promise, /IPC_HANDLER_FAILED/)
+  assert.equal(await session.app.evaluate(() => globalThis.__ipcLoggedCodes.at(-1)), code)
+}
 async function launch(responseModes = []) {
   const env = { ...process.env, AI_NOVEL_APP_DATA_HOME: roots.canonical, AI_NOVEL_LEGACY_SOURCE_HOME: roots.legacy,
     AI_NOVEL_VELA_HOME: roots.legacy, HOME: roots.home, USERPROFILE: roots.home, APPDATA: roots.appData, LOCALAPPDATA: roots.localAppData }
@@ -51,6 +56,9 @@ async function launch(responseModes = []) {
   try {
     await app.evaluate(async (_, fixture) => {
       globalThis.__draftAcceptance = { dispatches: 0, requests: [], responseModes: fixture.responseModes }
+      const logError = console.error
+      globalThis.__ipcLoggedCodes = []
+      console.error = (...args) => { if (args[1] instanceof Error) globalThis.__ipcLoggedCodes.push(args[1].message); logError(...args) }
       globalThis.fetch = async (url, options) => {
         if (String(url) !== 'https://api.openai.com/v1/chat/completions'
           || new Headers(options?.headers).get('Authorization') !== `Bearer ${fixture.syntheticKey}`) throw new Error('SYNTHETIC_FETCH_ONLY')
@@ -189,10 +197,10 @@ if (process.argv.includes('--help')) {
       assert.equal(resumed.handle.runId, firstPlan.handle.runId)
       assert.equal(resumed.handle.rootActionId, firstPlan.handle.rootActionId)
       firstPlan = { ...firstPlan, handle: resumed.handle }
-      await assert.rejects(invoke(session.page, 'generation:compose-visible', firstPlan.handle,
-        [firstPlan.expected.artifactId], hash(outlineText), 'draft-visible-v1', context), /GENERATION_COMPOSITION_SOURCE_INVALID/)
-      await assert.rejects(invoke(session.page, 'generation:execute', { handle: firstPlan.handle, invocationNonce: randomUUID(),
-        task: firstPlan.outlineTask }, context), /GENERATION_DRAFT_SHORT_OUTLINE_ALREADY_ATTEMPTED/)
+      await rejectsWithMainCode(session, invoke(session.page, 'generation:compose-visible', firstPlan.handle,
+        [firstPlan.expected.artifactId], hash(outlineText), 'draft-visible-v1', context), 'GENERATION_COMPOSITION_SOURCE_INVALID')
+      await rejectsWithMainCode(session, invoke(session.page, 'generation:execute', { handle: firstPlan.handle, invocationNonce: randomUUID(),
+        task: firstPlan.outlineTask }, context), 'GENERATION_DRAFT_SHORT_OUTLINE_ALREADY_ATTEMPTED')
       firstCommit = await generate(session.page, context, firstPlan)
       const requests = await session.app.evaluate(() => globalThis.__draftAcceptance.requests)
       assert.equal(requests.length, 1)
@@ -215,13 +223,13 @@ if (process.argv.includes('--help')) {
       const resumed = await invoke(session.page, 'generation:resume', firstCommit.handle, context)
       assert.equal(resumed.handle.runId, firstCommit.handle.runId)
       firstCommit = { ...firstCommit, handle: resumed.handle }
-      await assert.rejects(invoke(session.page, 'generation:execute', { handle: resumed.handle, invocationNonce: randomUUID(),
-        task: firstPlan.outlineTask }, context), /GENERATION_DRAFT_SHORT_OUTLINE_ALREADY_ATTEMPTED/)
+      await rejectsWithMainCode(session, invoke(session.page, 'generation:execute', { handle: resumed.handle, invocationNonce: randomUUID(),
+        task: firstPlan.outlineTask }, context), 'GENERATION_DRAFT_SHORT_OUTLINE_ALREADY_ATTEMPTED')
       for (const messageIndex of [0, 1]) {
         const changed = structuredClone(firstPlan.expected.initialDraftTask)
         changed.messages[messageIndex].content += '\n改变原提示身份'
-        await assert.rejects(invoke(session.page, 'generation:execute', { handle: resumed.handle, invocationNonce: randomUUID(),
-          task: changed }, context), /GENERATION_MATERIAL_PROMPT_MISMATCH/)
+        await rejectsWithMainCode(session, invoke(session.page, 'generation:execute', { handle: resumed.handle, invocationNonce: randomUUID(),
+          task: changed }, context), 'GENERATION_MATERIAL_PROMPT_MISMATCH')
       }
       assertShortOutlineRecovery(await invoke(session.page, 'generation:read-context', { handle: resumed.handle }, context), firstPlan.expected, true)
       saved = await invoke(session.page, 'generation:commit-draft', firstCommit, context)

@@ -85,7 +85,7 @@ export function assertImportGenerationSourcesCurrent(handle: MainGenerationRunHa
 
 const GENERATION_ERROR_CODE = /^(?:GENERATION|ROOT_BUDGET|ARTIFACT|MAIN|CHARACTER|FINALIZED_CHARACTER|LEGACY_ROSTER)_[A-Z_]+$/u
 const DIAGNOSTIC_MESSAGE_LIMIT = 200
-const MIGRATED_CHANNEL = /^(?:character-proposal|character-identity|finalized-character|legacy-roster|review-revision):/u
+const MIGRATED_CHANNEL = /^(?:generation|character-proposal|character-identity|finalized-character|legacy-roster|review-revision):/u
 
 /**
  * 生成 IPC 只向渲染端返回错误码。没有错误码的异常要先留下主进程诊断，再统一成

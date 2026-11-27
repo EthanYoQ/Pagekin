@@ -168,6 +168,7 @@ export const zhCN = {
   'error.sourceDraftChanged': '原稿在 AI 处理期间被改动，结果没有保存。请重新打开当前稿后再试。',
   'error.generationSavedWithNewerAuthorDraft': '生成结果已保存，但你在生成期间又改了设定，那些改动作为未保存的草稿留着。请检查后再保存。',
   'error.generationPlotOutlineAuthorSaved': '你已手动保存过这份情节大纲，之前的生成不能再接着写。需要时请重新生成大纲。',
+  'error.generationPlotOutlinePrefixInvalid': '这次生成开跑时，大纲的章节编号与所选范围对不上或缺少章节，不能接着生成，恢复稿也不能保存。可以复制已生成的章节，改好大纲后重新生成。',
   'error.generationCancelled': '生成已取消。',
   'error.generationProviderFailed': '模型服务没有返回完整结果。请检查网络和模型设置后重试。',
   'error.generationNetworkFailed': '没连上模型服务，或回复中途断了。请检查网络或代理后重试。',

@@ -166,6 +166,7 @@ export const enUS = {
   'error.sourceDraftChanged': 'The source draft changed while AI was working on it, so the result was not saved. Reopen the current draft and try again.',
   'error.generationSavedWithNewerAuthorDraft': 'The generated result was saved, but you edited the settings while it ran. Those edits are kept as an unsaved draft. Review them, then save.',
   'error.generationPlotOutlineAuthorSaved': 'You saved this plot outline by hand, so the earlier generation cannot continue it. Generate a new outline if you need one.',
+  'error.generationPlotOutlinePrefixInvalid': 'When this run started, the outline chapter numbers did not line up with the selected range or a chapter was missing, so it cannot continue and the recovery draft cannot be saved. Copy the generated chapters, fix the outline, then generate again.',
   'error.generationCancelled': 'Generation was cancelled.',
   'error.generationProviderFailed': 'The model service did not return a complete result. Check your network and model settings, then try again.',
   'error.generationNetworkFailed': 'Could not reach the model service, or the reply broke off midway. Check your network or proxy, then try again.',
