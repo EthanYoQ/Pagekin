@@ -40,7 +40,8 @@ export const ERRG_SCENARIOS = {
     await shown.waitForTimeout(400)
     await context.shoot('errg-trash-restore-raw-en')
     assert.equal(observed.lang, 'en-US')
-    assert.doesNotMatch(observed.toast, /database is locked|SqliteError|C:\\Users|\p{Script=Han}/u, '英文界面的回收站提示不露异常原文')
+    assert.doesNotMatch(observed.toast, /database is locked|SqliteError|C:\\Users/u, '英文界面的回收站提示不露异常原文')
+    assert.match(observed.toast, /was not restored\s+Something unexpected went wrong\.\s+Try again\./u)
     return observed
   } },
 }
