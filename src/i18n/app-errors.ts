@@ -8,7 +8,7 @@ import {
 
 /**
  * 同一个码在导出和恢复里指的是不同的文件：导出时是作品里的资料，恢复时是所选的存档。
- * 码也登记进 ERROR_KEYS（导出那句优先），过 handle() 时才不被换成通用码；界面仍按操作选这里的文案。
+ * 界面按操作选这里的文案；登记进 ERROR_KEYS 只为让 handle() 放行这些码。
  */
 const ARCHIVE_FAILURE_KEYS = {
   export: {
@@ -37,15 +37,8 @@ const ARCHIVE_FAILURE_KEYS = {
   },
 } as const satisfies Record<'export' | 'restore', Record<string, MessageKey>>
 
-/**
- * 稳定错误码 → 界面文案键。新增可读错误码只在这里登记一行，并在两份语言资源里补文案。
- * 代码里出现的每个 GENERATION_* 码（以及该测试 COVERED_PREFIXES 列出的其他前缀的码）要么登记在这里，
- * 要么在 generation-error-codes.test.ts 里写明不登记的理由。
- */
-const ERROR_KEYS = {
-  ...ARCHIVE_FAILURE_KEYS.restore,
-  ...ARCHIVE_FAILURE_KEYS.export,
-  // master 上没登记、显示「说不清原因」的码；迁到 handle() 后照旧说这一句，不换成 IPC_HANDLER_FAILED 那句。
+/** 不说原因的码：作者看到「说不清原因」那句，而不是 IPC_HANDLER_FAILED 的通用句。 */
+const UNEXPLAINED_FAILURE_KEYS = {
   PROJECT_OPERATION_FAILED: 'error.unregisteredCode',
   PORTABLE_ARCHIVE_LIMIT_EXCEEDED: 'error.unregisteredCode',
   PORTABLE_ARCHIVE_TARGET_EXISTS: 'error.unregisteredCode',
@@ -55,6 +48,17 @@ const ERROR_KEYS = {
   CLOUD_BACKUP_DISCLOSURE_CONFIRMATION_REQUIRED: 'error.unregisteredCode',
   CLOUD_BACKUP_BINDING_READ_ONLY: 'error.unregisteredCode',
   CLOUD_BACKUP_OPERATION_CONFLICT: 'error.unregisteredCode',
+} as const
+
+/**
+ * 稳定错误码 → 界面文案键。新增可读错误码只在这里登记一行，并在两份语言资源里补文案。
+ * 代码里出现的每个 GENERATION_* 码（以及该测试 COVERED_PREFIXES 列出的其他前缀的码）要么登记在这里，
+ * 要么在 generation-error-codes.test.ts 里写明不登记的理由。
+ */
+const ERROR_KEYS = {
+  ...ARCHIVE_FAILURE_KEYS.restore,
+  ...ARCHIVE_FAILURE_KEYS.export,
+  ...UNEXPLAINED_FAILURE_KEYS,
   PROJECT_DELETE_BINDING_NOT_CLEARED: 'error.projectDeleteBindingNotCleared',
   PROJECT_DELETE_RECENT_LIST_FAILED: 'error.projectDeleteRecentListFailed',
   PROJECT_DELETE_BINDING_AND_RECENT_LIST_FAILED: 'error.projectDeleteBindingAndRecentListFailed',

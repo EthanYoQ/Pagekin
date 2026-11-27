@@ -81,6 +81,9 @@ function sourceFailure(operation: 'export' | 'restore', code: unknown): string {
  * 不是码的报错（SqliteError、带路径的 ENOENT）是英文原文，不交给界面：原错误记进主进程日志，界面按操作说明。
  * 读源和写目标会报同样的 errno，只有出错的路径分得开：落在作品或所选存档上的算读源失败，其余才按 errno 算目标写不进。
  */
+/** 打开作品也报 MIGRATION_VERIFICATION_FAILED，说的是别的事；导出时它指有一项数据无法安全打包。 */
+const exportFailureCode = (code: string) => code === 'MIGRATION_VERIFICATION_FAILED' ? 'PORTABLE_UNSAFE_PROJECTION' : code
+
 function failure(operation: 'export' | 'restore', error: unknown, source?: string) {
   const raw = error instanceof Error ? error.message : String(error)
   const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined
@@ -92,8 +95,7 @@ function failure(operation: 'export' | 'restore', error: unknown, source?: strin
       : UNWRITABLE_ERRNO.has(code as string) ? 'PORTABLE_ARCHIVE_TARGET_UNWRITABLE'
         : operation === 'export' ? 'PORTABLE_EXPORT_FAILED' : 'PORTABLE_RESTORE_FAILED'
   }
-  // 导出时校验失败按「有一项数据无法安全打包」说明；打开作品也报 MIGRATION_VERIFICATION_FAILED，那里说的是别的事。
-  if (operation === 'export' && message === 'MIGRATION_VERIFICATION_FAILED') message = 'PORTABLE_UNSAFE_PROJECTION'
+  if (operation === 'export') message = exportFailureCode(message)
   const candidate = message === raw ? code ?? raw : message
   const errorCode = PORTABLE_ERROR_CODES.has(candidate as PortableProjectOperationErrorCode)
     ? candidate as PortableProjectOperationErrorCode

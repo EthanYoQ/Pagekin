@@ -1900,7 +1900,6 @@ describe('新建、删除作品失败时，说真正的原因和办法，不露�
 
 type ProjectResult = { success: boolean, error?: string, errorCode?: string, warning?: string, failure?: Parameters<typeof failureText>[1] }
 
-/** 照渲染端读结果：迁移后读 failure；master 上新建读 errorCode 或 error，保存经 requireIpcSuccess 抛出 error。 */
 const received = async (raw: unknown) => receivedIpcResult(await raw) as ProjectResult
 const projectFailure = (result: ProjectResult) => resultFailure(result) ?? (result.errorCode ? result : result.error)
 const LOCALES = ['zh-CN', 'en-US'] as const

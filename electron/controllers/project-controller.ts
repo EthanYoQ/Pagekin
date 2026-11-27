@@ -71,10 +71,8 @@ function projectCreateFailure(error: unknown): string {
   return code === 'EPERM' || code === 'EACCES' ? 'PROJECT_CREATE_ACCESS_DENIED' : 'PROJECT_CREATE_FAILED'
 }
 
-/** 迁移期 error 与 failure 写同一个码，还读 error 的脚本照旧。 */
 const codeFailure = (code: string) => ({ error: code, failure: { code } })
 
-/** 已登记的码照传；其余原文只进主进程日志，界面按原因没查明说明，与没登记的码同一句。 */
 function projectFailure(error: unknown, label: string) {
   const code = registeredErrorCode(error)
   if (!code) console.error(`[Project] ${label}:`, error)
