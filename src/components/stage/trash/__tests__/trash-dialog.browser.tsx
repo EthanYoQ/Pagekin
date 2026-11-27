@@ -241,7 +241,7 @@ describe('回收站对话框（#564）', () => {
   })
 
   it('回收站操作失败不显示异常原文', async () => {
-    // 主进程经 handle() 只回登记码；这里模拟旧形状带原文的 error，渲染端也不显示。
+    // 结果里即使带了原文 error，渲染端也不显示。
     const raw = 'database is locked'
     const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
     invoke.mockImplementation(async (channel: string, ...args: unknown[]) =>

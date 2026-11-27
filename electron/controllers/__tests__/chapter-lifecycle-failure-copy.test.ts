@@ -54,7 +54,7 @@ const service = {
 }
 const invoke = (channel: string, ...args: unknown[]) => mocks.handlers.get(channel)!({}, ...args, PATH, session)
 
-/** 侧栏删除、重试清理与重开在 master 上都把 result.error 交给 displayedErrorMessage；迁移后读 failure。 */
+/** 有 failure 按 failureText 说明，没有就像侧栏删除、重试清理与重开那样把 error 交给 displayedErrorMessage，同一断言在 master 上才会红。 */
 async function shownToAuthor(raw: unknown, locale: InterfaceLocale): Promise<string> {
   const result = receivedIpcResult(await raw) as { success: boolean; failure?: Failure; error?: string }
   expect(result.success).toBe(false)
