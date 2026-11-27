@@ -49,9 +49,9 @@ import {
   isGeneratedGlobalGuidanceValid,
   mergeExpandedNovelConfig,
 } from '../novel-config-expansion'
-import { authorError, caughtFailure, containsHan, errorCodeOf, failureText, registeredErrorCode } from '../../../i18n/app-errors'
-import { copyLocale } from '../../../i18n/core'
-import { AuthorError, authorOwned, failureCode, failureOf, note, type AuthorNote, type Failure, type FailureCode, type LegacyReason } from '../../../shared/failure'
+import { authorError, errorCodeOf, failureText } from '../../../i18n/app-errors'
+import { explained, reasonOf } from '../../failure-reason'
+import { AuthorError, authorOwned, failureCode, note, type AuthorNote, type Failure, type FailureCode } from '../../../shared/failure'
 import type { ErrorDisplayLocale } from '../../../i18n/types'
 import { pluralEn } from '../../../shared/plural-en'
 import { recordAiSources, type AiSources } from '../../../shared/novel-config-ai-sources'
@@ -154,27 +154,6 @@ export class PlotOutlineSourceChangedError extends AuthorError {
     super(failure, failureText(locale, failure), options)
     this.name = 'PlotOutlineSourceChangedError'
   }
-}
-
-/** 还没标记的中文原因（生成 harness、解析器写的句子）按旧规则只在中文界面显示，其余只进控制台。 */
-function reasonOf(locale: ErrorDisplayLocale, error: unknown): Failure | LegacyReason | undefined {
-  const marked = failureOf(error)
-  if (marked) return marked
-  const registered = failureCode(registeredErrorCode(error))
-  if (registered) return { code: registered }
-  const raw = typeof error === 'string' ? error : error instanceof Error ? error.message : ''
-  const legacy = copyLocale(locale) === 'zh-CN' && containsHan(raw) ? { legacy: raw } : undefined
-  // 没登记的码照样留着（error.code 仍是它），说明只能靠中文原文。
-  const code = failureCode(errorCodeOf(error))
-  if (code) return legacy ? { code, because: legacy } : { code }
-  return legacy ?? caughtFailure(error)
-}
-
-/** 原因能显示出来才用末尾带「原因」标签的那句，免得标签后面空着。 */
-function explained(locale: ErrorDisplayLocale, labelled: AuthorNote, plain: AuthorNote, because: Failure | LegacyReason | undefined): Failure {
-  if (!because) return { note: plain }
-  const shown = failureText(locale, { note: labelled, because }) !== failureText(locale, { note: labelled })
-  return { note: shown ? labelled : plain, because }
 }
 
 export class WorldBuildingResumeAvailableError extends AuthorError {
