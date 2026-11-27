@@ -1,7 +1,9 @@
 import type { ProjectSessionContext } from '../shared/ipc-channels'
 import { parseResourceUri, resourceWriteAllowed } from '../shared/project-paths'
 import { ipc } from './ipc-client'
-import { useLocaleStore } from '../stores/locale-store'
+import { authorError } from '../i18n/app-errors'
+import { note } from '../shared/failure'
+import { currentInterfaceLocale } from '../stores/locale-store'
 export { parseResourceUri, formatResourceUri, canonicalResourceUri, isResourceUri, resourceWriteAllowed } from '../shared/project-paths'
 
 export const CORE_FIELD_MAP: Record<string, string> = { premise: 'premise', worldbuilding: 'worldbuilding', characters: 'charactersArch', synopsis: 'synopsis' }
@@ -17,7 +19,7 @@ export async function readCoreContent(value: string, session: ProjectSessionCont
     return roster.status === 'ready' ? roster.renderedMarkdown : roster.legacyMarkdown ?? ''
   }
   const core = await ipc.invokeWithProjectSession(session, 'db:project-core-get', session.projectPath)
-  if (!core) throw new Error(useLocaleStore.getState().text('无法读取故事架构内容', 'Could not read the story architecture.'))
+  if (!core) throw authorError(currentInterfaceLocale(), { note: note('无法读取故事架构内容', 'Could not read the story architecture.') })
   return core[resource.key] || ''
 }
 export async function writeCoreContent(value: string, content: string, session: ProjectSessionContext): Promise<boolean> {
@@ -35,6 +37,6 @@ export async function readResourceContent(value: string, session: ProjectSession
     ? await ipc.invokeWithProjectSession(session, 'db:draft-get-full', resource.id, session.projectPath)
     : resource.kind === 'revision' ? await ipc.invokeWithProjectSession(session, 'db:revision-get-full', resource.id, session.projectPath)
       : await ipc.invokeWithProjectSession(session, 'db:review-get-full', resource.id, session.projectPath)
-  if (!full) throw new Error(useLocaleStore.getState().text('虚拟资源不存在或无法读取', 'This item does not exist or could not be read.'))
+  if (!full) throw authorError(currentInterfaceLocale(), { note: note('虚拟资源不存在或无法读取', 'This item does not exist or could not be read.') })
   return full.content
 }

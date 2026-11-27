@@ -237,6 +237,7 @@ export class ChapterDeletionService {
       // 恢复已经提交，重发失败或抛错都只让实体稿停在待发布，不能把这次恢复报成没成功。
       try {
         const published = await this.finalizations.retry({ projectRoot, finalizationId: restored.finalizationId })
+        if (!published.success) console.warn('[chapter-deletion] 恢复后重发实体稿失败：', published)
         return {
           ...restored,
           publicationStatus: published.publicationStatus ?? 'pending',

@@ -16,13 +16,13 @@ const DIAGNOSTIC_KEYS: Readonly<Record<string, MessageKey>> = {
   PROMPT_FILENAME_MISMATCH: 'error.promptFilenameMismatch',
   [PROMPT_FILE_UNREADABLE]: 'error.promptFileUnreadable',
 }
-const diagnosticText = (error: string) => {
+const diagnosticText = ({ error, failure }: PromptLoadDiagnostic) => {
   const key = Object.hasOwn(DIAGNOSTIC_KEYS, error) ? DIAGNOSTIC_KEYS[error] : undefined
-  return failureText(currentInterfaceLocale(), key ? { note: catalogNote(key) } : failureOf(error), { fallback: catalogNote('error.promptFileUnreadable') })
+  return failureText(currentInterfaceLocale(), failure ?? (key ? { note: catalogNote(key) } : failureOf(error)), { fallback: catalogNote('error.promptFileUnreadable') })
 }
-const diagnosticCode = (error: unknown) => {
+const diagnosticOf = (error: unknown): Pick<PromptLoadDiagnostic, 'error' | 'failure'> => {
   const failure = caughtFailure(error)
-  return (failure && codeOf(failure)) ?? PROMPT_FILE_UNREADABLE
+  return { error: (failure && codeOf(failure)) ?? PROMPT_FILE_UNREADABLE, ...(failure?.note ? { failure } : {}) }
 }
 
 const sessionChangedError = () => new Error(useLocaleStore.getState().text('项目会话已变化，已拒绝读取项目提示词', 'The book session changed, so project prompts were not read.'))
@@ -56,7 +56,7 @@ export interface PromptLoadReceipt {
 
 export class PromptLoadDiagnosticsError extends Error {
   constructor(readonly diagnostics: readonly PromptLoadDiagnostic[]) {
-    super(diagnostics.map((item) => `${item.path}: ${diagnosticText(item.error)}`).join('\n'))
+    super(diagnostics.map((item) => `${item.path}: ${diagnosticText(item)}`).join('\n'))
     this.name = 'PromptLoadDiagnosticsError'
   }
 }
@@ -400,7 +400,7 @@ export const ipcPromptPersistence: PromptPersistence = {
             ? { writingLanguage: promptLanguageFromFilename(file.name) }
             : {}),
           path: file.path,
-          error: diagnosticCode(error),
+          ...diagnosticOf(error),
         })
       }
     }

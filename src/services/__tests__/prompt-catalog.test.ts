@@ -322,3 +322,24 @@ it('项目提示词读不出时显示目录说明，不显示解析器原文', a
     useLocaleStore.setState(original, true)
   }
 })
+
+it('原来能看到的具体说明逐字保留：项目提示词读取被拒时说明租约过期', async () => {
+  const { useLocaleStore } = await import('../../stores/locale-store')
+  const { catalogNote } = await import('../../i18n/app-errors')
+  const original = useLocaleStore.getState()
+  const spy = vi.spyOn(ipc, 'invokeWithProjectSession').mockImplementation((async (_session: unknown, channel: string) => {
+    if (channel === 'fs:check-exists') return true
+    if (channel === 'fs:list-dir') return [{ name: `${builtin.key}.json`, path: `${builtin.key}.json`, isDir: false }]
+    if (channel === 'fs:read-file') return { success: false, failure: { code: 'PROJECT_SESSION_STALE', note: catalogNote('error.projectLeaseExpired') } }
+    throw new Error(`unexpected ${channel}`)
+  }) as never)
+  try {
+    useLocaleStore.setState({ interfaceLocale: 'en-US', locale: 'en-US' })
+    const catalog = new PromptCatalog([builtin], persistence({ loadProject: ipcPromptPersistence.loadProject }), () => session)
+    const shown = await catalog.resolve(builtin.key, session).then(() => '', (error: Error) => error.message)
+    expect(shown).toBe(`${builtin.key}.json: The project lease has expired; the operation was rejected.`)
+  } finally {
+    spy.mockRestore()
+    useLocaleStore.setState(original, true)
+  }
+})

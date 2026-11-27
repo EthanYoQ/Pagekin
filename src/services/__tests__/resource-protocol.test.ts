@@ -48,3 +48,12 @@ describe('规范资源与集中旧URI读取', () => {
     expect(useEditorStore.getState().tabs[1]?.filePath).toBe('ai-novel://draft/1')
   })
 })
+
+it('原来能看到的具体说明逐字保留：读不到资源时作者仍看到这一句', async () => {
+  const { caughtFailure, failureText } = await import('../../i18n/app-errors')
+  const { note } = await import('../../shared/failure')
+  const { shown } = await import('../../i18n/__tests__/shown-locale')
+  vi.mocked(ipc.invokeWithProjectSession).mockResolvedValueOnce(null as never)
+  const error = await readResourceContent('ai-novel://draft/1', session).then(() => undefined, (caught: unknown) => caught)
+  expect(failureText(shown('en-US'), caughtFailure(error), { fallback: note('兜底', 'Fallback.') })).toBe('This item does not exist or could not be read.')
+})
