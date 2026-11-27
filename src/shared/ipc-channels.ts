@@ -949,7 +949,7 @@ export interface DatabaseChannels {
       operationId: string,
       expectedProjectPath: string,
     ]
-    return: { success: boolean; operation?: BlueprintCharacterSyncOperation; error?: string }
+    return: { success: boolean; operation?: BlueprintCharacterSyncOperation; failure?: Failure }
   }
   'db:blueprint-update-notes': { args: [chapterNumber: number, notes: string, expectedProjectPath: string]; return: { success: boolean; updated?: boolean; error?: string } }
   'db:blueprint-delete': { args: [chapterNumber: number, expectedProjectPath: string]; return: { success: boolean; error?: string } }
@@ -964,7 +964,7 @@ export interface DatabaseChannels {
   'db:character-continuity-timeline': { args: [characterId: string, expectedProjectPath: string]; return: CharacterContinuityTimeline }
   'db:character-roster-commit': {
     args: [request: CharacterRosterCommitRequest, expectedProjectPath: string]
-    return: { success: boolean; receipt?: CharacterRosterCommitReceipt; error?: string }
+    return: { success: boolean; receipt?: CharacterRosterCommitReceipt; failure?: Failure }
   }
 
   'db:draft-import-finalized-batch': {
@@ -987,11 +987,11 @@ export interface DatabaseChannels {
   }
   'db:continuity-save-finalized': {
     args: [request: SaveFinalizedContinuityRequest, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'db:continuity-save-character-state-candidates': {
     args: [request: SaveFinalizedCharacterStateCandidatesRequest, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'db:continuity-list-before': {
     args: [chapterNumber: number, expectedProjectPath: string]
@@ -1006,11 +1006,11 @@ export interface DatabaseChannels {
   'db:character-continuity-preflight-nodes': { args: [expectedProjectPath: string]; return: ContinuityNode[] }
   'db:consistency-exemption-save': {
     args: [stableFactKey: string, reason: string, chapterNumber: number | null, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'db:consistency-exemption-revoke': {
     args: [stableFactKey: string, chapterNumber: number | null, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'db:narrative-thread-list': {
     args: [expectedProjectPath: string]

@@ -3,6 +3,7 @@ import type {
   BlueprintCharacterSyncOperation,
 } from '../../../electron/repositories/blueprint-repository'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
+import { resultFailure } from '../../i18n/app-errors'
 import { copyLocale, localize } from '../../i18n/core'
 import type { ErrorDisplayLocale } from '../../i18n/types'
 import { ipc } from '../ipc-client'
@@ -64,9 +65,11 @@ export async function retryDirectoryCharacterSync(
     expectedProjectPath,
   )
   if (!completed.success || completed.operation?.status !== 'completed') {
+    // 名册写失败码说的是「角色卡没有改动」，这里提议已经存下，只缺回执，让给本处的说明。
+    const failure = resultFailure(completed)
     throw workflowMainProcessError(
       interfaceLocale,
-      completed.error,
+      failure?.code === 'CHARACTER_ROSTER_WRITE_FAILED' ? undefined : failure,
       '蓝图角色提议已保存，但回执未能持久化',
       'The blueprint character proposals were saved, but their receipt could not be stored.',
     )

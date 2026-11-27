@@ -140,7 +140,7 @@ async function seed(app, page, roots) {
     background: '', abilities: '', motivation: '', relationships: [], arc: '', notes: '' }
   const committed = await invoke(page, 'db:character-roster-commit', { operationId: randomUUID(), expectedRevision: roster.revision,
     expectedIdentityRevision: roster.identityRevision, schemaVersion: 1, intent: 'manual_edit', entries: [character] }, projects.a.path, context)
-  assert.equal(committed.success, true, committed.error)
+  assert.equal(committed.success, true, committed.failure?.code)
   const openedBlank = await invoke(page, 'project:open', projects.b.path, randomUUID(), null)
   assert.equal(openedBlank.success, true, openedBlank.error)
   const blankContext = { projectId: projects.b.id, projectPath: projects.b.path, leaseId: openedBlank.project.sessionLease }

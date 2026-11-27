@@ -119,6 +119,8 @@ const MUTATING_DATABASE_CHANNELS = new Set([
   'db:review-create',
   'db:consistency-exemption-save',
   'db:consistency-exemption-revoke',
+  'db:continuity-save-finalized',
+  'db:continuity-save-character-state-candidates',
   'db:post-process-create-run',
   'db:post-process-mark-step-ok',
   'db:post-process-mark-step-failed',
@@ -615,7 +617,15 @@ export function registerDatabaseController() {
     }
   })
 
-  ipcMain.handle('db:blueprint-character-sync-list-pending', async (
+  // 角色名册提交与回读在一个事务里（character-roster-author.ts），提议回执的写入与回读也是（blueprint-repository.ts），失败整次撤回。
+  const roster = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
+      code: 'CHARACTER_ROSTER_WRITE_FAILED',
+      note: wireNote('error.characterRosterWriteFailed'),
+    }),
+  }
+
+  roster.handle('db:blueprint-character-sync-list-pending', async (
     _event,
     expectedProjectPath: string,
   ) => {
@@ -623,7 +633,7 @@ export function registerDatabaseController() {
     return BlueprintRepository.listPendingCharacterSyncOperations()
   })
 
-  ipcMain.handle('db:blueprint-character-sync-get', async (
+  roster.handle('db:blueprint-character-sync-get', async (
     _event,
     operationId: string,
     expectedProjectPath: string,
@@ -632,19 +642,15 @@ export function registerDatabaseController() {
     return BlueprintRepository.getCharacterSyncOperation(operationId)
   })
 
-  ipcMain.handle('db:blueprint-character-sync-complete', async (
+  roster.handle('db:blueprint-character-sync-complete', async (
     _event,
     operationId: string,
     expectedProjectPath: string,
   ) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      return {
-        success: true,
-        operation: BlueprintRepository.completeCharacterSyncOperation(operationId),
-      }
-    } catch (err) {
-      return { success: false, error: String(err) }
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    return {
+      success: true,
+      operation: BlueprintRepository.completeCharacterSyncOperation(operationId),
     }
   })
 
@@ -681,19 +687,27 @@ export function registerDatabaseController() {
   // ============================================================
   // 3. characters — 角色卡
   // ============================================================
-  ipcMain.handle('db:character-get-all', async (_event, expectedProjectPath: string) => {
+  roster.handle('db:character-get-all', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return CharacterRepository.getAll()
   })
 
-  ipcMain.handle('db:character-continuity-nodes', async (_event, characterIds: string[], expectedProjectPath: string) => {
+  // 豁免的保存与撤销各是一条语句（consistency-exemption-repository.ts），失败时原来的安排不变。
+  const continuity = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
+      code: 'CONSISTENCY_EXEMPTION_WRITE_FAILED',
+      note: wireNote('error.consistencyExemptionWriteFailed'),
+    }),
+  }
+
+  continuity.handle('db:character-continuity-nodes', async (_event, characterIds: string[], expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     const database = getProjectDb()
     if (!database) throw new Error('DB_NOT_OPEN')
     return SummaryRepository.readContinuityNodesForWriting(characterIds, database)
   })
 
-  ipcMain.handle('db:character-roster-read', async (_event, expectedProjectPath: string) => {
+  roster.handle('db:character-roster-read', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     const roster = CharacterRosterRepository.read()
     const database = getProjectDb()
@@ -708,44 +722,40 @@ export function registerDatabaseController() {
     return { ...roster, currentDerivedFields }
   })
 
-  ipcMain.handle('db:character-continuity-timeline', async (_event, characterId: string, expectedProjectPath: string) => {
+  continuity.handle('db:character-continuity-timeline', async (_event, characterId: string, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     const database = getProjectDb()
     if (!database) throw new Error('DB_NOT_OPEN')
     return readCharacterContinuityTimeline(database, characterId)
   })
 
-  ipcMain.handle('db:blueprint-relationship-hints', async (_event, blueprints: BlueprintForPreflight[], expectedProjectPath: string) => {
+  continuity.handle('db:blueprint-relationship-hints', async (_event, blueprints: BlueprintForPreflight[], expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return BlueprintRepository.committedRelationshipHints(blueprints)
   })
 
-  ipcMain.handle('db:character-continuity-preflight-nodes', async (_event, expectedProjectPath: string) => {
+  continuity.handle('db:character-continuity-preflight-nodes', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     const database = getProjectDb()
     if (!database) throw new Error('DB_NOT_OPEN')
     return SummaryRepository.readContinuityNodesForPreflight(database)
   })
 
-  ipcMain.handle('db:character-roster-commit', async (
+  roster.handle('db:character-roster-commit', async (
     _event,
     request: CharacterRosterCommitRequest,
     expectedProjectPath: string,
   ) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      const authorDb = getProjectDb()
-      if (!authorDb) throw new Error('PROJECT_NOT_OPEN')
-      const authorSession = projectAccess.captureCurrentSession()
-      if (!authorSession) throw new Error('CHARACTER_AUTHOR_SCOPE_REQUIRED')
-      return { success: true, receipt: commitAuthorCharacterRoster(authorDb, request,
-        { projectId: authorSession.projectId, epoch: authorSession.leaseId }, () => {
-          projectAccess.assertCurrentSession(authorSession)
-          assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-        }) }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    const authorDb = getProjectDb()
+    if (!authorDb) throw new Error('PROJECT_NOT_OPEN')
+    const authorSession = projectAccess.captureCurrentSession()
+    if (!authorSession) throw new Error('CHARACTER_AUTHOR_SCOPE_REQUIRED')
+    return { success: true, receipt: commitAuthorCharacterRoster(authorDb, request,
+      { projectId: authorSession.projectId, epoch: authorSession.leaseId }, () => {
+        projectAccess.assertCurrentSession(authorSession)
+        assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+      }) }
   })
 
   // ============================================================
@@ -832,57 +842,46 @@ export function registerDatabaseController() {
     return FinalizationRepository.matchesAuthoritativeExportReceipt(receipt)
   })
 
-  ipcMain.handle('db:continuity-save-finalized', async (_event, _request, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      throw new Error('GENERATION_FINALIZATION_ADMISSION_REQUIRED')
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  // 定稿连续性改由主进程定稿事务写，这两个旧入口只剩拒绝；作者走不到（finalize-chapter.command.ts 总带 finalizedStage），只回通用码。
+  const retiredContinuity = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, { code: IPC_HANDLER_FAILED }),
+  }
+
+  retiredContinuity.handle('db:continuity-save-finalized', async (_event, _request, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    throw new Error('GENERATION_FINALIZATION_ADMISSION_REQUIRED')
   })
 
-  ipcMain.handle('db:continuity-save-character-state-candidates', async (_event, _request, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      throw new Error('GENERATION_FINALIZATION_ADMISSION_REQUIRED')
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  retiredContinuity.handle('db:continuity-save-character-state-candidates', async (_event, _request, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    throw new Error('GENERATION_FINALIZATION_ADMISSION_REQUIRED')
   })
 
-  ipcMain.handle('db:continuity-list-before', async (_event, chapterNumber: number, expectedProjectPath: string) => {
+  continuity.handle('db:continuity-list-before', async (_event, chapterNumber: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return SummaryRepository.listFinalizedContinuityBefore(chapterNumber)
   })
 
-  ipcMain.handle('db:continuity-read-source', async (_event, draftId: number, expectedProjectPath: string) => {
+  continuity.handle('db:continuity-read-source', async (_event, draftId: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return SummaryRepository.readFinalizedSource(draftId)
   })
 
-  ipcMain.handle('db:consistency-exemption-list', async (_event, expectedProjectPath: string) => {
+  continuity.handle('db:consistency-exemption-list', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return ConsistencyExemptionRepository.list()
   })
 
-  ipcMain.handle('db:consistency-exemption-save', async (_event, stableFactKey: string, reason: string, chapterNumber: number | null, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      ConsistencyExemptionRepository.save(stableFactKey, reason, chapterNumber)
-      return { success: true }
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
+  continuity.handle('db:consistency-exemption-save', async (_event, stableFactKey: string, reason: string, chapterNumber: number | null, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    ConsistencyExemptionRepository.save(stableFactKey, reason, chapterNumber)
+    return { success: true }
   })
 
-  ipcMain.handle('db:consistency-exemption-revoke', async (_event, stableFactKey: string, chapterNumber: number | null, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      ConsistencyExemptionRepository.revoke(stableFactKey, chapterNumber)
-      return { success: true }
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
+  continuity.handle('db:consistency-exemption-revoke', async (_event, stableFactKey: string, chapterNumber: number | null, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    ConsistencyExemptionRepository.revoke(stableFactKey, chapterNumber)
+    return { success: true }
   })
 
   const plotThreads = {
