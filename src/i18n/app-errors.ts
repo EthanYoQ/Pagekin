@@ -134,6 +134,7 @@ const ERROR_KEYS = {
   EXTERNAL_FILE_SERVICE_UNAVAILABLE: 'error.externalFileServiceUnavailable',
   EXTERNAL_FILE_GRANT_FAILED: 'error.externalGrantFailed',
   EXTERNAL_FILE_READ_FAILED: 'error.externalFileUnreadable',
+  IMPORT_SOURCE_SELECTION_FAILED: 'error.externalFileUnreadable',
   SECURE_FS_TARGET_IN_USE: 'error.fileTargetInUse',
   GENERATION_REQUEST_FAILED: 'error.generationRequestFailed',
   GENERATION_PROJECT_SESSION_STALE: 'error.generationProjectSessionStale',

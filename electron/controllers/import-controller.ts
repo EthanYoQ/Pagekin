@@ -1,4 +1,5 @@
-import { app, ipcMain } from 'electron'
+import { app } from 'electron'
+import { handle } from '../ipc/handle'
 import { showOpenDialogInLastDirectory } from '../utils/remembered-dialog'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
@@ -15,8 +16,11 @@ import { ImportSourceIdentityRepository } from '../repositories/import-source-id
 import { loadApplicationImportSourceSecret } from '../services/import-source-identity-secret'
 import { mainText } from '../i18n'
 import { importErrorLocale, importRunLocale } from './import-run-failure'
-import { readFailureCopy } from './external-file-read-failure'
-import { knownAppErrorMessage } from '../../src/i18n/app-errors'
+import { readFailureNote } from './external-file-read-failure'
+import { knownAppErrorMessage, registeredErrorCode, wireNote } from '../../src/i18n/app-errors'
+import { translate } from '../../src/i18n/core'
+import type { MessageKey } from '../../src/i18n/messages/en-US'
+import type { FailureCode, NoteParams, WireFailure } from '../../src/shared/failure'
 import {
   MAX_TEXT_BYTES,
   windowsSafeFileSystem,
@@ -110,68 +114,51 @@ function tooLargeForRemainingTotal(error: unknown, remainingBytes: number): unkn
     : error
 }
 
+type SelectionCopy = { key: Exclude<MessageKey, 'error.unknown'>; params?: NoteParams }
+
+const FIXED_SELECTION_COPY: Record<string, SelectionCopy['key']> = {
+  EPUB_DRM_UNSUPPORTED: 'error.epubDrmUnsupported',
+  EPUB_EXPANSION_LIMIT: 'error.epubExpansionLimit',
+  EPUB_INVALID_ARCHIVE: 'error.epubInvalidArchive',
+}
+
+/** 选文件失败里作者能照着改的几种，说明交给渲染端或记进导入运行时用的是同一份。 */
+function selectionCopy(error: unknown, limits: ImportResourceLimits): SelectionCopy | undefined {
+  const code = error instanceof Error ? error.message : ''
+  const duplicate = /^AUTHOR_MANUSCRIPT_DUPLICATE_CHAPTER:(\d+)$/u.exec(code)
+  if (duplicate) return { key: 'error.authorManuscriptDuplicateChapter', params: { number: Number(duplicate[1]) } }
+  if (code === 'IMPORT_SOURCE_COUNT_EXCEEDED') return { key: 'error.importSourceCountExceeded', params: { max: limits.maxSourceFiles } }
+  if (code === 'IMPORT_SOURCE_BYTES_EXCEEDED') {
+    const megabytes = limits.maxTotalBytes / (1024 * 1024)
+    return Number.isInteger(megabytes)
+      ? { key: 'error.importSourceBytesExceededMb', params: { megabytes } }
+      : { key: 'error.importSourceBytesExceeded', params: { bytes: limits.maxTotalBytes } }
+  }
+  const readFailure = readFailureNote(error)
+  if (readFailure) return readFailure
+  if (code === 'IMPORT_CHAPTER_COUNT_EXCEEDED') return { key: 'error.importChapterCountExceeded', params: { max: limits.maxChapters } }
+  return Object.hasOwn(FIXED_SELECTION_COPY, code) ? { key: FIXED_SELECTION_COPY[code] } : undefined
+}
+
 function importSelectionErrorMessage(
   error: unknown,
   locale: ImportRunLocale | undefined,
   limits: ImportResourceLimits,
 ): string {
-  const code = error instanceof Error ? error.message : ''
-  if (code === 'IMPORT_SOURCE_COUNT_EXCEEDED') {
-    return importText(
-      locale,
-      `所选文件数量超过导入上限（最多 ${limits.maxSourceFiles} 个）。`,
-      `The import source-file limit was exceeded (limit: ${limits.maxSourceFiles}).`,
-    )
-  }
-  if (code === 'IMPORT_SOURCE_BYTES_EXCEEDED') {
-    const megabytes = limits.maxTotalBytes / (1024 * 1024)
-    const [zhLimit, enLimit] = Number.isInteger(megabytes)
-      ? [`${megabytes} MB`, `${megabytes} MB`]
-      : [`${limits.maxTotalBytes} 字节`, `${limits.maxTotalBytes} bytes`]
-    return importText(
-      locale,
-      `所选文件一共超过 ${zhLimit}，读不进来。请拆成几个小文件，分几次导入。`,
-      `The selected files total more than ${enLimit} and cannot be read. Split them into smaller files and import them in a few rounds.`,
-    )
-  }
-  const readFailure = readFailureCopy(error)
-  if (readFailure) return importText(locale, ...readFailure)
-  if (code === 'IMPORT_CHAPTER_COUNT_EXCEEDED') {
-    return importText(
-      locale,
-      `拆分后的章节数超过导入上限（最多 ${limits.maxChapters} 章）。`,
-      `The import chapter limit was exceeded (limit: ${limits.maxChapters}).`,
-    )
-  }
-  if (code === 'EPUB_DRM_UNSUPPORTED') {
-    return importText(
-      locale,
-      '该 EPUB 受 DRM 或加密保护，无法导入。请使用无 DRM 的 EPUB 或文本文件。',
-      'This EPUB is DRM-protected or encrypted and cannot be imported. Use a DRM-free EPUB or text file.',
-    )
-  }
-  if (code === 'EPUB_EXPANSION_LIMIT') {
-    return importText(
-      locale,
-      '该 EPUB 的条目数或解压后内容超过安全上限，无法导入。',
-      'This EPUB exceeds the safe entry-count or expanded-content limit and cannot be imported.',
-    )
-  }
-  if (code === 'EPUB_INVALID_ARCHIVE') {
-    return importText(
-      locale,
-      '没有导入。这个 EPUB 文件坏了或格式不标准，读不出正文。请点「选择」换一个文件，或先把它另存为 .txt 再导入。',
-      'Nothing was imported. This EPUB is damaged or not in a standard format, so its text cannot be read. Click Choose to pick another file, or save it as .txt first and import that.',
-    )
-  }
+  const copy = selectionCopy(error, limits)
   // 导入运行与检查里作者能照做的码（#474 B1），例如文件检查过期、待确认的导入太多、补选的文件不一致。
-  const known = knownAppErrorMessage(importErrorLocale(importRunLocale(undefined, locale)), code)
-  if (known) return known
-  return importText(
-    locale,
-    '无法读取所选文件；请重新选择后再试。',
-    'Could not read the selected files. Please choose them again.',
-  )
+  const known = copy ? undefined : knownAppErrorMessage(importErrorLocale(importRunLocale(undefined, locale)), error instanceof Error ? error.message : '')
+  const { key, params } = copy ?? { key: 'error.externalFileUnreadable' }
+  return known ?? importText(locale, translate('zh-CN', key, params), translate('en-US', key, params))
+}
+
+function importSelectionFailure(error: unknown, limits: ImportResourceLimits): WireFailure {
+  const copy = selectionCopy(error, limits)
+  if (copy) return { code: 'IMPORT_SOURCE_SELECTION_FAILED', note: wireNote(copy.key, copy.params) }
+  const code = registeredErrorCode(error) as FailureCode | undefined
+  if (code) return { code }
+  console.error('[AI Novel IPC] dialog:select-novel-files 失败：', error)
+  return { code: 'IMPORT_SOURCE_SELECTION_FAILED' }
 }
 
 /** 中文数字到阿拉伯数字的映射 */
@@ -345,7 +332,7 @@ export function registerImportController(
   }
   // Selection, bounded reading, and inspection are one main-process operation.
   // The renderer receives only the final inspection token and safe display facts.
-  ipcMain.handle('dialog:select-novel-files', async (
+  handle('dialog:select-novel-files', async (
     event,
     request?: ImportPurpose | ImportNovelFileSelectionRequest,
     projectSession?: ProjectSessionContext,
@@ -639,27 +626,9 @@ export function registerImportController(
         }
       }
 
-      if (emptySourceFound) {
-        const error = responseLocale === 'en-US'
-          ? 'One or more selected files are empty. Add novel text and choose the unfinished files again.'
-          : responseLocale === 'zh-CN'
-            ? '一个或多个所选文件为空。请补充小说正文后，重新选择未完成的文件。'
-            : text(
-                '一个或多个所选文件为空。请补充小说正文后，重新选择未完成的文件。',
-                'One or more selected files are empty. Add novel text and choose the unfinished files again.',
-              )
-        return { success: false, error }
-      }
-
-      if (titleOnlySourceFound) {
-        return {
-          success: false,
-          error: importText(
-            responseLocale,
-            '一个或多个所选文件只有章节标题，没有可导入的正文。请补充小说正文后，重新选择未完成的文件。',
-            'One or more selected files contain chapter headings but no body text. Add novel text and choose the unfinished files again.',
-          ),
-        }
+      if (emptySourceFound || titleOnlySourceFound) {
+        const key = emptySourceFound ? 'error.importSelectionEmpty' : 'error.importSelectionTitleOnly'
+        return { success: false, failure: { code: 'IMPORT_SOURCE_SELECTION_FAILED', note: wireNote(key) }, locale: responseLocale }
       }
 
       if (parsingRun) {
@@ -691,17 +660,7 @@ export function registerImportController(
       }
     } catch (error) {
       inspectionStore.revokeForWebContents(event.sender.id)
-      const message = error instanceof Error ? error.message : String(error)
-      const duplicateChapter = /^AUTHOR_MANUSCRIPT_DUPLICATE_CHAPTER:(\d+)$/u.exec(message)
-      return {
-        success: false,
-        error: duplicateChapter
-          ? text(
-              `作者原稿包含重复的第 ${duplicateChapter[1]} 章；请修正章节号后重新选择。`,
-              `The author manuscript contains duplicate Chapter ${duplicateChapter[1]}. Correct the chapter numbers and choose the files again.`,
-            )
-          : importSelectionErrorMessage(error, responseLocale, limits),
-      }
+      return { success: false, failure: importSelectionFailure(error, limits), locale: responseLocale }
     }
   })
 }
