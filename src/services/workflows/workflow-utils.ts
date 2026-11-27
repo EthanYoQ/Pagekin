@@ -78,7 +78,7 @@ export async function withRetry(
     } catch (err) {
       const cancelled = isCancelled?.() === true
       if (cancelled && isWorkflowCancellation(err)) throw new WorkflowCancelledError(text('工作流已取消', 'Workflow was cancelled.'))
-      // 失败记录只存码，原文只进控制台；日志按冻结的界面语言说明。作者已取消时不再重试，真实失败照常交回。
+      // 已取消时不再重试，真实失败照常交回；失败记录只存码，日志按冻结的界面语言说明。
       const errMsg = err instanceof Error ? err.message : String(err)
       if (attempt < maxRetries && !cancelled) {
         const reason = finalizationStepErrorCode(errMsg) ? '' : displayedErrorMessage(interfaceLocale, err)

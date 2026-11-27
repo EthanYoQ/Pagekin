@@ -261,7 +261,7 @@ const ERROR_KEYS = {
   GENERATION_AGENT_CANCELLED: 'error.generationCancelled',
   GENERATION_PROVIDER_FAILED: 'error.generationProviderFailed',
   GENERATION_STREAM_INVALID: 'error.generationProviderFailed',
-  // 生成 harness 发请求时模型服务抛错（GenerationAttemptError）；以前只有中文界面能看到 harness 写的「模型请求失败。」原文。
+  // 生成 harness 请求模型服务时抛出（GenerationAttemptError）。
   PROVIDER_REQUEST_FAILED: 'error.generationProviderFailed',
   NETWORK_ERROR: 'error.generationNetworkFailed',
   GENERATION_CONTEXT_LENGTH_EXCEEDED: 'error.generationContextLengthExceeded',
@@ -809,7 +809,7 @@ export function authorError(locale: ErrorDisplayLocale, failure: Failure, option
   return new AuthorError(failure, failureText(locale, failure), options)
 }
 
-/** 本应用自己按界面语言写好的整句说明（不是报错原文）：原样给作者看。 */
+/** 本应用自己按界面语言写好的整句说明，原样给作者看。只能放本应用拼出的句子，不能放 error.message。 */
 export function writtenNote(sentence: string): AuthorNote {
   return note('{sentence}', '{sentence}', { sentence: authorOwned(sentence) })
 }

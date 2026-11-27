@@ -7,7 +7,7 @@ import * as stage from './pages/stage.mjs'
 import { seedStageSample } from './scenarios.mjs'
 import { STAGE_SAMPLE } from './stage-sample.mjs'
 
-// #845 PR-H2：日文界面下三处失败提示用补译后的日文目录说明，不露码、不夹中文原文。
+// 日文界面下三处失败提示：不露码，不夹中文原文。
 // 更新检查与清空的失败由替换主进程处理函数造出来，蓝图保存的失败由样书库里的触发器造出来（都是夹具）；作品内容是 seedStageSample 的样书。
 
 const Database = createRequire(import.meta.url)('better-sqlite3')
@@ -68,7 +68,7 @@ export const PRH2JA_SCENARIOS = {
     await page.keyboard.press('Escape')
     await page.getByRole('textbox', { name: 'Chapter title' }).fill('霧鐘・改')
     await page.getByRole('button', { name: 'Save chapter' }).click()
-    // 舞台蓝图保存走 specificWriteFailure：通用的 BLUEPRINT_WRITE_FAILED 换成本处的两句 text(zh, en)，日文界面显示英文，不用目录里的日文句子。
+    // 蓝图保存走 specificWriteFailure 的两句 text(zh, en)，日文界面下显示英文，不查日文目录。
     const toast = page.locator('.pi-toast-body').filter({ hasText: 'Could not save the blueprint.' }).first()
     await toast.waitFor({ state: 'visible', timeout: 20_000 })
     const shown = (await toast.locator('p').allInnerTexts()).map(line => line.trim())

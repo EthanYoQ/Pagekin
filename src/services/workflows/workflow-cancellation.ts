@@ -4,8 +4,8 @@ import { AuthorError, note, type AuthorNote } from '../../shared/failure'
 const WORKFLOW_CANCELLED = note('工作流已取消', 'Workflow was cancelled.')
 
 /**
- * 执行器看到作者的取消后停下时抛出；作者看到的说明按显示语言渲染，消息按运行语言写给日志，不带错误码。
- * 带 notice 时，这句说明交代了停在哪里、保住了什么，留在已取消的那一步上。
+ * 执行器看到作者取消后停下时抛出。作者看到的说明按显示语言渲染，message 只写给日志，不带错误码。
+ * 带 notice 时，说明交代停在哪里、保住了什么，留在已取消的那一步上。
  */
 export class WorkflowCancelledError extends AuthorError {
   constructor(message: string, readonly notice?: AuthorNote) {
