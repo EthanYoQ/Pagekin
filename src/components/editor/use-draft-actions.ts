@@ -555,7 +555,7 @@ export function useDraftActions({ tabId, filePath, content, projectKey }: DraftT
       const guard = await guardRepairPostProcess(meta.chapterNumber, projectKey, projectSession)
       if (!isProjectSessionCurrent(projectSession)) return
       if (!guard.ok) {
-        // i18n-exempt: 前置校验的 message 是 workflow-guards 按界面语言写好的句子，不是报错原文
+        // i18n-exempt: 前置校验的 message 是 workflow-guards 按文案语言写好的句子（日文界面用英文），不是报错原文
         toast.error(guard.message || text('无法执行修复', 'Could not run the repair.'))
         return
       }

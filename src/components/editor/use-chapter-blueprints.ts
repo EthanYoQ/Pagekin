@@ -638,7 +638,7 @@ export function useChapterBlueprints({
     if (!guard.ok) {
       // 校验失败：阻断并提示
       const reason = guard.message || text('章节蓝图生成前置条件未满足', 'Blueprint prerequisites are not met.')
-      // i18n-exempt: 前置校验的 message 是 workflow-guards 按界面语言写好的句子，不是报错原文
+      // i18n-exempt: 前置校验的 message 是 workflow-guards 按文案语言写好的句子（日文界面用英文），不是报错原文
       addLog('error', text(`前置条件未满足：${reason}`, 'A required precondition is not met.'))
       throw guardStop(currentInterfaceLocale(), guard, note('章节蓝图生成前置条件未满足', 'Blueprint prerequisites are not met.'))
     }

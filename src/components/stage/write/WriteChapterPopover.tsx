@@ -123,12 +123,12 @@ export default function WriteChapterPopover({ chapterNumber, blueprint, label, a
           show()
           return
         case 'pending':
-          // i18n-exempt: 启动结果的 message 是 chapter-write-launch 按界面语言写好的句子
+          // i18n-exempt: 启动结果的 message 是 chapter-write-launch 按文案语言写好的句子
           setMessage({ text: outcome.message, pending: true })
           show()
           return
         default:
-          // i18n-exempt: 启动结果的 message 是 chapter-write-launch 按界面语言写好的句子
+          // i18n-exempt: 启动结果的 message 是 chapter-write-launch 按文案语言写好的句子
           setMessage({ text: outcome.message })
           show()
       }

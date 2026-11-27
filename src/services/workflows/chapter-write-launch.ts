@@ -108,7 +108,7 @@ export interface ChapterWriteLaunch {
   locale: Locale
 }
 
-/** message 都是按界面语言写好、可以直接给作者看的句子。 */
+/** message 都是按文案语言写好、可以直接给作者看的句子。 */
 export type ChapterWriteOutcome =
   /** 项目已切换，什么也不做。 */
   | { kind: 'stale' }

@@ -196,7 +196,7 @@ export function useBatchChapterForm({ isOpen, startChapterNumber, onClose }: Bat
         return
       }
       if (!guard.ok) {
-        // i18n-exempt: 前置校验的 message 是 workflow-guards 按界面语言写好的句子，不是报错原文
+        // i18n-exempt: 前置校验的 message 是 workflow-guards 按文案语言写好的句子（日文界面用英文），不是报错原文
         setError(guard.message || text(
           '前置条件未满足。',
           'Writing prerequisites are not met. Complete the project setup and previous finalized chapter before starting.',

@@ -2222,7 +2222,6 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
     writtenPartial: PartialArchData,
     fallbackError: string,
   ): Promise<void> {
-    const text = (zhCNText: string, enUSText: string) => workflowUiText(context, zhCNText, enUSText)
     const result = await ipc.invokeWithProjectSession(
       projectSession,
       'db:project-core-synopsis-commit',
@@ -2231,12 +2230,9 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
     )
     if (!result.success) {
       const failure = specificWriteFailure(result)
-      const commitError = failure?.code === 'PROJECT_CORE_SYNOPSIS_CHANGED'
-        ? text(
-            '项目数据已变化，已拒绝覆盖情节大纲。',
-            'Project data changed while the outline was being generated, so overwriting it was refused.',
-          )
-        : failure?.code ?? fallbackError
+      const commitFailure: Failure = failure?.code === 'PROJECT_CORE_SYNOPSIS_CHANGED'
+        ? { code: failure.code, note: note('项目数据已变化，已拒绝覆盖情节大纲。', 'Project data changed while the outline was being generated, so overwriting it was refused.') }
+        : failure ?? { note: writtenNote(fallbackError) }
       try {
         await this.rollbackSynopsisCheckpoint(
           expectedProjectPath,
@@ -2246,14 +2242,12 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
           writtenPartial,
         )
       } catch (rollbackError) {
-        // 单独的 commitError 原样抛出，由失败面板按码说明。
-        const because = reasonOf(commitError)
         throw authorError(context.interfaceLocale, {
           note: note('情节大纲没能保存，旧检查点也没能安全恢复', 'The plot outline could not be saved, and the previous checkpoint could not be restored safely either.'),
-          ...(because ? { because } : {}),
+          because: commitFailure,
         }, { cause: rollbackError })
       }
-      throw new Error(commitError)
+      throw authorError(context.interfaceLocale, commitFailure)
     }
 
     const { globalEventBus } = await import('../../../shared/event-bus')

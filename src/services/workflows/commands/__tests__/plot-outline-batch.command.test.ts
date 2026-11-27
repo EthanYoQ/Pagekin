@@ -14,6 +14,7 @@ import { composeVisibleContinuation } from '../../../../shared/visible-continuat
 import type { GenerationRecoveryContext, VisibleCompositionReceipt } from '../../../../shared/generation-owner-contract'
 import { PLOT_OUTLINE_CONTENT, PLOT_OUTLINE_PROTOCOL, type PlotOutlineProgress } from '../../../../shared/plot-outline-contract'
 import { shown } from '../../../../i18n/__tests__/shown-locale'
+import { displayedErrorMessage } from '../../../../i18n/app-errors'
 import { runFailure } from '../../../../components/run/run-failure'
 import { useWorkflowStore } from '../../../../stores/workflow-store'
 
@@ -1008,6 +1009,7 @@ ${'宗门封锁前夜，林舟发现了旧铁锤里的秘密，并沿着灵脉�
     const failure = makeCommand().execute({ step: {}, context, callbacks })
     await expect(failure).rejects.toThrow('项目数据已变化，已拒绝覆盖情节大纲。')
     await expect(failure).rejects.not.toThrow('PROJECT_CORE_SYNOPSIS_CHANGED')
+    expect(displayedErrorMessage(shown('zh-CN'), await failure.catch((caught: unknown) => caught))).toBe('项目数据已变化，已拒绝覆盖情节大纲。')
   })
 
   it.each([
