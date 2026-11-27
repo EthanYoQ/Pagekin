@@ -340,6 +340,7 @@ export type PortableProjectOperationErrorCode =
 export type PortableProjectOperationFailure = {
   success: false
   error: string
+  failure?: Failure
   errorCode?: PortableProjectOperationErrorCode
   damagedReviewCycle?: DamagedReviewCycle
 }
@@ -378,6 +379,7 @@ export interface ProjectChannels {
       dbReady: boolean
       stale?: boolean
       error?: string
+      failure?: Failure
       errorCode?: AppErrorCode
     }
   }
@@ -392,6 +394,7 @@ export interface ProjectChannels {
       dbReady: boolean
       stale?: boolean
       error?: string
+      failure?: Failure
       legacyImportSource?: ProjectDirectoryGrant
       errorCode?: AppErrorCode
       finalizationRepair?: FinalizationRepairOnOpen
@@ -400,11 +403,11 @@ export interface ProjectChannels {
   }
   'project:save': {
     args: [projectId: string, data: Partial<ProjectData>, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; error?: string; failure?: Failure }
   }
   'project:update-config': {
     args: [projectId: string, data: Partial<ProjectData>, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; error?: string; failure?: Failure }
   }
   'project:recent-list': {
     args: []
@@ -426,7 +429,7 @@ export interface ProjectChannels {
   }
   'project:recent-remove': {
     args: [projectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; error?: string; failure?: Failure }
   }
   'project:archive-export': {
     args: [request: PortableProjectExportRequest]
@@ -460,6 +463,7 @@ export interface ProjectChannels {
       directoryDeleted: boolean
       databaseRestored: boolean
       error?: string
+      failure?: Failure
       warning?: string
     }
   }
@@ -469,7 +473,7 @@ export interface ProjectChannels {
   }
   'project:smoke-open-confirm': {
     args: [projectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean }
   }
   'dialog:select-folder': {
     args: [purpose: 'project-create' | 'project-open']
