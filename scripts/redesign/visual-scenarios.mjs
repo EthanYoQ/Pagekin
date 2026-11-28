@@ -538,10 +538,13 @@ export const VISUAL_SCENARIOS = {
   } },
 
   'rdv-clear-busy': { model: false, shell: 'stage', setup: seedStageSample, run: async ({ app, page }) => {
-    await app.evaluate(({ ipcMain }) => {
-      ipcMain.removeHandler('db:project-clear-generated-data')
-      ipcMain.handle('db:project-clear-generated-data', () => new Promise(() => {}))
-    })
+    assert.ok(await app.evaluate(({ ipcMain }) => {
+      const handlers = ipcMain._invokeHandlers
+      globalThis.__rdvClearHandler = handlers.get('db:project-clear-generated-data')
+      if (!globalThis.__rdvClearHandler) return false
+      handlers.set('db:project-clear-generated-data', () => new Promise(() => {}))
+      return true
+    }), '能在主进程里把清除换成永不返回')
     await openWorkMenuItem(page, '清除生成内容…')
     const dialog = page.getByRole('dialog', { name: '清除项目生成内容' })
     await dialog.waitFor({ state: 'visible' })
@@ -556,6 +559,11 @@ export const VISUAL_SCENARIOS = {
     assert.ok(await dialog.isVisible(), '清除中 Esc 关不掉')
     await busy.hover()
     await settle(page)
+  }, after: async ({ app }) => {
+    await app.evaluate(({ ipcMain }) => {
+      ipcMain._invokeHandlers.set('db:project-clear-generated-data', globalThis.__rdvClearHandler)
+      delete globalThis.__rdvClearHandler
+    })
   } },
 
   'rdv-run-failure': { model: true, shell: 'stage', setup: seedStageSample, run: async ({ page }) => {
