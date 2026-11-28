@@ -112,7 +112,7 @@ export const zhCN = {
   'error.externalFileGrantExpired': '所选文件或文件夹的访问授权已失效，请重新选择。',
   'error.unregisteredCode': '出了意外问题，暂时说不清原因。请再试一次。',
   'error.ipcHandlerFailed': '这次操作没有完成，出了意外问题。请再试一次；还不行，请把这条提示反馈给我们。',
-  'error.actionFailed': '{action}失败，请再试一次。',
+  'error.actionFailed': '没能{action}，请再试一次。',
   'error.generationRunRecordSaveFailed': '保存生成运行记录失败，请重试。',
   'error.projectLeaseExpired': '项目租约已失效，已拒绝操作。',
   'error.projectSessionContextMissing': '缺少项目会话上下文，已拒绝操作。',

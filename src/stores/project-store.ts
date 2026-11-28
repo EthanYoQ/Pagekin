@@ -1192,7 +1192,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
           throw authorError(currentInterfaceLocale(), { note: note('项目上下文已变化，关闭操作已取消。', 'The project context changed, so the close operation was cancelled.') })
         }
         const result = await ipc.invokeWithProjectSession(projectSession, 'db:close', projectPath)
-        requireIpcSuccess(result, '关闭项目数据库')
+        requireIpcSuccess(result, '关闭项目')
         if (!isPreparedProjectTransitionCurrent(project, preparedTransition)) {
           await detachProjectBindings({
             projectPath,

@@ -394,7 +394,7 @@ describe('workflow mutation failure boundaries', () => {
       context().projectSession!,
       '保存架构生成检查点',
     ))
-      .rejects.toThrow('保存架构生成检查点失败，请再试一次。')
+      .rejects.toThrow('没能保存架构生成检查点，请再试一次。')
   })
 
   it.each([
