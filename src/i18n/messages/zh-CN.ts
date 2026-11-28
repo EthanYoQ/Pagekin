@@ -291,7 +291,7 @@ export const zhCN = {
   'error.revisionTargetChanged': '这一稿的正文或状态已经变化。请重新打开修订对比后再合并。',
   'error.revisionSourceMissing': '这份旧修订稿缺少生成时依据的原稿，仍可查看但不能合并。请重新生成修订稿。',
   'error.mergeProjectSwitched': '项目已切换，已拒绝跨项目合并',
-  'error.mergeTargetUnresolved': '资源只读或无法确定草稿与修订身份',
+  'error.mergeTargetUnresolved': '没能合并修订稿：草稿只读，或找不到对应的草稿和修订稿。',
   'error.promptFileDamaged': '提示词文件「{file}」读不出来或格式不对，这次没有生成。请到设置的「提示词模板」里重新保存或删掉这个提示词。',
   'error.revisionSourceMismatch': '这一稿与修订稿生成时依据的原稿不一致，已拒绝合并。请重新生成修订稿。',
   'error.recoveryCandidateAlreadyHandled': '这份恢复稿已经处理过（已采用或已丢弃），请刷新后再看。',

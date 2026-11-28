@@ -289,7 +289,7 @@ export const enUS = {
   'error.revisionTargetChanged': 'The text or status of this draft changed. Reopen the revision comparison, then merge again.',
   'error.revisionSourceMissing': 'This older revision is missing the draft it was generated from. You can still read it, but it cannot be merged. Generate the revision again.',
   'error.mergeProjectSwitched': 'The book changed, so the revision was not merged.',
-  'error.mergeTargetUnresolved': 'This draft is read-only, or its draft and revision could not be identified.',
+  'error.mergeTargetUnresolved': 'Could not merge the revision: the draft is read-only, or its draft or revision could not be found.',
   'error.promptFileDamaged': 'The prompt file "{file}" cannot be read or is malformed, so nothing was generated. Resave or delete this prompt in Settings > Prompt templates.',
   'error.revisionSourceMismatch': 'This draft no longer matches the text the revision was generated from, so it was not merged. Generate the revision again.',
   'error.recoveryCandidateAlreadyHandled': 'This recovered draft was already handled (used or discarded). Refresh to see the current state.',
