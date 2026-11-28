@@ -70,15 +70,38 @@ function readsRawText(node: ts.Node): boolean {
   if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'String') return true
   if (ts.isPropertyAccessExpression(node) && RAW_PROPERTIES.has(node.name.text)) return true
   if (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression) && RAW_PROPERTIES.has(node.argumentExpression.text)) return true
-  if (ts.isTemplateSpan(node) && isCaughtValue(node.expression)) return true
+  if (ts.isTemplateSpan(node) && carriesCaughtValue(node.expression)) return true
   return ts.forEachChild(node, readsRawText) ?? false
 }
 
+/** 去掉不改变值的包装：括号、类型断言、非空断言、satisfies，逗号表达式取最后一项。 */
+function unwrap(expression: ts.Expression): ts.Expression {
+  for (;;) {
+    if (ts.isParenthesizedExpression(expression) || ts.isAsExpression(expression) || ts.isTypeAssertionExpression(expression)
+      || ts.isNonNullExpression(expression) || ts.isSatisfiesExpression(expression)) expression = expression.expression
+    else if (ts.isBinaryExpression(expression) && expression.operatorToken.kind === ts.SyntaxKind.CommaToken) expression = expression.right
+    else return expression
+  }
+}
+
+const VALUE_JOINS = new Set([ts.SyntaxKind.PlusToken, ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.AmpersandAmpersandToken])
+
+/** 表达式的值里是否原样带着 catch 变量：它本身、+ 拼接、?? || && 与条件表达式的分支。 */
+function carriesCaughtValue(expression: ts.Expression): boolean {
+  const value = unwrap(expression)
+  if (ts.isConditionalExpression(value)) return carriesCaughtValue(value.whenTrue) || carriesCaughtValue(value.whenFalse)
+  if (ts.isBinaryExpression(value) && VALUE_JOINS.has(value.operatorToken.kind)) return carriesCaughtValue(value.left) || carriesCaughtValue(value.right)
+  return isCaughtValue(value)
+}
+
+const bindsName = (binding: ts.BindingName, name: string): boolean => ts.isIdentifier(binding) ? binding.text === name
+  : binding.elements.some(element => !ts.isOmittedExpression(element) && bindsName(element.name, name))
+
 function isCaughtValue(expression: ts.Expression): boolean {
-  while (ts.isParenthesizedExpression(expression)) expression = expression.expression
   if (!ts.isIdentifier(expression)) return false
   const name = expression.text
   for (let scope: ts.Node | undefined = expression.parent; scope; scope = scope.parent) {
+    if (ts.isFunctionLike(scope) && scope.parameters.some(parameter => bindsName(parameter.name, name))) return false
     const caught = ts.isCatchClause(scope) ? scope.variableDeclaration?.name : undefined
     if (caught && ts.isIdentifier(caught) && caught.text === name) return true
   }
@@ -91,7 +114,7 @@ const OWNED_TEXT_CALLS = new Set(['authorOwned', 'writtenNote'])
 export function rawTextInNoteArguments(file: string, text: string): string[] {
   const found: string[] = []
   walk(file, text, (node, source) => {
-    if (ts.isCallExpression(node) && OWNED_TEXT_CALLS.has(calleeName(node) ?? '') && node.arguments.some(readsRawText)) {
+    if (ts.isCallExpression(node) && OWNED_TEXT_CALLS.has(calleeName(node) ?? '') && node.arguments.some(argument => carriesCaughtValue(argument) || readsRawText(argument))) {
       found.push(`${file}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1} ${node.getText(source)}`)
     }
   })
@@ -128,7 +151,8 @@ export function failureRewrites(file: string, text: string): string[] {
   walk(file, text, (node, source) => {
     const assign = ts.isCallExpression(node) && node.expression.getText(source) === 'Object.assign' && node.arguments.slice(1).some(arg =>
       ts.isObjectLiteralExpression(arg) && arg.properties.some(property => REWRITTEN_FIELDS.has(fieldName(property.name) ?? '')))
-    const target = ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken ? node.left : undefined
+    const target = ts.isBinaryExpression(node) && node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment
+      && node.operatorToken.kind <= ts.SyntaxKind.LastAssignment ? unwrap(node.left) : undefined
     const written = target && (ts.isPropertyAccessExpression(target) ? target.name.text
       : ts.isElementAccessExpression(target) && ts.isStringLiteralLike(target.argumentExpression) ? target.argumentExpression.text : undefined)
     const write = !!written && REWRITTEN_FIELDS.has(written)
