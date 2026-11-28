@@ -9,6 +9,7 @@ import { FAKE_MODEL, FIXTURE_CONFIG, FIXTURE_PROSE } from './fake-model.mjs'
 import * as blueprint from './pages/blueprint.mjs'
 import * as bookshelf from './pages/bookshelf.mjs'
 import * as chapter from './pages/chapter.mjs'
+import * as chapterView from './pages/chapter-view.mjs'
 import * as materials from './pages/materials.mjs'
 import * as project from './pages/project.mjs'
 import * as runPanel from './pages/run-panel.mjs'
@@ -18,7 +19,7 @@ import * as shell from './pages/shell.mjs'
 import * as stage from './pages/stage.mjs'
 import { countUnits, STAGE_SAMPLE, stageChapterTitle } from './stage-sample.mjs'
 
-export const SAMPLE = Object.freeze({ name: '灯塔', chapterNumber: 1, blueprints: [[1, '旧港'], [2, '北堤']] })
+export const SAMPLE = Object.freeze({ name: '灯塔', finalizedChapter: 1, chapterNumber: 2, blueprints: [[1, '旧港'], [2, '北堤']] })
 
 async function stubOpenDialog(app, selected) {
   await app.evaluate(({ dialog }, selected) => {
@@ -41,13 +42,19 @@ async function seedSample({ app, page, roots, invoke, reload }, { withDraft }) {
     entries: [{ characterId: `draft:${randomUUID()}`, name: '林岚', role: 'protagonist', gender: '', age: '', appearance: '',
       personality: '', background: '旧港潮汐记录的测绘师。', abilities: '', motivation: '查明失踪地图的来源。',
       relationships: [], arc: '', notes: '' }] }, created.projectPath, session)).success, true)
+  const core = await invoke(page, 'db:project-core-update', { ...STAGE_SAMPLE.core, totalChapters: 100, wordsPerChapter: STAGE_SAMPLE.wordsPerChapter },
+    created.projectPath, session)
+  assert.equal(core.success, true, core.failure?.code)
   for (const [chapterNumber, title] of SAMPLE.blueprints) {
     assert.equal((await invoke(page, 'db:blueprint-upsert', { chapterNumber, title, role: '发展', purpose: '核对地图与潮位',
       keyEvents: '林岚在灯塔下见到守塔人', characters: [] }, created.projectPath, session)).success, true)
   }
+  const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(), chapters: [{ chapterNumber: SAMPLE.finalizedChapter,
+    title: SAMPLE.blueprints[0][1], content: STAGE_SAMPLE.finalized[2], wordCount: countUnits(STAGE_SAMPLE.finalized[2]) }] }, created.projectPath, session)
+  assert.equal(imported.success, true, imported.failure?.code)
   if (withDraft) {
     const draft = await invoke(page, 'db:draft-create', { chapterNumber: SAMPLE.chapterNumber, version: 1, source: 'write',
-      content: FIXTURE_PROSE, wordCount: FIXTURE_PROSE.length }, created.projectPath, session)
+      content: FIXTURE_PROSE, wordCount: countUnits(FIXTURE_PROSE) }, created.projectPath, session)
     assert.equal(draft.success, true, draft.failure?.code)
   }
   await reload()
@@ -55,63 +62,81 @@ async function seedSample({ app, page, roots, invoke, reload }, { withDraft }) {
 }
 
 async function openSample(page) {
-  await bookshelf.openProject(page, SAMPLE.name)
-  await project.waitForTreeRefreshed(page, SAMPLE.blueprints.length)
+  await stage.openFromLibrary(page, SAMPLE.name)
+  await stage.stageButton(page, `蓝图 ${SAMPLE.blueprints.length} / `).waitFor({ state: 'visible' })
+}
+
+async function openChapter(page, chapterNumber) {
+  await stage.stageButton(page, '正文').click()
+  await chapterView.open(page, chapterNumber)
 }
 
 const seedWithDraft = context => seedSample(context, { withDraft: true })
 export const seedWithoutDraft = context => seedSample(context, { withDraft: false })
 
-async function openLatestDraft(page) {
-  await project.openLatestDraft(page)
-  await chapter.editor(page).getByText(FIXTURE_PROSE.slice(0, 12)).waitFor({ state: 'visible' })
-}
+const runsSettled = page => stage.root(page).locator('.stage-capsule:not([data-tone="ok"])').waitFor({ state: 'detached', timeout: 90_000 })
 
 async function writeChapter({ page }) {
-  await project.openBlueprints(page)
-  await chapter.writeThisChapter(page, 100)
-  await runPanel.waitForWorkflowDone(page)
-  await chapter.editor(page).getByText(FIXTURE_PROSE.slice(0, 12)).waitFor({ state: 'visible' })
+  await blueprint.open(page)
+  await page.getByRole('button', { name: `写第 ${SAMPLE.chapterNumber} 章`, exact: true }).click()
+  await stage.waitForProse(page, firstLine(FIXTURE_PROSE))
+  await runsSettled(page)
 }
 
-async function reviewLatestDraft({ page }) {
-  await openLatestDraft(page)
-  await chapter.review(page)
-  await runPanel.waitForWorkflowDone(page)
+const seedAndWrite = async context => { await seedWithoutDraft(context); await writeChapter(context) }
+
+async function reviewSampleDraft({ page }) {
+  await openChapter(page, SAMPLE.chapterNumber)
+  await chapterView.review(page)
+  await chapterView.reviseButton(page).waitFor({ state: 'visible', timeout: 90_000 })
+  await runsSettled(page)
 }
 
 export const SCENARIOS = {
-  'new-project': { model: false, run: async ({ app, page, roots }) => {
+  'new-project': { model: false, shell: 'stage', run: async ({ app, page, roots }) => {
     await stubOpenDialog(app, roots.projects)
     await bookshelf.createProject(page, SAMPLE.name)
-    await page.getByText('小说配置', { exact: true }).first().waitFor({ state: 'visible' })
+    await stage.setupOutline(page).waitFor({ state: 'visible' })
   } },
-  'open-sample': { model: false, setup: seedWithDraft, run: async ({ page }) => {
-    await project.tree(page).getByText('草稿_v1', { exact: true }).waitFor({ state: 'visible' })
+  'open-sample': { model: false, shell: 'stage', setup: seedWithoutDraft, run: async ({ page }) => {
+    await openChapter(page, SAMPLE.finalizedChapter)
+    await chapterView.prose(page).getByText(firstLine(STAGE_SAMPLE.finalized[2])).first().waitFor({ state: 'visible' })
+    assert.match(await chapterView.versionButton(page).innerText(), /^定稿 · /, `第 ${SAMPLE.finalizedChapter} 章打开的是预置的定稿`)
   } },
-  'write-chapter': { model: true, setup: seedWithoutDraft, run: writeChapter },
-  review: { model: true, setup: seedWithDraft, run: reviewLatestDraft },
-  'revise-merge': { model: true,
-    setup: async context => { await seedWithDraft(context); await reviewLatestDraft(context) },
+  'write-chapter': { model: true, shell: 'stage', setup: seedWithoutDraft, run: writeChapter },
+  review: { model: true, shell: 'stage', setup: seedWithDraft, run: reviewSampleDraft },
+  'revise-merge': { model: true, shell: 'stage',
+    setup: async context => { await seedWithDraft(context); await reviewSampleDraft(context) },
     run: async ({ page }) => {
-      await chapter.reviseFromReview(page, FAKE_MODEL.id)
-      await chapter.mergeDialog(page).waitFor({ state: 'visible', timeout: 60_000 })
+      await chapterView.reviseButton(page).click()
+      await chapterView.merge(page).waitFor({ state: 'visible', timeout: 60_000 })
+      await runsSettled(page)
     },
-    after: ({ page }) => chapter.completeMerge(page) },
-  finalize: { model: true, setup: seedWithDraft, run: async ({ page }) => {
-    await openLatestDraft(page)
-    await chapter.finalize(page, SAMPLE.chapterNumber)
-    await runPanel.waitForWorkflowDone(page)
-  } },
-  'run-panel': { model: true,
-    setup: async context => { await seedWithoutDraft(context); await writeChapter(context) },
-    run: async ({ page, reload }) => {
-      await reload()
-      await openSample(page)
-      await runPanel.open(page)
-      await runPanel.waitForPersistedRun(page, `第${SAMPLE.chapterNumber}章候选`)
+    after: async ({ page }) => {
+      await chapterView.merge(page).getByRole('button', { name: '全部用修稿' }).click()
+      await chapterView.merge(page).getByRole('button', { name: '完成合并' }).click()
+      await chapterView.view(page).getByRole('button', { name: '定稿', exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
+      await runsSettled(page)
     } },
-  settings: { model: false, run: ({ page }) => settings.open(page), after: ({ page }) => settings.close(page) },
+  finalize: { model: true, shell: 'stage', setup: seedWithDraft, run: async ({ page }) => {
+    await openChapter(page, SAMPLE.chapterNumber)
+    await chapterView.finalize(page, SAMPLE.chapterNumber)
+    await chapterView.postProcess(page).getByText('4 / 4 完成').waitFor({ state: 'visible', timeout: 90_000 })
+    await runsSettled(page)
+  } },
+  'run-panel': { model: true, shell: 'stage', setup: seedAndWrite, run: async ({ page, reload }) => {
+    await reload()
+    await openSample(page)
+    await runSheet.openFromPalette(page)
+    await runSheet.sheet(page).getByRole('heading', { name: '没有进行中的运行' }).waitFor({ state: 'visible' })
+    await openChapter(page, SAMPLE.chapterNumber)
+    await chapterView.prose(page).getByText(firstLine(FIXTURE_PROSE)).first().waitFor({ state: 'visible' })
+    assert.match(await chapterView.versionButton(page).innerText(), /^草稿 v1 · /, `重开作品后第 ${SAMPLE.chapterNumber} 章仍是写出的草稿 v1`)
+  } },
+  settings: { model: false, shell: 'stage', run: async ({ page }) => {
+    await stage.openSettings(page)
+    assert.equal(await stage.currentSettingsPage(page), 'AI 模型', '设置打开后落在 AI 模型')
+  }, after: ({ page }) => stage.closeSettings(page) },
 }
 
 async function assertRunPanelHiddenThenOpens(page, open) {
