@@ -53,4 +53,35 @@ describe('向量检索必须带空间身份', () => {
     await expect(search(project, NO_TEXT_MATCH, { queryVector, embeddingSpace: modelA }, 5))
       .resolves.toEqual([expect.objectContaining({ fileName: 'a.txt', text: '红帆船靠岸' })])
   })
+
+  it('空白指纹、别的模型的身份都不参与排序', async () => {
+    const project = newProject()
+    expect(await addChunks(project, 'doc-a', 'a.txt', ['红帆船靠岸'], [storedVector], undefined, undefined, modelA))
+      .toEqual({ success: true, chunkCount: 1 })
+
+    const modelB = { modelFingerprint: 'openai|https://b.example|emb-b', distanceMetric: 'l2' }
+    await expect(search(project, NO_TEXT_MATCH, { queryVector, embeddingSpace: { modelFingerprint: '  ' } }, 5)).resolves.toEqual([])
+    await expect(search(project, NO_TEXT_MATCH, { queryVector, embeddingSpace: modelB }, 5)).resolves.toEqual([])
+  })
+
+  it('照抄旧库占位指纹当身份，查询向量也不参与排序', async () => {
+    const project = newProject()
+    expect(await addChunks(project, 'doc-a', 'a.txt', ['红帆船靠岸'], [storedVector]))
+      .toEqual({ success: true, chunkCount: 1 })
+
+    await expect(search(project, NO_TEXT_MATCH, { queryVector, embeddingSpace: { modelFingerprint: 'legacy:dimension:8' } }, 5))
+      .resolves.toEqual([])
+    await expect(search(project, NO_TEXT_MATCH, { queryVector, embeddingSpace: { modelFingerprint: 'legacy:unknown' } }, 5))
+      .resolves.toEqual([])
+  })
+
+  it('缺身份时按全文找到正文', async () => {
+    const project = newProject()
+    expect(await addChunks(project, 'doc-a', 'a.txt', ['红帆船靠岸'], [storedVector], undefined, undefined, modelA))
+      .toEqual({ success: true, chunkCount: 1 })
+
+    // @ts-expect-error 缺空间身份的查询向量，类型上应写不出来。
+    await expect(search(project, '红帆船', { queryVector }, 5))
+      .resolves.toEqual([{ fileName: 'a.txt', text: '红帆船靠岸', score: 0.5 }])
+  })
 })
