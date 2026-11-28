@@ -8,13 +8,10 @@ const RAW = /Cannot read properties of null|TypeError|at \w+ \(/u
 
 async function crashSkillsPage(page) {
   return page.evaluate(() => {
-    const host = document.querySelector('.stage-set-inner')
-    const fiberKey = host && Object.keys(host).find(key => key.startsWith('__reactFiber$'))
+    const inside = document.querySelector('.stage-set-inner .stage-set-legacy')?.firstElementChild
+    const fiberKey = inside && Object.keys(inside).find(key => key.startsWith('__reactFiber$'))
     if (!fiberKey) return false
-    const pending = [host[fiberKey].child]
-    while (pending.length > 0) {
-      const fiber = pending.shift()
-      if (!fiber) continue
+    for (let fiber = inside[fiberKey]; fiber; fiber = fiber.return) {
       for (let hook = typeof fiber.type === 'function' ? fiber.memoizedState : null; hook; hook = hook.next) {
         const [skills, bindings, sourceUrl] = [hook.memoizedState, hook.next?.memoizedState, hook.next?.next?.memoizedState]
         const skillList = Array.isArray(skills) && skills.every(item => item && typeof item.skillId === 'string')
@@ -24,7 +21,6 @@ async function crashSkillsPage(page) {
           return true
         }
       }
-      pending.push(fiber.child, fiber.sibling)
     }
     return false
   })
@@ -47,7 +43,9 @@ async function observe(page, panel, { heading, copy, copied, name, shoot }) {
   await panel.getByRole('button', { name: copied }).waitFor({ state: 'visible', timeout: 5000 })
   const diagnostics = await page.evaluate(() => window.__copiedDiagnostics)
   assert.match(diagnostics ?? '', /Cannot read properties of null/u, '复制的诊断信息含异常原文')
-  assert.match(diagnostics ?? '', /\n\s+at /u, '复制的诊断信息含组件栈')
+  const componentStack = (diagnostics ?? '').split('\n\n').at(-1)
+  assert.match(componentStack, /^\s*at \S+/u, '复制的诊断信息末段是组件栈')
+  assert.doesNotMatch(componentStack, /Cannot read properties of null/u, '组件栈一段不是异常原文')
   return { shown, copiedLines: diagnostics.split('\n').length }
 }
 
