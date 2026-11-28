@@ -33,7 +33,7 @@ afterEach(() => {
 it('#702：生成请求连不上设置的代理时，传输诊断记下代理连不上，失败仍按网络失败交出', async () => {
   applyNetworkProxy({ enabled: true, type: 'http', host: '127.0.0.1', port: 7890 })
   const { last, onError } = await streamFailingWith(refused('127.0.0.1', 7890))
-  expect(last).toMatchObject({ phase: 'request', endReason: 'failed', errorCode: 'PROXY_UNREACHABLE' })
+  expect(last).toMatchObject({ phase: 'request', endReason: 'failed', errorName: 'TypeError', errorCode: 'PROXY_UNREACHABLE', causeCode: 'ECONNREFUSED' })
   expect(onError).toHaveBeenCalledExactlyOnceWith('LLM_STREAM_NETWORK_FAILED', undefined, undefined)
 })
 
