@@ -38,7 +38,7 @@
 | `skills-import-local` | 系统对话框打桩为隔离 TEMP 里的 Agent Skill 文件夹（SKILL.md 引用 references/voice.md、大小写不同的 References/Voice.md 和不存在的 FORMS.md，voice.md 回链 ../SKILL.md，另有 scripts/lint.py）：设置 → 写作 Skills →「选择文件夹」，检查卡只列一次并入的 references/voice.md，另列模型看不到与不会安装的文件，中途拍 `skills-import-local-inspected`；确认安装后把它绑定到「章节正文」，断言安装清单 `.pagekin-bundle.json` 只列 references/voice.md；再在 Skill 库旁放一个没有清单的旧式 Skill（SKILL.md 链接到含工具措辞的 forms.md），重开设置后它仍按 master 判兼容、可绑定，拍 `skills-import-local-bound`；最后从蓝图写下一章，断言写正文的请求带上 voice.md 原文、不含脚本，等运行完成 | 第 3 章写完、运行侧页显示已完成 | 是 | 本机 Skill 导入、安装清单、旧 Skill 与 master 一致 |
 | `x1-write-switch` | 一致性预检里保存安排、回复卡住时回书房用 Ctrl K 打开港口（作品条目只在书房的 Ctrl K 里），放行后港口里没有写作的启动调用，模型没收到正文请求 | 港口 | 是 | #387 C1 |
 | `x1-waive-all` | 第 4 章 AI 审稿（复验周期由审稿写回建立，才有「不修改此项」），侧页每条都选「不修改此项」：主按钮变成「确认不修改」，确认后提示已确认；换到第 3 章再回来仍是已确认（读自数据库） | 第 4 章 | 是 | #392 T1 |
-| `x1-cleanup-retry` | 第 3 章另有草稿 v1；把 v2 定稿（真实后处理写出正文文件），另起 PowerShell 进程只共享读地占住正文 txt（按 PID 结束），删除正文：落在 v1 的单章视图上，有「删除正文后的清理没有完成」且原因是 EBUSY；放开文件后点重试清理，提示消失、文件已删。只在 Windows 上跑 | v1 单章视图 | 是 | #392 T2 |
+| `x1-cleanup-retry` | 第 3 章另有草稿 v1；把 v2 定稿（真实后处理写出正文文件），另起 PowerShell 进程只共享读地占住正文 txt（按 PID 结束），删除正文：落在 v1 的单章视图上，有「删除正文后的清理没有完成」，原因写通用说明「出了意外问题，暂时说不清原因」，不露 EBUSY 等系统原文；放开文件后点重试清理，提示消失、文件已删。只在 Windows 上跑 | v1 单章视图 | 是 | #392 T2 |
 | `x1-run-recovery` | `failProse` 后写下一章：运行失败，运行侧页「可恢复的内容」立即列出第 3 章候选 | 运行侧页 | 是 | #381 C1 |
 | `x1-waiver-switch` | 第 4 章 AI 审稿后每条都选「不修改此项」，点「确认不修改」时读审稿原文卡住；回书房用 Ctrl K 打开港口并打开运行侧页，放行后运行侧页还开着，没有被换成灯塔那一稿的审稿侧页 | 港口运行侧页 | 是 | #405 r2 C1 |
 | `x1-setup-save-remount` | 设定页改一句按 Ctrl S，保存卡住时切到第 3 章标签再切回：下一步仍不可点，再按 Ctrl S 也不重发，放行后主进程只收到 1 次保存 | 设定 | 否 | #405 r2 复验低项 7 |
