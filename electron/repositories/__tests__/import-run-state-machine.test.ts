@@ -124,12 +124,12 @@ describe('ImportRunRepository state machine', () => {
 
   it('fails only the active stage and fences all later writes from that execution', () => {
     expectRejectedWithoutMutation(
-      () => ImportRunRepository.fail('state-run', 'global', 'wrong stage', execution),
+      () => ImportRunRepository.fail('state-run', 'global', { code: 'IMPORT_RUN_FAILED' }, execution),
       /STAGE_MISMATCH/,
     )
 
-    expect(ImportRunRepository.fail('state-run', 'knowledge', 'provider unavailable', execution))
-      .toMatchObject({ stage: 'knowledge', status: 'failed', lastError: 'provider unavailable' })
+    expect(ImportRunRepository.fail('state-run', 'knowledge', { code: 'IMPORT_RUN_FAILED' }, execution))
+      .toMatchObject({ stage: 'knowledge', status: 'failed', lastFailure: { code: 'IMPORT_RUN_FAILED' } })
     expect(() => ImportRunRepository.completeBatch('state-run', 'knowledge', '1-2', execution))
       .toThrow('IMPORT_RUN_EXECUTION_STALE')
   })
@@ -200,7 +200,7 @@ describe('ImportRunRepository state machine', () => {
       status: 'completed',
       resumable: false,
     })
-    expect(() => ImportRunRepository.fail('state-run', 'refresh', 'late failure', execution))
+    expect(() => ImportRunRepository.fail('state-run', 'refresh', { code: 'IMPORT_RUN_FAILED' }, execution))
       .toThrow('IMPORT_RUN_EXECUTION_STALE')
   })
 })

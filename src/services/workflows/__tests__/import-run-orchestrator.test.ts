@@ -8,7 +8,8 @@ import type {
 } from '../../../shared/import-run'
 import { createImportRunChapterBatchCheckpointId } from '../../../shared/import-run'
 import type { FinalizedDraftImportReceipt } from '../../../shared/finalized-draft-import'
-import { failureText, importStopFailure } from '../../../i18n/app-errors'
+import { authorError, failureText, importStopFailure, wireFailure } from '../../../i18n/app-errors'
+import { note } from '../../../shared/failure'
 import { useProjectStore } from '../../../stores/project-store'
 import { useWorkflowStore } from '../../../stores/workflow-store'
 import {
@@ -16,18 +17,23 @@ import {
   IMPORT_KNOWLEDGE_BATCH_SIZE,
   ImportRunOrchestrator,
   importRecordError,
+  type ImportRecordKey,
   type ImportRunOrchestratorDependencies,
 } from '../import-run-orchestrator'
+import { enUS } from '../../../i18n/messages/en-US'
 import { shown } from '../../../i18n/__tests__/shown-locale'
 import type { InterfaceLocale } from '../../../i18n/types'
 import { shownFailure } from '../../../stores/__tests__/run-failure-expect'
+
+/** 续导入面板按界面语言说明存下的失败。 */
+const storedText = (run: ImportRunSnapshot, locale: InterfaceLocale) => failureText(shown(locale), wireFailure(run.lastFailure))
 
 function runSnapshot(overrides: Partial<ImportRunSnapshot> = {}): ImportRunSnapshot {
   return {
     id: 'run-1', purpose: 'reference', rootRunId: 'run-1', effectNamespace: 'import:reference:run-1',
     sourceDisplay: [{ displayName: 'reference.txt', mediaType: 'text/plain', size: 1 }],
     locale: 'en-US', stage: 'knowledge', status: 'running', completedBatches: {},
-    lastError: '', resumable: true, cancelRequested: false, totalChapters: 25,
+    resumable: true, cancelRequested: false, totalChapters: 25,
     totalContentSize: 100, manifestChapterCount: 25, manifestContentSize: 100,
     manifestWordCount: 100, completedChapters: 0,
     createdAt: '2026-01-01', updatedAt: '2026-01-01',
@@ -104,8 +110,8 @@ function harness(total = 25, overrides: Partial<ImportRunSnapshot> = {}, interfa
       run = { ...run, stage: nextStage }
       return run
     }),
-    fail: vi.fn(async (_runId, stage, error) => {
-      run = { ...run, stage, status: 'failed', lastError: error }
+    fail: vi.fn(async (_runId, stage, failure) => {
+      run = { ...run, stage, status: 'failed', lastFailure: failure }
       return run
     }),
     cancelAtBoundary: vi.fn(async () => {
@@ -474,7 +480,7 @@ describe('ImportRunOrchestrator', () => {
 
     await expect(running).rejects.toThrow('provider unavailable')
     expect(deps.fail).toHaveBeenCalledWith(
-      'run-1', 'global', 'provider unavailable', authoritativeExecution,
+      'run-1', 'global', { code: 'IMPORT_RUN_FAILED' }, authoritativeExecution,
     )
   })
 
@@ -1003,7 +1009,8 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
 
     expect((failure as Error).message).toContain('第 2 章')
     expect((failure as Error).message).not.toMatch(/[A-Za-z]{3,}/u)
-    expect(getRun()).toMatchObject({ status: 'failed', lastError: (failure as Error).message })
+    expect(getRun().status).toBe('failed')
+    expect(storedText(getRun(), 'zh-CN')).toBe((failure as Error).message)
   })
 
   it('keeps the English explanation free of Chinese for an English import run', async () => {
@@ -1015,27 +1022,34 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
 
     expect((failure as Error).message).toContain('missing Chapter 2')
     expect((failure as Error).message).not.toMatch(han)
-    expect(getRun().lastError).toBe((failure as Error).message)
+    expect(storedText(getRun(), 'en-US')).toBe((failure as Error).message)
   })
 
-  it('导入记录报错统一接上继续或重新导入的办法，调用处只写是哪一项', () => {
-    expect(importRecordError(shown('zh-CN'), '记录甲不完整。', 'Record A is incomplete.').message)
-      .toBe('记录甲不完整。请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。')
-    expect(importRecordError(shown('en-US'), '记录甲不完整。', 'Record A is incomplete.').message)
-      .toBe('Record A is incomplete. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.')
+  it('导入记录报错在三种界面语言里都接上继续或重新导入的办法', () => {
+    const keys = Object.keys(enUS).filter((key): key is ImportRecordKey => key.startsWith('error.importRecord'))
+    expect(keys.length).toBeGreaterThan(0)
+    for (const key of keys) {
+      expect(importRecordError(shown('zh-CN'), key, { number: 2 }).message, key)
+        .toMatch(/^[^{}]+。请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。$/u)
+      expect(importRecordError(shown('en-US'), key, { number: 2 }).message, key)
+        .toMatch(/^[^{}]+. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.$/u)
+      expect(importRecordError(shown('ja-JP'), key, { number: 2 }).message, key)
+        .toMatch(/^[^{}]+。取り込みダイアログからこの取り込みを再開してください。/u)
+    }
   })
 
-  it('英文运行在日文界面续跑：收据缺章的说明仍是英文，与英文界面逐字相同', async () => {
+  it('英文运行在日文界面续跑：收据缺章的说明与停止说明一样用日文目录，存下的记录按英文说明与英文界面逐字相同', async () => {
     const outcomes = await Promise.all((['en-US', 'ja-JP'] as const).map(async interfaceLocale => {
       const { deps, getRun } = authorPostprocessHarness('en-US', interfaceLocale)
       const failure = await new ImportRunOrchestrator(deps)
         .executeStage('run-1', 'author-postprocess', 'test-runner', { cancelled: false }, callbacks)
         .catch((error: Error) => error)
-      return { message: (failure as Error).message, stored: getRun().lastError }
+      return { message: (failure as Error).message, stored: storedText(getRun(), 'en-US') }
     }))
 
     const expected = 'The saved author-manuscript record is missing Chapter 2. Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.'
-    expect(outcomes).toEqual([{ message: expected, stored: expected }, { message: expected, stored: expected }])
+    const japanese = '保存済みの著者原稿の記録に第2章がありません。取り込みダイアログからこの取り込みを再開してください。繰り返し発生する場合は、取り込みをやり直して、このメッセージをお送りください。'
+    expect(outcomes).toEqual([{ message: expected, stored: expected }, { message: japanese, stored: expected }])
   })
 
   it.each([
@@ -1053,7 +1067,8 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
 
     expect((failure as Error).message).toBe(failureText(shown(locale), importStopFailure(code)))
     expect((failure as Error).message).not.toContain(code)
-    expect(getRun()).toMatchObject({ status: 'failed', lastError: (failure as Error).message })
+    expect(getRun().status).toBe('failed')
+    expect(storedText(getRun(), locale)).toBe((failure as Error).message)
     expect(log.mock.calls.flat().some(line => String(line).includes(code))).toBe(true)
   })
 
@@ -1069,14 +1084,15 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
     const japanese = failureText(shown('ja-JP'), importStopFailure('ROOT_BUDGET_EXHAUSTED'))
     expect(japanese).not.toBe(failureText(shown('en-US'), importStopFailure('ROOT_BUDGET_EXHAUSTED')))
     expect((failure as Error).message).toBe(japanese)
-    expect(getRun()).toMatchObject({ locale: 'en-US', lastError: japanese })
+    expect(getRun().locale).toBe('en-US')
+    expect(storedText(getRun(), 'ja-JP')).toBe(japanese)
     expect(log).toHaveBeenCalledWith('Import stop reason: ROOT_BUDGET_EXHAUSTED')
   })
 
   it.each([
-    ['an unrelated provider failure', new Error('provider unavailable')],
-    ['a step explanation that carries a stop code', Object.assign(new Error('蓝图推演失败：活动时长用完（ROOT_BUDGET_EXHAUSTED）'), { code: 'ROOT_BUDGET_EXHAUSTED' })],
-  ])('keeps %s as it was', async (_case, thrown) => {
+    ['an unrelated provider failure', new Error('provider unavailable'), { code: 'IMPORT_RUN_FAILED' }],
+    ['a step explanation that carries a stop code', Object.assign(new Error('蓝图推演失败：活动时长用完（ROOT_BUDGET_EXHAUSTED）'), { code: 'ROOT_BUDGET_EXHAUSTED' }), { code: 'ROOT_BUDGET_EXHAUSTED' }],
+  ])('keeps %s as it was', async (_case, thrown, record) => {
     const { deps, getRun } = harness(1, { stage: 'global' })
     deps.inferGlobal = vi.fn(async () => { throw thrown })
 
@@ -1084,7 +1100,7 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
       .executeStage('run-1', 'global', 'test-runner', { cancelled: false }, callbacks)
       .catch((error: Error) => error)
     expect(failure).toBe(thrown)
-    expect(getRun().lastError).toBe(thrown.message)
+    expect(getRun().lastFailure).toEqual(record)
   })
 
   it('keeps a stop code raised outside the generation stages as it was', async () => {
@@ -1096,7 +1112,7 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
       .executeStage('run-1', 'refresh', 'test-runner', { cancelled: false }, callbacks)
       .catch((error: Error) => error)
     expect(failure).toBe(thrown)
-    expect(getRun().lastError).toBe(thrown.message)
+    expect(getRun().lastFailure).toEqual({ code: 'GENERATION_STORAGE_FAILED' })
   })
 
   it('gives an author-manuscript inference stop the author explanation instead of Start over', async () => {
@@ -1108,7 +1124,64 @@ describe('ImportRunOrchestrator failure copy follows the import run locale', () 
       .catch((error: Error) => error)
     expect((failure as Error).message).toBe(failureText(shown('zh-CN'), importStopFailure('ROOT_BUDGET_EXHAUSTED', false, 'author-manuscript')))
     expect((failure as Error).message).not.toContain('重新开始')
-    expect(getRun().lastError).toBe((failure as Error).message)
+    expect(storedText(getRun(), 'zh-CN')).toBe((failure as Error).message)
+  })
+
+  describe('失败记录存码与目录键，不存句子（#942）', () => {
+    const stored = (deps: ImportRunOrchestratorDependencies) => (deps.fail as ReturnType<typeof vi.fn>).mock.lastCall?.[2]
+
+    it('目录说明存成目录键，按任一界面语言都能重新说明', async () => {
+      const { deps } = harness(1, { stage: 'global', locale: 'zh-CN' })
+      deps.inferGlobal = vi.fn(async () => { throw new Error('ROOT_BUDGET_EXHAUSTED') })
+
+      const failure = await new ImportRunOrchestrator(deps)
+        .executeStage('run-1', 'global', 'test-runner', { cancelled: false }, callbacks)
+        .catch((error: Error) => error)
+
+      const record = stored(deps)
+      expect(record).toMatchObject({ code: 'IMPORT_RUN_FAILED', note: { key: expect.stringMatching(/^error\./u) } })
+      expect(failureText(shown('zh-CN'), wireFailure(record))).toBe((failure as Error).message)
+      expect(failureText(shown('en-US'), wireFailure(record))).toBe(failureText(shown('en-US'), importStopFailure('ROOT_BUDGET_EXHAUSTED')))
+    })
+
+    it('阶段说明只有中英两句时，存它包着的目录说明', async () => {
+      const { deps } = harness(1, { stage: 'blueprints' })
+      const stop = importStopFailure('ROOT_BUDGET_EXHAUSTED', true)!
+      deps.inferBlueprints = vi.fn(async () => {
+        throw authorError(shown('zh-CN'), { note: note('蓝图推演失败', 'Blueprint inference failed.'), because: stop })
+      })
+
+      await new ImportRunOrchestrator(deps)
+        .executeStage('run-1', 'blueprints', 'test-runner', { cancelled: false }, callbacks)
+        .catch(() => undefined)
+
+      expect(failureText(shown('en-US'), wireFailure(stored(deps)))).toBe(failureText(shown('en-US'), stop))
+    })
+
+    it('主进程交来的登记码原样存码', async () => {
+      const { deps } = harness(1, { stage: 'refresh' })
+      deps.refresh = vi.fn(async () => { throw new Error("Error invoking remote method 'db:draft-get-all': Error: KNOWLEDGE_BASE_NATIVE_UNAVAILABLE") })
+
+      await new ImportRunOrchestrator(deps)
+        .executeStage('run-1', 'refresh', 'test-runner', { cancelled: false }, callbacks)
+        .catch(() => undefined)
+
+      expect(stored(deps)).toEqual({ code: 'KNOWLEDGE_BASE_NATIVE_UNAVAILABLE' })
+    })
+
+    it.each([
+      ['原文报错', new Error("ENOENT: open 'C:\\Users\\Private\\secret.txt'")],
+      ['只有中英两句的说明', authorError(shown('zh-CN'), { note: note('某个说明。', 'Some explanation.') })],
+    ])('%s不进记录，只存通用码', async (_case, thrown) => {
+      const { deps } = harness(1, { stage: 'global' })
+      deps.inferGlobal = vi.fn(async () => { throw thrown })
+
+      await new ImportRunOrchestrator(deps)
+        .executeStage('run-1', 'global', 'test-runner', { cancelled: false }, callbacks)
+        .catch(() => undefined)
+
+      expect(stored(deps)).toEqual({ code: 'IMPORT_RUN_FAILED' })
+    })
   })
 
   it('uses the registered takeover explanation when lease renewal returns another execution identity', async () => {

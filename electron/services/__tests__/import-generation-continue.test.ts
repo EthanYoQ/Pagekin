@@ -53,7 +53,7 @@ it('请求途中活动时长用完、根被阻断后，「继续导入」接着�
   const execution = ImportRunRepository.startOrResume(RUN, '合成执行器').execution
   const { receipt } = generateSlot(f, blueprintSlot(RUN, f.chapters.slice(5)), execution)
   expect((await receipt).outcome).toMatchObject({ status: 'incomplete', receipt: { failureCode: 'ROOT_BUDGET_EXHAUSTED' } })
-  ImportRunRepository.fail(RUN, 'blueprints', '活动时长用完', execution)
+  ImportRunRepository.fail(RUN, 'blueprints', { code: 'IMPORT_RUN_FAILED' }, execution)
   await continueAndFinish(f)
 }, 60_000)
 
@@ -67,7 +67,7 @@ it('两次请求之间活动时长已用完时，「继续导入」接着跑完'
   const execution = ImportRunRepository.startOrResume(RUN, '合成执行器').execution
   const { receipt } = generateSlot(f, blueprintSlot(RUN, f.chapters.slice(5)), execution, f.owner, rootActionId)
   await expect(receipt).rejects.toThrow('ROOT_BUDGET_EXHAUSTED')
-  ImportRunRepository.fail(RUN, 'blueprints', '活动时长用完', execution)
+  ImportRunRepository.fail(RUN, 'blueprints', { code: 'IMPORT_RUN_FAILED' }, execution)
   f.spy.mockClear()
   f.current.dispatch = stop
   await runBlueprints(f, f.chapters.slice(5), RUN, f.owner, '继续导入的执行者')
@@ -139,7 +139,7 @@ it('模型正常结束但输出没通过校验（渲染端丢弃了候选），�
   const f = importGenerationFixture(cleanup, 10)
   const { execution, handle, artifactId } = await completedSecondBatch(f)
   f.owner.discardCandidate(handle, artifactId)
-  ImportRunRepository.fail(RUN, 'blueprints', '结构化输出缺少目标项', execution)
+  ImportRunRepository.fail(RUN, 'blueprints', { code: 'IMPORT_RUN_FAILED' }, execution)
   await continueAndFinish(f)
 }, 60_000)
 
@@ -199,7 +199,7 @@ it('重放的结果还不够、这一批要再发请求而根额度已用完：�
   expect(replayed.runId).toBe(handle.runId)
   expect((await owner.executeImportGeneration({ execution, handle: replayed, ordinal: 0, task })).outcome.status).toBe('completed')
   await expect(owner.executeImportGeneration({ execution, handle: replayed, ordinal: 1, task })).rejects.toThrow('ROOT_BUDGET_EXHAUSTED')
-  ImportRunRepository.fail(RUN, 'blueprints', '额度用完', execution)
+  ImportRunRepository.fail(RUN, 'blueprints', { code: 'IMPORT_RUN_FAILED' }, execution)
   await continueAndFinish(f, owner)
 }, 60_000)
 

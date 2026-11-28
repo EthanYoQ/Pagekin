@@ -27,7 +27,7 @@ import { retryDirectoryCharacterSync } from './directory-character-sync-recovery
 import type { WritingLanguage } from '../../shared/writing-language'
 import { countDraftUnits } from '../../shared/draft-units'
 import { note, type AuthorNote, type Failure } from '../../shared/failure'
-import { authorError, isRegisteredErrorCode, resultFailure } from '../../i18n/app-errors'
+import { authorError, catalogNote, isRegisteredErrorCode, resultFailure } from '../../i18n/app-errors'
 import { errorLocaleForRun } from '../../i18n/core'
 import { FINALIZATION_SHARED_WRITE_RESOURCE_KINDS } from '../../shared/workflow-resource-claims'
 
@@ -165,7 +165,7 @@ function productionDependencies(
         execution,
         projectPath,
       ),
-      note('无法保存 AI 生成的导入结果。', 'Could not freeze generated import output.'),
+      catalogNote('error.importOutputFreezeFailed'),
     ).receipt!,
     commitEffectReceipt: async (runId, stage, checkpoint, execution) => required(
       await ipc.invokeWithProjectSession(
@@ -177,7 +177,7 @@ function productionDependencies(
         execution,
         projectPath,
       ),
-      note('无法提交 AI 生成的导入结果。', 'Could not commit the generated import output.'),
+      catalogNote('error.importOutputCommitFailed'),
     ).result!,
     replayCommittedEffect: async (receipt, run) => {
       // Re-read through the main-process repository so replay receives the
@@ -194,18 +194,17 @@ function productionDependencies(
       if (!durableReceipt || JSON.stringify(durableReceipt) !== JSON.stringify(receipt)) {
         throw importRecordError(
           context.interfaceLocale,
-          '已提交的导入结果与保存的记录不一致。',
-          'Committed import effect receipt does not match durable storage.',
+          'error.importRecordReceiptMismatch',
         )
       }
       assertImportRunEffectReceiptMetadata(durableReceipt, run)
       if (durableReceipt.state !== 'committed') {
-        throw importRecordError(context.interfaceLocale, '导入结果还没有提交，不能直接恢复。', 'Prepared import effects cannot be replayed.')
+        throw importRecordError(context.interfaceLocale, 'error.importRecordNotCommitted')
       }
       if (durableReceipt.kind === 'chapter-blueprint-range') {
         const committed = durableReceipt.effectReceipt as BlueprintRangeCommitReceipt | undefined
         if (!committed?.characterSyncOperation?.operationId) {
-          throw importRecordError(context.interfaceLocale, '已保存的章节蓝图导入记录不完整。', 'Committed blueprint import receipt is incomplete.')
+          throw importRecordError(context.interfaceLocale, 'error.importRecordBlueprintIncomplete')
         }
         await retryDirectoryCharacterSync(
           committed.characterSyncOperation.operationId,
@@ -221,7 +220,7 @@ function productionDependencies(
           !authorReceipt
           || authorReceipt.operationId !== `author-import:${run.id}`
           || authorReceipt.drafts.length !== run.totalChapters
-        ) throw importRecordError(context.interfaceLocale, '已保存的作者原稿导入记录不完整。', 'Committed author-manuscript receipt is incomplete.')
+        ) throw importRecordError(context.interfaceLocale, 'error.importRecordAuthorIncomplete')
         return
       }
       const core = await ipc.invokeWithProjectSession(session, 'db:project-core-get', projectPath)
@@ -230,7 +229,7 @@ function productionDependencies(
         session,
         projectSessionContextFromProject(current),
       )) {
-        throw authorError(context.interfaceLocale, { note: note('当前项目已切换，无法恢复已保存的导入结果。', 'The project changed before the committed import effect could be restored.') })
+        throw authorError(context.interfaceLocale, { note: catalogNote('error.importProjectChangedBeforeRestore') })
       }
       useProjectStore.getState().publishSavedNovelConfig(configFieldsFromCore(core), session, 'unsaved-edits')
       context.data.novelConfigSummary = currentNovelConfigSummary(context.writingLanguage)
@@ -249,7 +248,7 @@ function productionDependencies(
       // 取消判定只凭这个码，必须带上。
       if (!result.success) {
         const failure = resultFailure(result)
-        const chapterNote = note('第 {n} 章参照文本未能写入知识库', 'Reference Chapter {n} could not be written to the knowledge base.', { n: chapter.number })
+        const chapterNote = catalogNote('error.importReferenceChapterNotWritten', { number: chapter.number })
         const explained = failure && (failure.note || isRegisteredErrorCode(failure.code))
         throw authorError(errorLocaleForRun(run.locale, context.interfaceLocale), explained ? failure
           : failure?.code ? { code: failure.code, note: chapterNote } : { note: chapterNote })
@@ -284,7 +283,7 @@ function productionDependencies(
         },
       )
         .execute({ step: {} as never, context, callbacks })
-      if (!style.trim()) throw authorError(context.interfaceLocale, { note: note('未提取到可用文风，无法继续建立仿写约束', 'No usable writing style was extracted, so imitation guidance cannot be created.') })
+      if (!style.trim()) throw authorError(context.interfaceLocale, { note: catalogNote('error.importStyleEmpty') })
     },
     inferBlueprints: async (chapters, checkpoint, run, commit) => {
       context.data.importGenerationSlot = { runId: run.id, stage: 'blueprints', batchId: checkpoint }
@@ -302,7 +301,7 @@ function productionDependencies(
     ),
     commitAuthorManuscript: async (run, commit) => {
       if (!run.authorityFingerprint || !run.manifestFingerprint) {
-        throw authorError(context.interfaceLocale, { note: note('作者原稿导入缺少权威状态指纹', 'The author-manuscript import is missing its authority fingerprint.') })
+        throw authorError(context.interfaceLocale, { note: catalogNote('error.importAuthorAuthorityMissing') })
       }
       await commit({
         operationId: `author-import:${run.id}`,
@@ -324,8 +323,7 @@ function productionDependencies(
       if (receipt.state !== 'committed' || receipt.kind !== 'author-finalized-batch') {
         throw importRecordError(
           context.interfaceLocale,
-          '作者原稿定稿还没有保存完成。',
-          'Author-manuscript finalization has not been durably committed.',
+          'error.importRecordAuthorFinalizationPending',
         )
       }
       return receipt.effectReceipt as FinalizedDraftImportReceipt
@@ -338,7 +336,7 @@ function productionDependencies(
       const { finalizationFailure, retryFinalizationPublication } = await import('../finalization-client')
       const result = await retryFinalizationPublication(draft.finalizationId, session)
       if (!result.success || result.publicationStatus !== 'published') {
-        throw authorError(context.interfaceLocale, finalizationFailure(result) ?? { note: note('第 {number} 章实体正文发布失败', 'Chapter {number} could not be published to the manuscript directory.', { number: chapter.number }) })
+        throw authorError(context.interfaceLocale, finalizationFailure(result) ?? { note: catalogNote('error.importAuthorChapterPublishFailed', { number: chapter.number }) })
       }
       callbacks.log(textForLocale(
         run.locale,
@@ -349,7 +347,7 @@ function productionDependencies(
     postprocessAuthorChapter: async (chapter, draft, run) => {
       const current = useProjectStore.getState().currentProject
       if (!current || !sameProjectSessionContext(session, projectSessionContextFromProject(current))) {
-        throw authorError(context.interfaceLocale, { note: note('当前项目已切换，无法更新原稿连续性事实', 'The project changed before manuscript continuity could be updated.') })
+        throw authorError(context.interfaceLocale, { note: catalogNote('error.importProjectChangedBeforeContinuity') })
       }
       const { RunFinalizePostProcessCommand } = await import('./commands/finalize-chapter.command')
       const status = await new RunFinalizePostProcessCommand({
@@ -376,7 +374,7 @@ function productionDependencies(
         )),
       }).execute({ step: {} as never, context, callbacks })
       if (!status.allCriticalPassed) {
-        throw authorError(context.interfaceLocale, { note: note('第 {number} 章连续性后处理未完成', 'Continuity post-processing did not complete for Chapter {number}.', { number: chapter.number }) })
+        throw authorError(context.interfaceLocale, { note: catalogNote('error.importContinuityIncomplete', { number: chapter.number }) })
       }
     },
     refresh: async run => {
@@ -393,7 +391,7 @@ function productionDependencies(
         await ipc.invokeWithProjectSession(
           session, 'db:import-run-complete-batch', runId, stage, checkpoint, execution, projectPath,
         ),
-        note('无法保存导入进度。', 'Could not save the import checkpoint.'),
+        catalogNote('error.importCheckpointSaveFailed'),
       )
       return { cancelApplied: result.cancelApplied ?? false, run: result.run! }
     },
@@ -401,13 +399,13 @@ function productionDependencies(
       await ipc.invokeWithProjectSession(
         session, 'db:import-run-advance-stage', runId, completedStage, nextStage, execution, projectPath,
       ),
-      note('无法推进导入进度。', 'Could not advance the import checkpoint.'),
+      catalogNote('error.importCheckpointAdvanceFailed'),
     ).run!,
-    fail: async (runId, stage, error, execution) => required(
+    fail: async (runId, stage, failure, execution) => required(
       await ipc.invokeWithProjectSession(
-        session, 'db:import-run-fail', runId, stage, error, execution, projectPath,
+        session, 'db:import-run-fail', runId, stage, failure, execution, projectPath,
       ),
-      note('无法保存导入失败记录。', 'Could not save the import failure.'),
+      catalogNote('error.importFailureRecordSaveFailed'),
     ).run!,
     cancelAtBoundary: async (runId, execution) => required(
       await ipc.invokeWithProjectSession(
@@ -417,7 +415,7 @@ function productionDependencies(
     ).run!,
     complete: async (runId, execution) => required(
       await ipc.invokeWithProjectSession(session, 'db:import-run-complete', runId, execution, projectPath),
-      note('无法完成这次导入。', 'Could not complete the import run.'),
+      catalogNote('error.importRunCompleteFailed'),
     ).run!,
   }
 }

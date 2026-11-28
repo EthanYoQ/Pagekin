@@ -201,7 +201,7 @@ describe('persisted per-source parsing', () => {
   it('resumes an explicit parsing run with only its unfinished source selected', () => {
     begin()
     ImportRunRepository.commitParsedSource('parse-run', SOURCE_A, [chapter(1, 'saved first source')])
-    ImportRunRepository.failParsedSource('parse-run', SOURCE_B, 'empty source')
+    ImportRunRepository.failParsedSource('parse-run', SOURCE_B, { code: 'IMPORT_SOURCE_SELECTION_FAILED' })
 
     const failedSnapshot = ImportRunRepository.get('parse-run')
     expect(failedSnapshot).toMatchObject({
@@ -246,7 +246,7 @@ describe('persisted per-source parsing', () => {
   it('rejects injected or already-completed sources from a partial resume without changing the run', () => {
     begin()
     ImportRunRepository.commitParsedSource('parse-run', SOURCE_A, [chapter(1)])
-    ImportRunRepository.failParsedSource('parse-run', SOURCE_B, 'empty source')
+    ImportRunRepository.failParsedSource('parse-run', SOURCE_B, { code: 'IMPORT_SOURCE_SELECTION_FAILED' })
     const before = getProjectDb()!.serialize()
 
     expect(() => reauthorize({
@@ -317,7 +317,7 @@ describe('persisted per-source parsing', () => {
   it('fences a failed parsing run and reparses every source without copying stale snapshots', () => {
     begin()
     ImportRunRepository.commitParsedSource('parse-run', SOURCE_A, [chapter(1)])
-    ImportRunRepository.failParsedSource('parse-run', SOURCE_B, 'read interrupted')
+    ImportRunRepository.failParsedSource('parse-run', SOURCE_B, { code: 'IMPORT_SOURCE_SELECTION_FAILED' })
 
     expect(ImportRunRepository.restart('parse-run', 'parse-restart')).toMatchObject({
       id: 'parse-restart', stage: 'parsing', status: 'ready', completedSources: 0, totalSources: 2,
@@ -333,7 +333,7 @@ describe('persisted per-source parsing', () => {
     ImportRunRepository.commitParsedSource('existing-run', SOURCE_B, [chapter(1, 'second source')])
     ImportRunRepository.finalizeParsing('existing-run')
     const execution = ImportRunRepository.startOrResume('existing-run', 'first-worker').execution
-    ImportRunRepository.fail('existing-run', 'knowledge', 'provider unavailable', execution)
+    ImportRunRepository.fail('existing-run', 'knowledge', { code: 'IMPORT_RUN_FAILED' }, execution)
 
     begin('provisional-run')
     ImportRunRepository.commitParsedSource('provisional-run', SOURCE_A, [chapter(1)])

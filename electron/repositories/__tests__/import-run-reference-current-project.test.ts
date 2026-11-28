@@ -274,7 +274,7 @@ describe('参考小说导入对话框新建的项目', () => {
   function failBeforeGlobal(): void {
     prepareReferenceRun()
     const { execution } = ImportRunRepository.startOrResume(RUN_ID, 'first-try')
-    ImportRunRepository.fail(RUN_ID, 'knowledge', 'provider unavailable', execution)
+    ImportRunRepository.fail(RUN_ID, 'knowledge', { code: 'IMPORT_RUN_FAILED' }, execution)
   }
 
   it('首次导入：默认值和空白字段都换成反推值，每章写入反推蓝图', async () => {
@@ -331,7 +331,7 @@ describe('对话框新建项目的导入失败后，作者改了设定再按当�
     ImportRunRepository.commitParsedSource(RUN_ID, SOURCE_ID, parsedChapters)
     ImportRunRepository.finalizeParsing(RUN_ID)
     const { execution } = ImportRunRepository.startOrResume(RUN_ID, 'first-try')
-    ImportRunRepository.fail(RUN_ID, 'knowledge', 'provider unavailable', execution)
+    ImportRunRepository.fail(RUN_ID, 'knowledge', { code: 'IMPORT_RUN_FAILED' }, execution)
     ProjectCoreRepository.update(AUTHOR_FILLED)
     BlueprintRepository.upsert(AUTHOR_BLUEPRINT)
 

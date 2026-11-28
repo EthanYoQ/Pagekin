@@ -1,4 +1,4 @@
-import { authorError, failureText, importStopFailure, resultFailure } from '../../../i18n/app-errors'
+import { authorError, catalogNote, failureText, importStopFailure, resultFailure } from '../../../i18n/app-errors'
 import type { ErrorDisplayLocale } from '../../../i18n/types'
 import { AuthorError, codeOf, note, type Failure } from '../../../shared/failure'
 import { specificWriteFailure } from '../../specific-write-failure'
@@ -157,7 +157,7 @@ function requireImportGlobalFactsReceipt(
         || !candidate.roster?.snapshot
         || candidate.roster.snapshot.status !== 'ready'
         || expected.characterEntries.some(entry => !committedNames.has(entry.name.trim())))
-  ) throw authorError(locale, { note: note('导入全局事实提交收据无效或覆盖不完整', 'The imported global-facts commit receipt is invalid or incomplete.') })
+  ) throw authorError(locale, { note: catalogNote('error.importGlobalReceiptInvalid') })
   return candidate
 }
 
@@ -165,9 +165,7 @@ export class ImportBlueprintPostCommitSyncError extends AuthorError {
   readonly retryOperationId: string
 
   constructor(readonly commitReceipt: BlueprintRangeCommitReceipt, locale: ErrorDisplayLocale) {
-    const failure: Failure = { note: note(
-      '导入蓝图已提交（第 {start}–{end} 章），但角色候选同步失败；可使用同步操作回执安全重试，无需重新生成蓝图。',
-      'Imported blueprints for Chapters {start}–{end} were committed, but character-candidate synchronization failed. Retry with the synchronization receipt without regenerating the blueprints.',
+    const failure: Failure = { note: catalogNote('error.importBlueprintSyncFailed',
       { start: commitReceipt.startChapter, end: commitReceipt.endChapter },
     ) }
     super(failure, failureText(locale, failure))
@@ -340,7 +338,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
     if (!project || !sameProjectSessionContext(
       projectSession,
       projectSessionContextFromProject(project),
-    )) throw authorError(context.interfaceLocale, { note: note('当前项目已切换，导入推演已停止', 'The project changed, so import inference stopped.') })
+    )) throw authorError(context.interfaceLocale, { note: catalogNote('error.importInferenceProjectChanged') })
     const projectSnapshot = Object.freeze({ ...project, novelConfig: Object.freeze({ ...project.novelConfig }) })
 
     const baseConfig: NovelConfig = frozen ? {
@@ -357,7 +355,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
       referenceWorks: frozen.core.referenceWorks,
     } : projectSnapshot.novelConfig
     const chapters = frozen?.chapters ?? context.data.chapters as ImportedChapter[]
-    if (!chapters || chapters.length === 0) throw authorError(context.interfaceLocale, { note: note('无章节数据', 'No chapter data is available.') })
+    if (!chapters || chapters.length === 0) throw authorError(context.interfaceLocale, { note: catalogNote('error.importNoChapters') })
     const importRunTotalChapters = frozen?.totalChapters ?? context.data.importRunTotalChapters
     const totalChapters = typeof importRunTotalChapters === 'number'
       && Number.isSafeInteger(importRunTotalChapters)
@@ -422,7 +420,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
     const template = frozen ? (frozen.prompts.infer_novel_config_with_vectors || frozen.prompts.infer_novel_config)
       : await resolvePromptTemplate('infer_novel_config_with_vectors', projectSession, writingLanguage)
         || await resolvePromptTemplate('infer_novel_config', projectSession, writingLanguage)
-    if (!template) throw authorError(context.interfaceLocale, { note: note('未找到推演 Prompt 模板', 'The import-inference prompt template was not found.') })
+    if (!template) throw authorError(context.interfaceLocale, { note: catalogNote('error.importInferenceTemplateMissing') })
 
     const firstChapter = chapters[0]?.content?.slice(0, 3000)
       || promptLanguageText(writingLanguage, '（第一章内容不可用）', '(opening chapter unavailable)')
@@ -513,7 +511,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
     }
     if (rawResult === undefined) {
       await this.discardRejectedImportOutput(callbacks)
-      throw authorError(context.interfaceLocale, { note: note('已导入的内容都已保存，只是 AI 推演结果两次格式都不对，没有写入。在导入对话框里点「继续导入」重试。', 'Everything imported is saved, but the AI inference was malformed twice and was not written. Choose Continue import in the import dialog to try again.') })
+      throw authorError(context.interfaceLocale, { note: catalogNote('error.importInferenceMalformedTwice') })
     }
     this.assertNotCancelled(context)
 
@@ -535,7 +533,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
       context.projectPath,
     )
     if (roster.status !== 'ready' && roster.status !== 'empty') {
-      throw authorError(context.interfaceLocale, { note: note('角色名单当前不可安全导入；请先完成旧项目修复或处理数据不一致状态', 'The character roster cannot be imported safely. Repair the legacy project or resolve its inconsistent state first.') })
+      throw authorError(context.interfaceLocale, { note: catalogNote('error.importRosterUnsafe') })
     }
 
     const novelConfig = {
@@ -552,7 +550,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
     if (!sameProjectSessionContext(
       projectSession,
       projectSessionContextFromProject(useProjectStore.getState().currentProject),
-    )) throw authorError(context.interfaceLocale, { note: note('当前项目已切换，导入配置结果未应用', 'The project changed, so the imported configuration was not applied.') })
+    )) throw authorError(context.interfaceLocale, { note: catalogNote('error.importConfigProjectChanged') })
     this.assertNotCancelled(context)
 
     const operationId = `novel-import-global-${frozen?.slot.runId ?? context.runId}`
@@ -608,7 +606,7 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
     if (!sameProjectSessionContext(
       projectSession,
       projectSessionContextFromProject(useProjectStore.getState().currentProject),
-    )) throw authorError(context.interfaceLocale, { note: note('当前项目已切换，导入配置结果未应用', 'The project changed, so the imported configuration was not applied.') })
+    )) throw authorError(context.interfaceLocale, { note: catalogNote('error.importConfigProjectChanged') })
     const savedFields = {
       genre: commitReceipt.core.genre,
       subGenre: commitReceipt.core.subGenre,
@@ -697,21 +695,19 @@ export class InferBlueprintsPerChapterCommand extends BaseWorkflowCommand<void> 
     if (!project || !sameProjectSessionContext(
       projectSession,
       projectSessionContextFromProject(project),
-    )) throw authorError(context.interfaceLocale, { note: note('当前项目已切换，蓝图推演已停止', 'The project changed, so blueprint inference stopped.') })
+    )) throw authorError(context.interfaceLocale, { note: catalogNote('error.importBlueprintProjectChanged') })
 
     const chapters = frozen?.chapters ?? context.data.chapters as ImportedChapter[]
     const configSummary = (frozen ? JSON.stringify(frozen.core) : context.data.novelConfigSummary as string)
       || promptLanguageText(writingLanguage, '（配置概要不可用）', '(configuration summary unavailable)')
-    if (!chapters || chapters.length === 0) throw authorError(context.interfaceLocale, { note: note('无章节数据', 'No chapter data is available.') })
+    if (!chapters || chapters.length === 0) throw authorError(context.interfaceLocale, { note: catalogNote('error.importNoChapters') })
 
     const template = frozen ? frozen.prompts.infer_single_chapter_blueprint
       : await resolvePromptTemplate('infer_single_chapter_blueprint', projectSession, writingLanguage)
-    if (!template) throw authorError(context.interfaceLocale, { note: note('未找到单章蓝图推演 Prompt 模板', 'The single-chapter blueprint inference prompt template was not found.') })
+    if (!template) throw authorError(context.interfaceLocale, { note: catalogNote('error.importBlueprintTemplateMissing') })
 
     if (chapters.length > InferBlueprintsPerChapterCommand.MAX_CHAPTERS_PER_OPERATION) {
-      throw authorError(context.interfaceLocale, { note: note(
-        '本次导入需推演 {count} 章蓝图，超过单次 {limit} 章的安全成本上限；请按连续章节分段，每段不超过 {limit} 章。',
-        'This import requires {count} chapter blueprints, exceeding the safe limit of {limit} per operation. Import contiguous ranges of at most {limit} chapters.',
+      throw authorError(context.interfaceLocale, { note: catalogNote('error.importBlueprintTooManyChapters',
         { count: chapters.length, limit: InferBlueprintsPerChapterCommand.MAX_CHAPTERS_PER_OPERATION },
       ) })
     }
@@ -723,7 +719,7 @@ export class InferBlueprintsPerChapterCommand extends BaseWorkflowCommand<void> 
       || endChapter === undefined
       || orderedChapters.some((chapter, index) => chapter.number !== startChapter + index)
     ) {
-      throw authorError(context.interfaceLocale, { note: note('导入蓝图只能按连续章节范围生成；请先补齐缺失章节或拆分为连续范围。', 'Imported blueprints can be inferred only for a contiguous chapter range. Fill missing chapters or split the import into contiguous ranges.') })
+      throw authorError(context.interfaceLocale, { note: catalogNote('error.importBlueprintRangeNotContiguous') })
     }
 
     const estimatedCalls = Math.ceil(chapters.length / InferBlueprintsPerChapterCommand.MAX_ITEMS_PER_BATCH)
@@ -853,7 +849,7 @@ export class InferBlueprintsPerChapterCommand extends BaseWorkflowCommand<void> 
       commitReceipt = commit.receipt
     }
     if (commitReceipt.snapshot.length !== orderedChapters.length) {
-      throw authorError(context.interfaceLocale, { note: note('导入蓝图提交回执覆盖不完整。', 'The imported blueprint commit receipt is incomplete.') })
+      throw authorError(context.interfaceLocale, { note: catalogNote('error.importBlueprintReceiptIncomplete') })
     }
     context.data.blueprintCommitReceipt = commitReceipt
     try {

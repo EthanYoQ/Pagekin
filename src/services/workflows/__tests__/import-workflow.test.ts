@@ -42,7 +42,7 @@ function run(overrides: Partial<ImportRunSnapshot> = {}): ImportRunSnapshot {
     id: 'import-run-1', purpose: 'reference', rootRunId: 'import-run-1', effectNamespace: 'import:reference:import-run-1',
     sourceDisplay: [{ displayName: 'reference.txt', mediaType: 'text/plain', size: 20 }],
     locale: 'zh-CN', stage: 'knowledge', status: 'running', completedBatches: {},
-    lastError: '', resumable: true, cancelRequested: false, totalChapters: 1,
+    resumable: true, cancelRequested: false, totalChapters: 1,
     totalContentSize: 20, manifestChapterCount: 1, manifestContentSize: 20,
     manifestWordCount: 20, completedChapters: 0,
     createdAt: '2026-01-01', updatedAt: '2026-01-01',

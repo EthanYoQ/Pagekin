@@ -97,8 +97,8 @@ describe('import execution lease', () => {
     const started = ImportRunRepository.startOrResume('leased-run', 'renderer-a')
     ImportRunRepository.requestCancel('leased-run', started.execution)
 
-    expect(ImportRunRepository.fail('leased-run', 'knowledge', '检索索引正在建立，请稍后再试。', started.execution))
-      .toMatchObject({ status: 'failed', resumable: true, lastError: '检索索引正在建立，请稍后再试。' })
+    expect(ImportRunRepository.fail('leased-run', 'knowledge', { code: 'IMPORT_RUN_FAILED' }, started.execution))
+      .toMatchObject({ status: 'failed', resumable: true, lastFailure: { code: 'IMPORT_RUN_FAILED' } })
     expect(ImportRunRepository.startOrResume('leased-run', 'renderer-b').run)
       .toMatchObject({ status: 'running', cancelRequested: false })
   })
@@ -113,7 +113,7 @@ describe('import execution lease', () => {
 
     expect(() => ImportRunRepository.completeBatch('leased-run', 'knowledge', '1', first.execution)).toThrow('IMPORT_RUN_EXECUTION_STALE')
     expect(() => ImportRunRepository.advanceStage('leased-run', 'knowledge', 'global', first.execution)).toThrow('IMPORT_RUN_EXECUTION_STALE')
-    expect(() => ImportRunRepository.fail('leased-run', 'knowledge', 'late', first.execution)).toThrow('IMPORT_RUN_EXECUTION_STALE')
+    expect(() => ImportRunRepository.fail('leased-run', 'knowledge', { code: 'IMPORT_RUN_FAILED' }, first.execution)).toThrow('IMPORT_RUN_EXECUTION_STALE')
     expect(() => ImportRunRepository.cancelAtBoundary('leased-run', first.execution)).toThrow('IMPORT_RUN_EXECUTION_STALE')
     expect(() => ImportRunRepository.complete('leased-run', first.execution)).toThrow('IMPORT_RUN_EXECUTION_STALE')
   })
@@ -123,7 +123,7 @@ describe('import execution lease', () => {
     const first = ImportRunRepository.startOrResume('leased-run', 'renderer-a', base, 60_000)
 
     expect(ImportRunRepository.fail(
-      'leased-run', 'knowledge', 'provider unavailable', first.execution,
+      'leased-run', 'knowledge', { code: 'IMPORT_RUN_FAILED' }, first.execution,
     )).toMatchObject({ status: 'failed' })
 
     const resumed = ImportRunRepository.startOrResume('leased-run', 'renderer-b', base + 1, 60_000)
@@ -173,7 +173,7 @@ describe('import execution lease', () => {
     expect(() => ImportRunRepository.startOrResume('leased-run', 'renderer-c', base + 2, 60_000))
       .toThrow('IMPORT_RUN_NOT_STARTABLE')
     expect(() => ImportRunRepository.fail(
-      'leased-run', 'knowledge', 'late-after-complete', resumed.execution,
+      'leased-run', 'knowledge', { code: 'IMPORT_RUN_FAILED' }, resumed.execution,
     )).toThrow('IMPORT_RUN_EXECUTION_STALE')
   })
 
@@ -187,7 +187,7 @@ describe('import execution lease', () => {
     const resumed = ImportRunRepository.startOrResume('leased-run', 'renderer-b', base + 1, 60_000)
     expect(resumed.execution.epoch).toBeGreaterThan(first.execution.epoch)
     expect(() => ImportRunRepository.fail(
-      'leased-run', 'knowledge', 'stale process', first.execution,
+      'leased-run', 'knowledge', { code: 'IMPORT_RUN_FAILED' }, first.execution,
     )).toThrow('IMPORT_RUN_EXECUTION_STALE')
   })
 

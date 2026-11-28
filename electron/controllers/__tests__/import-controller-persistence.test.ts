@@ -28,6 +28,8 @@ import type { WindowsSafeFileSystem } from '../../security/windows-safe-file-sys
 import { nodeTestSecureFileSystem } from '../../../test/helpers/node-test-secure-file-system'
 import { registerImportController } from '../import-controller'
 import { countDraftUnits } from '../../../src/shared/draft-units'
+import { failureText, wireFailure } from '../../../src/i18n/app-errors'
+import { shown } from '../../../src/i18n/__tests__/shown-locale'
 
 let parent = ''
 let projectRoot = ''
@@ -337,8 +339,9 @@ describe('current-project import parsing persistence', () => {
     const snapshots = ImportRunRepository.listResumable()
     expect(snapshots).toHaveLength(1)
     expect(snapshots[0]).toMatchObject({
-      id: 'frozen-english-run', locale: 'en-US', lastError: expectedSafeError,
+      id: 'frozen-english-run', locale: 'en-US', lastFailure: { code: 'IMPORT_SOURCE_SELECTION_FAILED' },
     })
+    expect(failureText(shown('en-US'), wireFailure(snapshots[0]!.lastFailure))).toBe(expectedSafeError)
     expect(JSON.stringify(snapshots)).not.toContain(source)
     expect(JSON.stringify(snapshots)).not.toContain(privateDiagnostic)
   })

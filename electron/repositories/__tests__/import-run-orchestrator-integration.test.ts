@@ -356,7 +356,7 @@ describe('ImportRunOrchestrator with the real import repository', () => {
     expect(failedRun).toMatchObject({
       stage: 'blueprints',
       status: 'failed',
-      lastError: 'injected crash after durable blueprint commit',
+      lastFailure: { code: 'IMPORT_RUN_FAILED' },
       completedBatches: { blueprints: [expect.stringMatching(/^1-2-[a-f0-9]{8}\.[a-f0-9]{8}$/u)] },
     })
     const checkpoint = failedRun.completedBatches.blueprints![0]!
@@ -456,7 +456,7 @@ describe('ImportRunOrchestrator with the real import repository', () => {
       id: runId,
       stage: 'blueprints',
       status: 'failed',
-      lastError: 'injected later blueprint model failure',
+      lastFailure: { code: 'IMPORT_RUN_FAILED' },
       completedBatches: {
         knowledge: [expect.any(String)],
         global: ['done'],

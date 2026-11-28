@@ -14,7 +14,7 @@ import { useLLMStore } from '../../../stores/llm-store'
 import { useWorkflowStore, type WorkflowContext, type WorkflowRun } from '../../../stores/workflow-store'
 import { runFailure } from '../../../components/run/run-failure'
 import { shown } from '../../../i18n/__tests__/shown-locale'
-import { failureText } from '../../../i18n/app-errors'
+import { failureText, wireFailure } from '../../../i18n/app-errors'
 import { copyLocale, errorLocaleForRun } from '../../../i18n/core'
 import type { InterfaceLocale, Locale } from '../../../i18n/types'
 
@@ -29,7 +29,7 @@ function snapshotFor(locale: Locale, stage: ImportRunSnapshot['stage']): ImportR
     id: 'import-run-1', purpose: 'reference', rootRunId: 'import-run-1', effectNamespace: 'import:reference:import-run-1',
     sourceDisplay: [{ displayName: 'reference.txt', mediaType: 'text/plain', size: 20 }],
     locale, stage, status: 'running', completedBatches: {},
-    lastError: '', resumable: true, cancelRequested: false, totalChapters: 1,
+    resumable: true, cancelRequested: false, totalChapters: 1,
     totalContentSize: 20, manifestChapterCount: 1, manifestContentSize: 20,
     manifestWordCount: 20, completedChapters: 0,
     createdAt: '2026-01-01', updatedAt: '2026-01-01',
@@ -44,7 +44,7 @@ function setInterface(locale: InterfaceLocale) {
 async function importStopsAtGenerationBegin(rejection: string, options: { runLocale: Locale; interfaceLocale: InterfaceLocale; cancelFirst?: boolean }) {
   const snapshot = snapshotFor(options.runLocale, 'global')
   const execution = { owner: 'test-import-executor', epoch: 1, expiresAt: Number.MAX_SAFE_INTEGER }
-  const failed: string[] = []
+  const failed: unknown[] = []
   ipcMocks.invoke.mockImplementation(async (_session, channel: string, ...args: unknown[]) => {
     switch (channel) {
       case 'db:import-run-get': return snapshot
@@ -57,7 +57,7 @@ async function importStopsAtGenerationBegin(rejection: string, options: { runLoc
       case 'db:import-run-request-cancel': return { success: true, run: { ...snapshot, cancelRequested: true } }
       case 'db:import-run-cancel-at-boundary': return { success: true, run: { ...snapshot, status: 'cancelled' } }
       case 'db:import-run-fail':
-        failed.push(String(args[2]))
+        failed.push(args[2])
         return { success: true, run: { ...snapshot, status: 'failed' } }
       default: return undefined
     }
@@ -133,12 +133,12 @@ describe('导入停下的原因随导入运行语言', () => {
     ['zh-CN', 'en-US', '这次导入的请求次数或运行时长已到上限，这一批没有发送。在导入对话框里点「继续导入」，已提交的批次不会重做。'],
     ['en-US', 'zh-CN', 'This import reached its limit on model requests or running time, so this batch was not sent. To finish, choose Continue import in the import dialog; batches already committed are not redone.'],
     ['en-US', 'ja-JP', 'この取り込みはモデルへのリクエスト数または実行時間の上限に達したため、このバッチは送信されませんでした。完了するには、取り込みダイアログで「Continue import」を選んでください。コミット済みのバッチはやり直されません。'],
-  ] as const)('运行 %s、界面 %s：运行卡片、存下的失败原因都是这句', async (runLocale, interfaceLocale, expected) => {
+  ] as const)('运行 %s、界面 %s：运行卡片是这句，存下的失败按同一语言说明也是这句', async (runLocale, interfaceLocale, expected) => {
     const { ended, failed } = await importStopsAtGenerationBegin('ROOT_BUDGET_EXHAUSTED', { runLocale, interfaceLocale })
 
     expect(ended.status).toBe('failed')
     for (const line of shownOnRunCard(ended, interfaceLocale)) expect(line).toBe(expected)
-    expect(failed).toEqual([expected])
+    expect(failed.map(record => failureText(errorLocaleForRun(runLocale, shown(interfaceLocale)), wireFailure(record)))).toEqual([expected])
   })
 
   it.each([
@@ -172,7 +172,7 @@ describe('导入取消判定不变', () => {
 
     expect(ended.status).toBe('failed')
     expect(channels).not.toContain('db:import-run-cancel-at-boundary')
-    expect(failed).toEqual(['这次导入的请求次数或运行时长已到上限，这一批没有发送。在导入对话框里点「继续导入」，已提交的批次不会重做。'])
+    expect(failed.map(record => failureText(shown('zh-CN'), wireFailure(record)))).toEqual(['这次导入的请求次数或运行时长已到上限，这一批没有发送。在导入对话框里点「继续导入」，已提交的批次不会重做。'])
   })
 
   it.each([

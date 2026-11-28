@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { knownAppErrorMessage } from '../../src/i18n/app-errors'
+import { importFailureRecordOf, knownAppErrorMessage, registeredErrorCode } from '../../src/i18n/app-errors'
 import { errorLocaleForRun, resolveLocale, translate } from '../../src/i18n/core'
 import type { ErrorDisplayLocale, Locale } from '../../src/i18n/types'
 import { failureCode, type WireFailure } from '../../src/shared/failure'
@@ -23,7 +23,7 @@ function rawReason(error: unknown): string {
 }
 
 /**
- * 导入对话框与导入运行卡片原样显示主进程交来的 error，失败原因还会存进导入运行的 last_error 供以后显示（#474）。
+ * 导入对话框与导入运行卡片原样显示主进程交来的 error。
  * 所以在 IPC 边界按导入运行的界面语言写成说明：登记过的码用 app-errors 的文案；没登记的码（导入运行、收据与来源的
  * 完整性校验，以及效果收据提交时生成来源复核交出的 GENERATION_IMPORT_* 等）给带码的通用说明，原码放在 errorCode。
  * 不是码的（已按语言写好的说明）返回 undefined，由调用方照旧交出。
@@ -42,9 +42,10 @@ export function explainImportRunFailure(error: unknown, locale: Locale | (() => 
   }
 }
 
-/** 存进 last_error 的失败原因：去掉 Electron 的调用通道与错误类名前缀，认得出的码换成说明。 */
-export function persistedImportRunFailure(reason: string, locale: Locale | (() => Locale)): string {
-  return explainImportRunFailure(reason, locale)?.error ?? rawReason(reason)
+/** 导入运行只存登记码，不存原文；没登记的码存通用码（#942）。 */
+export function importRunFailureOf(error: unknown): WireFailure {
+  const code = failureCode(registeredErrorCode(error))
+  return importFailureRecordOf(code ? { code } : undefined)
 }
 
 /** 导入的运行语言来自请求或运行记录，界面语言取主进程配置。 */
