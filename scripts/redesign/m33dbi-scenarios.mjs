@@ -55,6 +55,8 @@ export const M33DBI_SCENARIOS = {
     assert.equal(stepError, CHECK_FAILED_EN)
 
     await setInterfaceLocale(page, 'zh-CN')
+    const lang = await page.evaluate(() => document.documentElement.lang)
+    assert.equal(lang, 'zh-CN', '界面已切到中文')
     await runSheet.openFromPalette(page)
     const afterSwitch = await failedStepError(page)
     const sheet = await runSheet.sheet(page).innerText()
@@ -62,6 +64,6 @@ export const M33DBI_SCENARIOS = {
     await shoot('m33dbi-checkpoint-failed-en-zh-ui')
     assert.equal(afterSwitch, stepError, '界面切到中文后，英文运行的失败说明不变')
     assert.doesNotMatch(sheet, /IMPORT_RUN_|CHECKPOINT_STAGE|Error invoking/u, '运行侧页不露错误码与主进程原文')
-    return { stepError, afterSwitch, lang: await page.evaluate(() => document.documentElement.lang) }
+    return { stepError, afterSwitch, lang }
   } },
 }

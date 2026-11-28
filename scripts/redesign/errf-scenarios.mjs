@@ -90,11 +90,13 @@ export const ERRF_SCENARIOS = {
     assert.doesNotMatch(stepError, /\p{Script=Han}/u, '英文运行的说明不含中文')
 
     await setInterfaceLocale(page, 'zh-CN')
+    const lang = await page.evaluate(() => document.documentElement.lang)
+    assert.equal(lang, 'zh-CN', '界面已切到中文')
     await runSheet.openFromPalette(page)
     const afterSwitch = await failedStepError(page)
     await page.waitForTimeout(400)
     await shoot('errf-stop-en-card-zh-ui')
     assert.equal(afterSwitch, stepError, '界面切到中文后，英文运行的停下说明不变')
-    return { stepError, afterSwitch }
+    return { stepError, afterSwitch, lang }
   } },
 }
