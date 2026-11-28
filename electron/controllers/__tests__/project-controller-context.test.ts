@@ -1658,10 +1658,9 @@ describe('project:open：作品文件坏了、被占用或没有权限时，说�
     mocks.verifyCanonicalProjectData.mockRejectedValueOnce(error)
     return handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), `open-B-${error.message}`, projectA)
   }
-  // 与 project-store 一样：带 errorCode 时按整个结果说明，否则按 error。
+  // 与 project-store 一样按 resultFailure 说明。
   const explain = (shownResult: unknown) => {
-    const result = shownResult as { errorCode?: string, error?: string }
-    const failure = result.errorCode ? result : result.error
+    const failure = resultFailure(shownResult as { errorCode?: string, error?: string })
     return {
       zh: projectOpenFailureMessage(shown('zh-CN'), failure, '灯塔'),
       en: projectOpenFailureMessage(shown('en-US'), failure, '灯塔'),
@@ -1919,7 +1918,7 @@ describe('新建、删除作品失败时，说真正的原因和办法，不露�
 type ProjectResult = { success: boolean, error?: string, errorCode?: string, warning?: string, failure?: Parameters<typeof failureText>[1] }
 
 const received = async (raw: unknown) => receivedIpcResult(await raw) as ProjectResult
-const projectFailure = (result: ProjectResult) => resultFailure(result) ?? (result.errorCode ? result : result.error)
+const projectFailure = (result: ProjectResult) => resultFailure(result)
 const LOCALES = ['zh-CN', 'en-US'] as const
 
 describe('作品与备份控制器失败时作者看不到主进程原文', () => {
