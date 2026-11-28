@@ -40,7 +40,6 @@ const executionOwner = 'test-import-executor'
 function run(overrides: Partial<ImportRunSnapshot> = {}): ImportRunSnapshot {
   return {
     id: 'import-run-1', purpose: 'reference', rootRunId: 'import-run-1', effectNamespace: 'import:reference:import-run-1',
-    coreWriteMode: overrides.purpose === 'author-manuscript' ? 'fill-empty' : 'replace',
     sourceDisplay: [{ displayName: 'reference.txt', mediaType: 'text/plain', size: 20 }],
     locale: 'zh-CN', stage: 'knowledge', status: 'running', completedBatches: {},
     lastError: '', resumable: true, cancelRequested: false, totalChapters: 1,
@@ -144,8 +143,8 @@ describe('createImportWorkflow', () => {
 
     expect(workflow).toMatchObject({ runId: 'import-run-1', uiLocale: 'zh-CN', projectSession: session })
     expect(workflow.steps.map(step => step.name)).toEqual([
-      '导入参照文本与构建知识库', 'AI 推演全局配置与架构', 'AI 拆解文风与仿写指南',
-      'AI 分批推演章节蓝图', '刷新项目状态',
+      '导入参照文本与构建知识库', '反推设定、架构与角色', '反推文风',
+      '为没有蓝图的章反推蓝图', '刷新项目状态',
     ])
     expect(workflow.steps[0].description).toContain('不写入草稿或正文')
   })
@@ -196,6 +195,7 @@ describe('createImportWorkflow', () => {
       }
       if (channel === 'db:import-run-effect-receipt-get') return null
       if (channel === 'db:import-run-fail') return { success: true, run: { ...snapshot, status: 'failed' } }
+      if (channel === 'db:blueprint-get-all') return []
       throw new Error(`Unexpected channel ${channel}`)
     })
     const workflow = createImportWorkflow({
@@ -384,6 +384,7 @@ describe('createImportWorkflow', () => {
         success: true,
         run: { ...snapshot, status: 'failed' },
       }
+      if (channel === 'db:blueprint-get-all') return []
       throw new Error(`Unexpected channel ${channel}`)
     })
     const workflow = createImportWorkflow({

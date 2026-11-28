@@ -623,32 +623,3 @@ afterAll(() => {
   vi.resetModules()
   if (globalFixtureRoot) fs.rmSync(globalFixtureRoot, { recursive: true, force: true })
 })
-
-describe('参考小说导入的写入模式由导入目标决定', () => {
-  it.each([
-    { target: 'new-project', coreWriteMode: 'replace' },
-    { target: 'current-project', coreWriteMode: 'fill-empty' },
-    { target: undefined, coreWriteMode: 'fill-empty' },
-  ] as const)('导入目标 $target 冻结为 $coreWriteMode', async ({ target, coreWriteMode }) => {
-    const source = path.join(parent, 'target.txt')
-    fs.writeFileSync(source, 'body', 'utf8')
-    mocks.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [source] })
-    const fileSystem = {
-      readText: vi.fn(async () => '第1章 开端\n参考正文'),
-    } as unknown as WindowsSafeFileSystem
-    registerImportController(
-      fileSystem,
-      filePath => ({ canonicalLocation: filePath, fileIdentity: `file:${path.basename(filePath)}` }),
-      {},
-      new ExternalFileGrantService(),
-      new ImportInspectionStore(),
-      secret,
-    )
-    const handler = mocks.handlers.get('dialog:select-novel-files')!
-    const request = { runId: `target-${target}`, purpose: 'reference', locale: 'zh-CN', target, expectedProjectPath: projectRoot }
-
-    const result = await handler({ sender: { id: 60, once: vi.fn() } }, request, session) as { preparation: { run: { id: string } } }
-
-    expect(ImportRunRepository.get(result.preparation.run.id)).toMatchObject({ coreWriteMode })
-  })
-})

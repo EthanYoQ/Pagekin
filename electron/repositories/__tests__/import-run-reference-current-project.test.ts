@@ -154,13 +154,13 @@ function dependencies(trace: Trace): ImportRunOrchestratorDependencies {
 
 const callbacks = () => ({ log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() })
 
-async function runRemainingStages(trace: Trace): Promise<void> {
+async function runRemainingStages(trace: Trace, runId = RUN_ID): Promise<void> {
   const orchestrator = new ImportRunOrchestrator(dependencies(trace))
-  const run = ImportRunRepository.get(RUN_ID)!
+  const run = ImportRunRepository.get(runId)!
   const plan = importStagesFor(run)
   for (const stage of plan.slice(plan.indexOf(run.stage))) {
     if (stage === 'completed') break
-    await orchestrator.executeStage(RUN_ID, stage, 'renderer', { cancelled: false }, callbacks())
+    await orchestrator.executeStage(runId, stage, 'renderer', { cancelled: false }, callbacks())
   }
 }
 
@@ -265,31 +265,49 @@ describe('升级前进行到一半的参考导入', () => {
 })
 
 describe('参考小说导入对话框新建的项目', () => {
-  it('整体写入反推值，新项目的默认总章数等也被覆盖', async () => {
-    BlueprintRepository.upsert(AUTHOR_BLUEPRINT)
-    prepareReferenceRun({ coreWriteMode: 'replace' })
+  const AUTHOR_EDITS = { genre: '武侠', totalChapters: 40, writingStyle: '作者的长句风格' }
+  const FILLED_AROUND_EDITS = {
+    subGenre: '本格', targetAudience: '成人', wordsPerChapter: 2400, plotStructure: 'heros_journey',
+    narrativePov: 'first_person', coreOutline: '参考小说的大纲', premise: '参考前提',
+  }
+
+  function failBeforeGlobal(): void {
+    prepareReferenceRun()
+    const { execution } = ImportRunRepository.startOrResume(RUN_ID, 'first-try')
+    ImportRunRepository.fail(RUN_ID, 'knowledge', 'provider unavailable', execution)
+  }
+
+  it('首次导入：默认值和空白字段都换成反推值，每章写入反推蓝图', async () => {
+    prepareReferenceRun()
     const trace: Trace = { blueprintCalls: [] }
 
     await runRemainingStages(trace)
 
-    expect(ImportRunRepository.get(RUN_ID)).toMatchObject({ status: 'completed', coreWriteMode: 'replace' })
+    expect(ImportRunRepository.get(RUN_ID)).toMatchObject({ status: 'completed' })
     expect(ProjectCoreRepository.get()).toMatchObject({ ...INFERRED_CORE, writingStyle: INFERRED_STYLE })
     expect(trace.blueprintCalls).toEqual([[1, 2, 3]])
     expect(BlueprintRepository.getAll().map(item => item.title)).toEqual(['参考蓝图1', '参考蓝图2', '参考蓝图3'])
   })
 
-  it('失败后重新开始的运行沿用整体写入', () => {
-    prepareReferenceRun({ coreWriteMode: 'replace' })
-    getProjectDb()!.prepare("UPDATE import_runs SET status = 'failed' WHERE id = ?").run(RUN_ID)
+  it('失败后作者改了设定再继续导入：改过的字段不变，空白和默认值补上', async () => {
+    failBeforeGlobal()
+    ProjectCoreRepository.update(AUTHOR_EDITS)
 
-    expect(ImportRunRepository.restart(RUN_ID, 'restarted-run')).toMatchObject({ coreWriteMode: 'replace' })
+    await runRemainingStages({ blueprintCalls: [] })
+
+    expect(ImportRunRepository.get(RUN_ID)).toMatchObject({ status: 'completed' })
+    expect(ProjectCoreRepository.get()).toMatchObject({ ...AUTHOR_EDITS, ...FILLED_AROUND_EDITS })
   })
 
-  it('当前项目的运行重新开始后仍只补空白', () => {
-    prepareReferenceRun()
-    getProjectDb()!.prepare("UPDATE import_runs SET status = 'failed' WHERE id = ?").run(RUN_ID)
+  it('失败后作者改了设定再重新开始：改过的字段不变，空白和默认值补上', async () => {
+    failBeforeGlobal()
+    ProjectCoreRepository.update(AUTHOR_EDITS)
 
-    expect(ImportRunRepository.restart(RUN_ID, 'restarted-run')).toMatchObject({ coreWriteMode: 'fill-empty' })
+    ImportRunRepository.restart(RUN_ID, 'restarted-run')
+    await runRemainingStages({ blueprintCalls: [] }, 'restarted-run')
+
+    expect(ImportRunRepository.get('restarted-run')).toMatchObject({ status: 'completed' })
+    expect(ProjectCoreRepository.get()).toMatchObject({ ...AUTHOR_EDITS, ...FILLED_AROUND_EDITS })
   })
 })
 
@@ -300,16 +318,16 @@ describe('对话框新建项目的导入失败后，作者改了设定再按当�
     return { number: item.number, title: item.title, content,
       contentFingerprint: createHash('sha256').update(content).digest('hex'), contentSize: Buffer.byteLength(content) }
   })
-  function selectSource(runId: string, coreWriteMode: 'replace' | 'fill-empty') {
+  function selectSource(runId: string) {
     ImportRunRepository.beginParsing({
       runId, purpose: 'reference', sourceFingerprint: 'f'.repeat(64), sourceIds: [SOURCE_ID],
       sourceFingerprints: ['9'.repeat(64)], sourceDisplay: [{ displayName: '参考.txt', mediaType: 'text/plain', size: 256 }],
-      locale: 'zh-CN', coreWriteMode,
+      locale: 'zh-CN',
     })
   }
 
   it('复用旧运行时只补空白，作者已填的设定和蓝图逐字不变', async () => {
-    selectSource(RUN_ID, 'replace')
+    selectSource(RUN_ID)
     ImportRunRepository.commitParsedSource(RUN_ID, SOURCE_ID, parsedChapters)
     ImportRunRepository.finalizeParsing(RUN_ID)
     const { execution } = ImportRunRepository.startOrResume(RUN_ID, 'first-try')
@@ -317,29 +335,15 @@ describe('对话框新建项目的导入失败后，作者改了设定再按当�
     ProjectCoreRepository.update(AUTHOR_FILLED)
     BlueprintRepository.upsert(AUTHOR_BLUEPRINT)
 
-    selectSource('second-selection', 'fill-empty')
+    selectSource('second-selection')
     ImportRunRepository.commitParsedSource('second-selection', SOURCE_ID, parsedChapters)
     expect(ImportRunRepository.finalizeParsing('second-selection')).toMatchObject({
-      classification: 'resumable', run: { id: RUN_ID, coreWriteMode: 'fill-empty' },
+      classification: 'resumable', run: { id: RUN_ID },
     })
     await runRemainingStages({ blueprintCalls: [] })
 
     expect(ImportRunRepository.get(RUN_ID)).toMatchObject({ status: 'completed' })
     expect(authorCore()).toEqual(AUTHOR_FILLED)
     expect(BlueprintRepository.getByChapter(2)).toMatchObject({ title: '作者写的第2章蓝图', userGuidance: '作者的微操' })
-  })
-
-  it('解析到一半的旧运行被当前项目复用时也只补空白', () => {
-    selectSource(RUN_ID, 'replace')
-    selectSource('second-selection', 'fill-empty')
-
-    expect(ImportRunRepository.get(RUN_ID)).toMatchObject({ coreWriteMode: 'fill-empty' })
-  })
-
-  it('只补空白的运行被新项目请求复用时不改成整体写入', () => {
-    selectSource(RUN_ID, 'fill-empty')
-    selectSource('second-selection', 'replace')
-
-    expect(ImportRunRepository.get(RUN_ID)).toMatchObject({ coreWriteMode: 'fill-empty' })
   })
 })
