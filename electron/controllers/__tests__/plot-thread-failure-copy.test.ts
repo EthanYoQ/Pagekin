@@ -40,9 +40,13 @@ vi.mock('../../services/project-access', () => ({
 vi.mock('../../repositories/narrative-thread-repository', () => ({ NarrativeThreadRepository: mocks.threads }))
 vi.mock('../../repositories/plot-tree-repository', () => ({ PlotTreeRepository: mocks.plotTree }))
 
+import { readFileSync } from 'node:fs'
 import { registerDatabaseController } from '../db-controller'
 import { failureText, receivedIpcResult, resultFailure } from '../../../src/i18n/app-errors'
 import { shown } from '../../../src/i18n/__tests__/shown-locale'
+import { plotWriteFailureText } from '../../../src/components/stage/plot/plot-write-failure'
+import { note } from '../../../src/shared/failure'
+import { useLocaleStore } from '../../../src/stores/locale-store'
 
 const session = { projectId: 'project-A', leaseId: 'lease-A', projectPath: 'C:/projects/A' }
 const invoke = (channel: string, ...args: unknown[]) => mocks.handlers.get(channel)!({}, ...args, session)
@@ -133,5 +137,55 @@ describe('叙事线与情节树失败的说明与 master 逐字相同', () => {
       const rejection = await invoke(channel, ...args).then(() => undefined, (error: Error) => error)
       expect(rejection?.message, channel).toMatch(/^PROJECT_/u)
     }
+  })
+})
+
+const REPOSITORY_CODES = [...new Set([...readFileSync(new URL('../../repositories/narrative-thread-repository.ts', import.meta.url), 'utf8')
+  .matchAll(/new Error\('([A-Z][A-Z0-9_]+)'\)/gu)].map(match => match[1]!))]
+const WRITE_FAILED = '已有的线索和剧情树都还在。这次修改没能写进作品，请刷新后再试一次。'
+const ENTRY_FALLBACK = '保存叙事线索失败'
+const CODE_SHAPE = /[A-Z][A-Z0-9]*_[A-Z0-9_]+/u
+
+async function shownAtEntry(code: string, locale: 'zh-CN' | 'en-US' | 'ja-JP'): Promise<string> {
+  mocks.threads.createPlan.mockImplementation(() => { throw new Error(code) })
+  const result = await received(...WRITES[0].slice(0, 2) as [string, readonly unknown[]])
+  const original = useLocaleStore.getState()
+  useLocaleStore.setState({ interfaceLocale: locale, locale: locale === 'zh-CN' ? 'zh-CN' : 'en-US' })
+  try {
+    return plotWriteFailureText(result, note(ENTRY_FALLBACK, 'Could not save narrative thread'))
+  } finally {
+    useLocaleStore.setState(original, true)
+  }
+}
+
+describe('叙事线仓储拒绝写入时说明具体原因（#909）', () => {
+  it('仓储能抛出的每个码在入口处都有自己的说明，不落到写失败句或入口兜底句', async () => {
+    expect(REPOSITORY_CODES).toEqual(expect.arrayContaining(['NARRATIVE_THREAD_PLAN_INVALID', 'NARRATIVE_THREAD_RANGE_INVALID']))
+    for (const code of REPOSITORY_CODES) {
+      const shownText = await shownAtEntry(code, 'zh-CN')
+      expect(shownText, code).not.toBe(WRITE_FAILED)
+      expect(shownText, code).not.toBe(ENTRY_FALLBACK)
+      expect(shownText, code).not.toBe('出了意外问题，暂时说不清原因。请再试一次。')
+    }
+  })
+
+  it.each([
+    ['NARRATIVE_THREAD_PLAN_INVALID', {
+      'zh-CN': '这条线索没有保存。名称、类型和「你的打算」都要填，名称最多 120 字，类型最多 60 字，「你的打算」最多 1000 字。',
+      'en-US': 'This thread was not saved. Fill in the name, kind and intent. The name can be up to 120 characters, the kind up to 60, and the intent up to 1000.',
+      'ja-JP': 'この伏線は保存されませんでした。名前・種類・意図をすべて入力してください。名前は 120 字、種類は 60 字、意図は 1000 字までです。',
+    }],
+    ['NARRATIVE_THREAD_RANGE_INVALID', {
+      'zh-CN': '章节号不对，这次修改没有保存。章节号要是从 1 开始的整数，回收章不能早于埋设章。',
+      'en-US': 'A chapter number is not valid, so this change was not saved. Use whole numbers from 1, and the payoff chapter cannot come before the planted chapter.',
+      'ja-JP': '章番号が正しくないため、この変更は保存されませんでした。章番号は 1 以上の整数にし、回収章を設置章より前にしないでください。',
+    }],
+  ] as const)('%s 说明哪里不对、怎么改', async (code, expected) => {
+    for (const locale of ['zh-CN', 'en-US', 'ja-JP'] as const) {
+      const shownText = await shownAtEntry(code, locale)
+      expect(shownText, locale).toBe(expected[locale])
+      expect(shownText, locale).not.toMatch(CODE_SHAPE)
+    }
+    expect(await shownAtEntry(code, 'ja-JP')).not.toMatch(/[A-Za-z]/u)
   })
 })

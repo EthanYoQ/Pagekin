@@ -295,6 +295,8 @@ const ERROR_KEYS = {
   GENERATION_REVIEW_REVISION_EMPTY: 'error.generationRevisionUnchanged',
   GENERATION_REVIEW_REVISION_NOOP: 'error.generationRevisionUnchanged',
   GENERATION_SKILL_MISSING: 'error.generationSkillUnavailable',
+  // 抛出过 IPC 只带码，说不出是哪个文件，所以说明只指到「提示词模板」页。
+  GENERATION_PROMPT_INVALID: 'error.generationPromptInvalid',
   GENERATION_SKILL_INCOMPATIBLE: 'error.generationSkillUnavailable',
   GENERATION_SKILL_BUNDLE_DAMAGED: 'error.generationSkillBundleDamaged',
   // 途中保存了模型设置：续跑情节大纲时主进程抛前者，#453 的分派复核抛后者（#441）。
@@ -373,6 +375,11 @@ const ERROR_KEYS = {
   PROJECT_CORE_SYNOPSIS_CHANGED: 'error.generationSourceChanged',
   PROJECT_CORE_UPDATE_FAILED: 'error.projectCoreUpdateFailed',
   NARRATIVE_THREAD_EVIDENCE_NOT_IN_SOURCE: 'error.narrativeThreadEvidenceNotInSource',
+  NARRATIVE_THREAD_PLAN_INVALID: 'error.narrativeThreadPlanInvalid',
+  NARRATIVE_THREAD_RANGE_INVALID: 'error.narrativeThreadRangeInvalid',
+  NARRATIVE_THREAD_PLAN_NOT_FOUND: 'error.narrativeThreadPlanNotFound',
+  NARRATIVE_THREAD_EVENT_INVALID: 'error.narrativeThreadEventInvalid',
+  NARRATIVE_THREAD_EVENT_SOURCE_NOT_FINALIZED: 'error.narrativeThreadEventSourceNotFinalized',
   PLOT_THREAD_WRITE_FAILED: 'error.plotThreadWriteFailed',
   DRAFT_NOT_FOUND: 'error.draftNotFound',
   DRAFT_NOT_WRITABLE: 'error.draftFinalizedReadOnly',

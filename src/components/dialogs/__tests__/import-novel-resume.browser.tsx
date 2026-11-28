@@ -62,6 +62,7 @@ function importRun(overrides: Partial<ImportRunSnapshot> = {}): ImportRunSnapsho
   return {
     id: 'persisted-import', purpose: 'reference', rootRunId: 'persisted-import',
     effectNamespace: 'import:reference:persisted-import',
+    coreWriteMode: overrides.purpose === 'author-manuscript' ? 'fill-empty' : 'replace',
     sourceDisplay: [{ displayName: 'reference.txt', mediaType: 'text/plain', size: 20 }],
     locale: 'zh-CN', stage: 'knowledge', status: 'ready', completedBatches: {}, lastError: '',
     resumable: true, cancelRequested: false, totalChapters: 1, totalContentSize: 20,
@@ -209,6 +210,41 @@ describe('current-project reference import', () => {
     expect(selectionCalls[1][1]).toMatchObject({ runId: expect.any(String) })
     expect((selectionCalls[1][1] as { runId: string }).runId)
       .not.toBe((selectionCalls[0][1] as { runId: string }).runId)
+  })
+
+  it('导入当前项目时请求带当前项目目标', async () => {
+    await chooseCurrentSource()
+
+    const selectionCall = invoke.mock.calls.find(([channel]) => channel === 'dialog:select-novel-files')
+    expect(selectionCall?.[1]).toMatchObject({ purpose: 'reference', target: 'current-project' })
+  })
+
+  it('新建项目后取消选文件再选，请求仍带新项目目标', async () => {
+    const created = { ...project, id: 'created-project', sessionLease: 'lease-created', path: 'C:\\novels\\created' }
+    const createProject = vi.fn(async () => {
+      useProjectStore.setState({ currentProject: created as never })
+      return true
+    })
+    useProjectStore.setState({ createProject: createProject as never })
+    const answer = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+    let pickerOpened = 0
+    invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === 'dialog:select-folder') return { grantId: 'folder-grant', displayName: '书稿文件夹' }
+      if (channel === 'dialog:select-novel-files' && pickerOpened++ === 0) return null
+      return answer(channel, ...args)
+    })
+    await act(async () => page.getByPlaceholder('拆解后创建的新项目名称').fill('新书'))
+    await act(async () => document.querySelector<HTMLInputElement>('input[placeholder="选择项目保存目录"]')!.parentElement!.querySelector('button')!.click())
+    await expect.element(page.getByPlaceholder('选择项目保存目录')).toHaveValue('书稿文件夹')
+
+    await act(async () => page.getByTestId('import-source-choose').click())
+    await expect.element(page.getByTestId('import-target-current')).toHaveAttribute('aria-pressed', 'true')
+    await act(async () => page.getByTestId('import-source-choose').click())
+    await expect.element(page.getByText('共 1 章')).toBeVisible()
+
+    expect(createProject).toHaveBeenCalledTimes(1)
+    const selectionCalls = invoke.mock.calls.filter(([channel]) => channel === 'dialog:select-novel-files')
+    expect(selectionCalls.map(call => (call[1] as { target: string }).target)).toEqual(['new-project', 'new-project'])
   })
 
   it('shows the title-only error and keeps the persisted run id while retrying the corrected source', async () => {

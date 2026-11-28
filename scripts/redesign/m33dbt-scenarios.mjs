@@ -13,7 +13,7 @@ const PLAN = { title: '父亲的旧信', type: '伏笔', targetStartChapter: 3, 
 function withBook(projectRoot, action) {
   const database = new Database(path.join(projectRoot, '.ai-novel', 'project.db'), { fileMustExist: true })
   try {
-    action(database)
+    return action(database)
   } finally {
     database.close()
   }
@@ -29,23 +29,32 @@ const seed = context => seedStageSample(context, { landOnChapter3: false, before
   assert.equal(created.success, true, JSON.stringify(created.failure))
 } })
 
+const threadState = projectRoot => withBook(projectRoot, database => ({
+  targetEndChapter: database.prepare('SELECT target_end_chapter FROM narrative_thread_plans WHERE title = ?').pluck().get(PLAN.title),
+  assignments: database.prepare('SELECT COUNT(*) FROM narrative_thread_assignments').pluck().get(),
+}))
+
 export const M33DBT_SCENARIOS = {
   'm33dbt-defer-write-failed': { model: false, shell: 'stage', setup: async context => {
     await seed(context)
     withBook(context.samplePath, database => database.exec(`CREATE TRIGGER m33dbt_fail BEFORE INSERT ON narrative_thread_assignments
       BEGIN SELECT RAISE(ABORT, 'database disk image is malformed'); END;`))
-  }, run: async ({ page }) => {
+  }, run: async ({ page, samplePath }) => {
     const popover = page.getByRole('dialog', { name: '本次写作选项' })
     const row = popover.getByRole('listitem').filter({ hasText: PLAN.title })
     await chapterView.open(page, 5)
     await chapterView.view(page).getByRole('button', { name: '本章要处理 1 条线索' }).click()
     await row.getByText('本章到期').waitFor({ state: 'visible' })
+    const before = threadState(samplePath)
     await row.getByRole('button', { name: '延后一章' }).click()
     const alert = popover.getByRole('alert')
     await alert.waitFor({ state: 'visible' })
     const shown = (await alert.innerText()).trim()
     assert.equal(shown, '线索还在本章任务里。延后没保存上，再点一次试试。')
-    assert.equal(await row.getByText('本章到期').isVisible(), true, '延后没写进去，线索仍是本章到期')
-    return { shown, stillDue: true }
+    assert.equal(await row.getByText('本章到期').isVisible(), true, '线索仍显示本章到期')
+    const after = threadState(samplePath)
+    assert.deepEqual(after, before, '延后没写进库：线索收束章与章节任务都不变')
+    assert.equal(after.targetEndChapter, PLAN.targetEndChapter, '线索仍在第 5 章到期')
+    return { shown, ...after }
   }, after: ({ samplePath }) => withBook(samplePath, database => database.exec('DROP TRIGGER m33dbt_fail')) },
 }

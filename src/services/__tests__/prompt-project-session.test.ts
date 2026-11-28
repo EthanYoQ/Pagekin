@@ -112,7 +112,7 @@ describe('project custom prompt session ownership', () => {
     if (migratesLegacy) {
       await expect(loadProjectCustomPrompts(sessionA, 'zh-CN')).resolves.toBe(true)
     } else {
-      await expect(loadProjectCustomPrompts(sessionA, 'zh-CN')).rejects.toThrow(legacyPath)
+      await expect(loadProjectCustomPrompts(sessionA, 'zh-CN')).rejects.toThrow('「first_chapter_draft.json」')
     }
   })
 
