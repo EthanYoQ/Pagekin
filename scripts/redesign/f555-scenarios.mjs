@@ -10,7 +10,7 @@ import { STAGE_SAMPLE } from './stage-sample.mjs'
 
 const CHAPTERS = 15
 
-// 参考小说导入当前项目只补没有蓝图的章（#855）；这里测中断后继续导入，当前作品先清掉预置蓝图，让 15 章都走导入批次。
+// 导入当前项目只补没有蓝图的章（#855），预置蓝图会让这些章被跳过。
 const seedWithoutBlueprints = context => seedStageSample(context, { beforeReload: async ({ page, invoke, path, session }) => {
   assert.equal((await invoke(page, 'db:blueprint-clear-all', path, session)).success, true)
 } })
