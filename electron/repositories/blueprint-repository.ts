@@ -604,7 +604,7 @@ export class BlueprintRepository {
 
     /**
      * 完整逻辑范围只提交一次，并在同一事务内回读验证后返回收据。
-     * fill-empty（作者原稿反推）在提交事务里重读：此刻已有蓝图的章保持原样，只写还没有蓝图的章。
+     * fill-empty 在提交事务里重读：此刻已有蓝图的章保持原样，只写还没有蓝图的章。
      */
     static commitRange(
         request: BlueprintRangeCommitRequest,

@@ -40,6 +40,7 @@ const executionOwner = 'test-import-executor'
 function run(overrides: Partial<ImportRunSnapshot> = {}): ImportRunSnapshot {
   return {
     id: 'import-run-1', purpose: 'reference', rootRunId: 'import-run-1', effectNamespace: 'import:reference:import-run-1',
+    coreWriteMode: overrides.purpose === 'author-manuscript' ? 'fill-empty' : 'replace',
     sourceDisplay: [{ displayName: 'reference.txt', mediaType: 'text/plain', size: 20 }],
     locale: 'zh-CN', stage: 'knowledge', status: 'running', completedBatches: {},
     lastError: '', resumable: true, cancelRequested: false, totalChapters: 1,
