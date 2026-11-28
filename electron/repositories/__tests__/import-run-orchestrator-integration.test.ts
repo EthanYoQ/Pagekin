@@ -187,6 +187,7 @@ function fullRecoveryDependencies(trace: RecoveryTrace): ImportRunOrchestratorDe
       }) as BlueprintRangeCommitReceipt
       completeBlueprintCharacterSync(receipt)
     },
+    listBlueprintChapterNumbers: async () => new Set(BlueprintRepository.getAll().map(item => item.chapterNumber)),
     isAuthorDraftReplaced: async () => false,
     refresh: async () => undefined,
     completeBatch: async (runId, stage, batchId, execution) => (
@@ -240,6 +241,7 @@ function realDependencies(
         blueprints: chapters.map(item => blueprint(item.number)),
       })
     },
+    listBlueprintChapterNumbers: async () => new Set(BlueprintRepository.getAll().map(item => item.chapterNumber)),
     isAuthorDraftReplaced: async () => false,
     refresh: async () => { throw new Error('unexpected refresh stage') },
     completeBatch: async (runId, stage, batchId, execution) => (
@@ -260,7 +262,6 @@ beforeEach(() => {
   ImportRunRepository.prepare({
     runId: 'integration-run',
     purpose: 'reference',
-    coreWriteMode: 'replace',
     sourceFingerprint: 'a'.repeat(64),
     sourceDisplay: [{ displayName: 'reference.txt', mediaType: 'text/plain', size: 22 }],
     locale: 'en-US',
@@ -285,7 +286,6 @@ describe('ImportRunOrchestrator with the real import repository', () => {
     ImportRunRepository.prepare({
       runId: 'sparse-run',
       purpose: 'reference',
-      coreWriteMode: 'replace',
       sourceFingerprint: 'b'.repeat(64),
       sourceDisplay: [{ displayName: 'sparse.txt', mediaType: 'text/plain', size: 22 }],
       locale: 'en-US',
@@ -388,7 +388,7 @@ describe('ImportRunOrchestrator with the real import repository', () => {
     expect(commitSpy).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps author guidance and chapter notes on existing blueprints across import inference and its replay', async () => {
+  it('leaves an existing blueprint, author guidance and chapter notes included, untouched across import inference and its replay', async () => {
     const authored = { userGuidance: 'Keep Mara silent in this chapter.', notes: 'Finalized: Mara found the signal.', notesUpdatedAt: '2026-10-20 08:00:00' }
     BlueprintRepository.upsert({ ...blueprint(1), title: 'Hand-tuned 1', ...authored })
     const callbacks = { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() }
@@ -403,7 +403,7 @@ describe('ImportRunOrchestrator with the real import repository', () => {
     )
 
     expect(ImportRunRepository.get('integration-run')).toMatchObject({ stage: 'refresh' })
-    expect(BlueprintRepository.getAll()).toEqual([{ ...blueprint(1), ...authored }, blueprint(2)])
+    expect(BlueprintRepository.getAll()).toEqual([{ ...blueprint(1), title: 'Hand-tuned 1', ...authored }, blueprint(2)])
   })
 
   it('continues the same failed run after reopen without repeating committed knowledge or blueprint work', async () => {
@@ -412,7 +412,6 @@ describe('ImportRunOrchestrator with the real import repository', () => {
     ImportRunRepository.prepare({
       runId,
       purpose: 'reference',
-      coreWriteMode: 'replace',
       sourceFingerprint: 'c'.repeat(64),
       sourceDisplay: [{ displayName: 'full-recovery.txt', mediaType: 'text/plain', size: 66 }],
       locale: 'en-US',

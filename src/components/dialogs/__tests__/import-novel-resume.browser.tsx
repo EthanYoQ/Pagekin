@@ -62,7 +62,6 @@ function importRun(overrides: Partial<ImportRunSnapshot> = {}): ImportRunSnapsho
   return {
     id: 'persisted-import', purpose: 'reference', rootRunId: 'persisted-import',
     effectNamespace: 'import:reference:persisted-import',
-    coreWriteMode: overrides.purpose === 'author-manuscript' ? 'fill-empty' : 'replace',
     sourceDisplay: [{ displayName: 'reference.txt', mediaType: 'text/plain', size: 20 }],
     locale: 'zh-CN', stage: 'knowledge', status: 'ready', completedBatches: {}, lastError: '',
     resumable: true, cancelRequested: false, totalChapters: 1, totalContentSize: 20,
@@ -212,14 +211,7 @@ describe('current-project reference import', () => {
       .not.toBe((selectionCalls[0][1] as { runId: string }).runId)
   })
 
-  it('导入当前项目时请求带当前项目目标', async () => {
-    await chooseCurrentSource()
-
-    const selectionCall = invoke.mock.calls.find(([channel]) => channel === 'dialog:select-novel-files')
-    expect(selectionCall?.[1]).toMatchObject({ purpose: 'reference', target: 'current-project' })
-  })
-
-  it('新建项目后取消选文件再选，请求仍带新项目目标', async () => {
+  it('新建项目后取消选文件再选，不会再建一个项目', async () => {
     const created = { ...project, id: 'created-project', sessionLease: 'lease-created', path: 'C:\\novels\\created' }
     const createProject = vi.fn(async () => {
       useProjectStore.setState({ currentProject: created as never })
@@ -244,7 +236,7 @@ describe('current-project reference import', () => {
 
     expect(createProject).toHaveBeenCalledTimes(1)
     const selectionCalls = invoke.mock.calls.filter(([channel]) => channel === 'dialog:select-novel-files')
-    expect(selectionCalls.map(call => (call[1] as { target: string }).target)).toEqual(['new-project', 'new-project'])
+    expect(selectionCalls.map(call => (call[1] as { expectedProjectPath: string }).expectedProjectPath)).toEqual([created.path, created.path])
   })
 
   it('shows the title-only error and keeps the persisted run id while retrying the corrected source', async () => {

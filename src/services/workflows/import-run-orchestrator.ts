@@ -115,8 +115,8 @@ export interface ImportRunOrchestratorDependencies {
     draft: FinalizedDraftImportDraftReceipt,
     run: ImportRunSnapshot,
   ) => Promise<void>
-  /** 蓝图只补空白时：当前已有蓝图的章号。 */
-  listBlueprintChapterNumbers?: () => Promise<ReadonlySet<number>>
+  /** 当前已有蓝图的章号：这些章不再反推蓝图。 */
+  listBlueprintChapterNumbers: () => Promise<ReadonlySet<number>>
   isAuthorDraftReplaced: (draft: FinalizedDraftImportDraftReceipt) => Promise<boolean>
   refresh: (run: ImportRunSnapshot) => Promise<void>
   completeBatch: (
@@ -542,13 +542,9 @@ export class ImportRunOrchestrator {
     await this.dependencies.advanceStage(run.id, 'style', nextStage(run, 'style'), execution.current)
   }
 
-  /** 只补空白的运行只为还没有蓝图的章反推；整体写入的运行每章都反推。 */
-  private async blueprintChapterFilter(run: ImportRunSnapshot): Promise<(chapter: ImportRunChapterSnapshot) => boolean> {
-    if (run.coreWriteMode === 'replace') return () => true
-    const existing = await requiredDependency(
-      this.dependencies.listBlueprintChapterNumbers,
-      'listBlueprintChapterNumbers',
-    )()
+  /** 只为还没有蓝图的章反推。 */
+  private async blueprintChapterFilter(): Promise<(chapter: ImportRunChapterSnapshot) => boolean> {
+    const existing = await this.dependencies.listBlueprintChapterNumbers()
     return chapter => !existing.has(chapter.number)
   }
 
@@ -570,7 +566,7 @@ export class ImportRunOrchestrator {
       callbacks.setProgress(Math.min(99, Math.round((visited / run.totalChapters) * 100)))
       stopIfCancelled(context, run.locale)
     }
-    const needsBlueprint = await this.blueprintChapterFilter(run)
+    const needsBlueprint = await this.blueprintChapterFilter()
     const uncommitted = (chapter: ImportRunChapterSnapshot) => !committed
       .some(({ range }) => range.startChapter <= chapter.number && chapter.number <= range.endChapter)
     let after = 0

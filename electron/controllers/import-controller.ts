@@ -37,7 +37,6 @@ import type {
   ImportRunLocale,
   ImportSourceFileIdentity,
 } from '../../src/shared/import-run'
-import { importCoreWriteModeFor } from '../../src/shared/import-run'
 import type { ProjectSessionContext } from '../../src/shared/ipc-channels'
 import { countDraftUnits } from '../../src/shared/draft-units'
 import { getCurrentProjectPath, getProjectDb } from '../database'
@@ -425,7 +424,6 @@ export function registerImportController(
                   size: source.selectedSize,
                 })),
                 locale: structuredRequest.locale,
-                coreWriteMode: importCoreWriteModeFor(structuredRequest.purpose, structuredRequest.target),
               })
               if (parsingRun.totalContentSize > limits.maxTotalBytes - selectedBytes) {
                 throw new Error('IMPORT_SOURCE_BYTES_EXCEEDED')

@@ -67,7 +67,6 @@ function createImportRun(purpose: ImportPurpose, totalChapters = 1): ImportRunSn
     purpose,
     rootRunId: `import-${purpose}`,
     effectNamespace: `import:${purpose}:import-${purpose}`,
-    coreWriteMode: purpose === 'reference' ? 'replace' : 'fill-empty',
     sourceDisplay: [{ displayName: 'novel.txt', mediaType: 'text/plain', size: 20 }],
     locale: 'en-US',
     stage: purpose === 'author-manuscript' ? 'author-commit' : 'knowledge',

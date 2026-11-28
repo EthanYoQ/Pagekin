@@ -1163,6 +1163,7 @@ describe('ImportRunRepository', () => {
       inferGlobal: vi.fn(async () => undefined),
       analyzeStyle: vi.fn(async () => undefined),
       inferBlueprints: vi.fn(async () => undefined),
+      listBlueprintChapterNumbers: vi.fn(async () => new Set<number>()),
       isAuthorDraftReplaced: async () => false,
       refresh: vi.fn(async () => undefined),
       completeBatch: async (runId, stage, batchId, lease) => (
