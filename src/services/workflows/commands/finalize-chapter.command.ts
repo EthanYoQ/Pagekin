@@ -157,8 +157,8 @@ export function buildFinalizePostProcessSteps(
           _project.path,
         )
         requireIpcSuccess(linked, text(
-          '登记定稿知识文档身份',
-          'Link finalized knowledge document identity',
+          '把已导入的知识库文档关联到定稿章节',
+          'Link the imported knowledge-base document to the finalized chapter',
         ))
       }
       callbacks.log(workflowUiText(

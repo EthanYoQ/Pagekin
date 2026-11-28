@@ -191,6 +191,17 @@ describe('draft-store merged revision persistence', () => {
     }
   })
 
+  it('说不出原因的合并失败，中文提示里只有一个「失败」（#944）', async () => {
+    invokeWithProjectSession.mockResolvedValueOnce({ success: false })
+    const result = await useDraftStore.getState().applyMergedRevision(
+      'ai-novel://draft/ch1', 1, 'ai-novel://draft/11', 'ai-novel://revision/1', '合并稿', '原稿', projectPath, projectSession,
+    )
+
+    const shownText = failureText(shown('zh-CN'), { note: note('合并失败', 'Could not merge the revision.'), because: result.failure })
+    expect(shownText).toBe('合并失败：没能提交合并后的修订稿，请再试一次。')
+    expect(shownText.match(/失败/gu)).toHaveLength(1)
+  })
+
   it('freezes the editor snapshot before awaiting the merge receipt', async () => {
     let releaseMerge!: () => void
     const mergePending = new Promise<void>(resolve => { releaseMerge = resolve })

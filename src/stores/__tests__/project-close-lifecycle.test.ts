@@ -579,7 +579,7 @@ describe('project close lifecycle', () => {
     expect(useEditorStore.getState().tabs).toHaveLength(1)
     expect(mocks.onProjectClosed).not.toHaveBeenCalled()
     expect(mocks.alertError).toHaveBeenCalledWith(
-      '关闭项目数据库失败，请再试一次。',
+      '没能关闭项目，请再试一次。',
       expect.objectContaining({ title: '关闭项目失败' }),
     )
   })
@@ -1928,7 +1928,7 @@ describe('project character-state persistence boundary', () => {
 
     expect(useProjectStore.getState().currentProject?.characterStates).toBe('')
     expect(mocks.alertError).toHaveBeenCalledWith(
-      '保存角色状态失败，请再试一次。',
+      '没能保存角色状态，请再试一次。',
       expect.objectContaining({ title: '保存角色状态失败' }),
     )
   })

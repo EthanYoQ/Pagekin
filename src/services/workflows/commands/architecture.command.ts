@@ -959,8 +959,8 @@ export class GenerateCoreSeedCommand extends BaseWorkflowCommand<string> {
       expectedProjectPath,
       partial,
       projectSession,
-      text('保存架构生成检查点', 'Save architecture-generation checkpoint'),
-      text('保存架构生成检查点失败', 'Failed to save the architecture-generation checkpoint.'),
+      text('保存架构生成进度', 'Save architecture-generation progress'),
+      text('保存架构生成进度失败', 'Failed to save the architecture-generation progress.'),
     )
     context.data.partial = partial
 
@@ -1524,8 +1524,8 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
       expectedProjectPath,
       partial,
       projectSession,
-      text('保存架构生成检查点', 'Save architecture-generation checkpoint'),
-      text('保存架构生成检查点失败', 'Failed to save the architecture-generation checkpoint.'),
+      text('保存架构生成进度', 'Save architecture-generation progress'),
+      text('保存架构生成进度失败', 'Failed to save the architecture-generation progress.'),
     )
     context.data.partial = partial
 
@@ -1991,8 +1991,8 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       expectedProjectPath,
       partial,
       projectSession,
-      text('保存情节大纲批次检查点', 'Save the plot-outline batch checkpoint'),
-      text('保存情节大纲批次检查点失败', 'Failed to save the plot-outline batch checkpoint.'),
+      text('保存情节大纲本批进度', 'Save the plot-outline batch progress'),
+      text('保存情节大纲本批进度失败', 'Failed to save the plot-outline batch progress.'),
     )
     if (context.cancelled) {
       await this.rollbackSynopsisCheckpoint(
@@ -2033,8 +2033,8 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
           '{}',
           expectedProjectPath,
         ),
-        text('清理架构生成检查点', 'Clear architecture-generation checkpoint'),
-        text('清理架构生成检查点失败', 'Failed to clear the architecture-generation checkpoint.'),
+        text('清理架构生成进度', 'Clear architecture-generation progress'),
+        text('清理架构生成进度失败', 'Failed to clear the architecture-generation progress.'),
       )
     }
 
@@ -2100,7 +2100,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       if (complete) partial.synopsis_result = body
       else delete partial.synopsis_result
       context.data.partial = partial
-      await savePartialData(expectedProjectPath, partial, session, text('保存情节大纲检查点', 'Save plot-outline navigation'))
+      await savePartialData(expectedProjectPath, partial, session, text('保存情节大纲进度', 'Save plot-outline navigation'))
     }
     const stopped = (cursor: Extract<PlotOutlineProgress['cursor'], { kind: 'stopped' }>) => {
       if (cursor.reason === 'source-invalid') return authorError(context.interfaceLocale, { note: writtenNote(plotOutlineSourceInvalidText(sourceExpected.synopsis, workflowUiLocale(context))) })
@@ -2205,8 +2205,8 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       expectedProjectPath,
       restored,
       projectSession,
-      text('恢复旧情节大纲检查点', 'Restore the previous plot-outline checkpoint'),
-      text('恢复旧情节大纲检查点失败', 'Failed to restore the previous plot-outline checkpoint.'),
+      text('恢复上一版情节大纲进度', 'Restore the previous plot-outline progress'),
+      text('恢复上一版情节大纲进度失败', 'Failed to restore the previous plot-outline progress.'),
     )
     context.data.partial = restored
   }
@@ -2298,8 +2298,8 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       expectedProjectPath,
       partial,
       projectSession,
-      text('保存中断的情节大纲检查点', 'Save the interrupted plot-outline checkpoint'),
-      text('保存中断的情节大纲检查点失败', 'Failed to save the interrupted plot-outline checkpoint.'),
+      text('保存中断时的情节大纲进度', 'Save the interrupted plot-outline progress'),
+      text('保存中断时的情节大纲进度失败', 'Failed to save the interrupted plot-outline progress.'),
     )
     // Main owns interrupted candidate text; formal synopsis remains unchanged.
     if (this.requireGenerationExecution().mainOwned) return
