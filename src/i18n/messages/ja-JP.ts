@@ -291,7 +291,6 @@ export const jaJP = {
   'error.revisionSourceMissing': 'この古い改稿には、生成元の草稿がありません。読むことはできますが、マージはできません。改稿をもう一度生成してください。',
   'error.mergeProjectSwitched': '作品が切り替わったため、改稿はマージされませんでした。',
   'error.mergeTargetUnresolved': 'この草稿は読み取り専用か、草稿と改稿を特定できません。',
-  'error.promptFileUnreadable': 'プロンプトファイルを読み込めないか、内容の形式が正しくありません。',
   'error.promptFileDamaged': 'プロンプトファイル「{file}」を読み込めないか形式が正しくないため、生成しませんでした。設定の「Prompt templates」でこのプロンプトを保存し直すか、削除してください。',
   'error.revisionSourceMismatch': 'この草稿は改稿の生成元の本文と一致しなくなったため、マージされませんでした。改稿をもう一度生成してください。',
   'error.recoveryCandidateAlreadyHandled': 'この復旧された草稿はすでに処理されています（使用または破棄）。更新して、現在の状態を確認してください。',

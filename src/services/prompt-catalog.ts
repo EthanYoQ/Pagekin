@@ -4,7 +4,7 @@ import { sameProjectSessionContext } from '../shared/project-session-context'
 import { ipc } from './ipc-client'
 import { requireIpcSuccess } from './ipc-result'
 import { currentInterfaceLocale } from '../stores/locale-store'
-import { catalogNote, caughtFailure, failureText, authorError } from '../i18n/app-errors'
+import { catalogNote, caughtFailure, failureText, authorError, IPC_HANDLER_FAILED } from '../i18n/app-errors'
 import { AuthorError, authorOwned, codeOf, failureCode, note, type Failure } from '../shared/failure'
 import type { PromptTemplate } from './prompt-templates'
 import { resolveWritingLanguage, type WritingLanguage } from '../shared/writing-language'
@@ -16,9 +16,11 @@ const diagnosticsFailure = (diagnostics: readonly PromptLoadDiagnostic[]): Failu
   const file = authorOwned(diagnostics.map(item => item.path.split(/[\\/]/u).at(-1)!).join(', '))
   return { code: failureCode(diagnostics[0]!.error) ?? PROMPT_FILE_UNREADABLE, note: catalogNote('error.promptFileDamaged', { file }) }
 }
+/** 读取层说得出原因（会话已换、租约过期）才留它的说明；说不出的读失败与内容损坏一样，按文件说明。 */
 const diagnosticOf = (error: unknown): Pick<PromptLoadDiagnostic, 'error' | 'failure'> => {
   const failure = caughtFailure(error)
-  return { error: (failure && codeOf(failure)) ?? PROMPT_FILE_UNREADABLE, ...(failure?.note ? { failure } : {}) }
+  const code = failure && codeOf(failure)
+  return { error: code ?? PROMPT_FILE_UNREADABLE, ...(failure?.note && code && code !== IPC_HANDLER_FAILED ? { failure } : {}) }
 }
 
 const sessionChangedError = () => authorError(currentInterfaceLocale(), { note: note('项目会话已变化，已拒绝读取项目提示词', 'The book session changed, so project prompts were not read.') })
@@ -380,7 +382,7 @@ export const ipcPromptPersistence: PromptPersistence = {
           file.path,
           projectSession.projectPath,
         )
-        requireIpcSuccess(result, '读取项目提示词', catalogNote('error.promptFileUnreadable'))
+        requireIpcSuccess(result, '读取项目提示词')
         if (!result.content.trim()) continue
         const parsed = JSON.parse(result.content) as PromptTemplate
         if (!validTemplate(parsed)) throw new Error('PROMPT_TEMPLATE_INVALID')
