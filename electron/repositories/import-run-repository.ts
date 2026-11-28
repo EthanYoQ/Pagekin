@@ -32,6 +32,7 @@ import type {
   ImportSourceDisplayMetadata,
   ImportPurpose,
   ImportRunLocale,
+  ImportCoreWriteMode,
 } from '../../src/shared/import-run'
 import type { AuthorManuscriptImportPreview } from '../../src/shared/author-manuscript-import'
 import { getCurrentProjectPath, getProjectDb } from '../database'
@@ -41,7 +42,7 @@ import { importSlotClick } from '../services/import-generation-source'
 import type { ImportGenerationSlot } from '../../src/shared/import-generation'
 import { BlueprintRepository, type BlueprintRangeCommitRequest } from './blueprint-repository'
 import { ImportGlobalFactsRepository } from './import-global-facts-repository'
-import type { ImportGlobalFactsMode, ImportGlobalFactsRequest } from '../../src/shared/import-global-facts'
+import type { ImportGlobalFactsRequest } from '../../src/shared/import-global-facts'
 import { planImportFill } from '../../src/shared/import-fill-empty'
 import {
   MAX_IMPORT_CHAPTERS,
@@ -197,10 +198,13 @@ const IMPORT_RUN_STAGE_VALUES = new Set<ImportRunStage>([
   'refresh', 'completed',
 ])
 /**
- * 「同时反推」在作者原稿运行创建时冻结成导入账本里的一行，有这一行即勾选。
- * 它不是进度：completedBatches 不读它。
+ * 运行创建时冻结的选项，各占导入账本里的一行，有这一行即选中。
+ * 它们不是进度：completedBatches 不读它们。
+ * 整体写入只记非默认的 replace，所以升级前没有这一行的运行续跑时按 fill-empty。
  */
-const AUTHOR_INFERENCE_LEDGER = { stage: 'prepared', batchId: 'author-inference', effectKey: 'option:author-inference' } as const
+const RUN_OPTION_STAGE = 'prepared'
+const AUTHOR_INFERENCE_LEDGER = { stage: RUN_OPTION_STAGE, batchId: 'author-inference', effectKey: 'option:author-inference' } as const
+const CORE_REPLACE_LEDGER = { stage: RUN_OPTION_STAGE, batchId: 'core-replace', effectKey: 'option:core-replace' } as const
 
 /** 完成只能走 complete()，所以 refresh 之后没有可推进的阶段。 */
 function nextStageForRun(row: ImportRunRow, stage: ImportRunStage): ImportRunStage | undefined {
@@ -641,7 +645,7 @@ function unfinishedSourceDisplay(runId: string): ImportSourceDisplayMetadata[] {
   ))
 }
 
-/** 作者原稿只为还没有蓝图的章反推，已有蓝图的章不归本次运行。 */
+/** 只补空白的运行只为还没有蓝图的章反推，已有蓝图的章不归本次运行。 */
 function chaptersMissingBlueprint(runId: string): number {
   return db().prepare(`
     SELECT COUNT(*) FROM import_run_chapters AS chapters
@@ -692,7 +696,7 @@ function persistedProgress(row: ImportRunRow): {
       ...sources,
       completedChapters,
       progressCompleted,
-      progressTotal: row.purpose === 'author-manuscript'
+      progressTotal: readCoreWriteMode(row.id) === 'fill-empty'
         ? progressCompleted + chaptersMissingBlueprint(row.id)
         : row.total_chapters,
     }
@@ -725,6 +729,7 @@ function rowToSnapshot(row: ImportRunRow): ImportRunSnapshot {
       ...(row.authority_fingerprint ? { authorityFingerprint: row.authority_fingerprint } : {}),
       authorInference: readAuthorInference(row.id),
     } : {}),
+    coreWriteMode: readCoreWriteMode(row.id),
     sourceDisplay: parseJson<ImportSourceDisplayMetadata[]>(row.source_display_json, []),
     unfinishedSourceDisplay: unfinishedSourceDisplay(row.id),
     locale: row.locale,
@@ -891,8 +896,8 @@ function completedBatches(row: ImportRunRow): Partial<Record<ImportRunStage, str
     const completed: Partial<Record<ImportRunStage, string[]>> = {}
     const rows = db().prepare(`
       SELECT stage,batch_id FROM import_effect_ledger
-      WHERE run_id=? AND state='complete' AND NOT (stage=? AND batch_id=?) ORDER BY rowid
-    `).all(row.id, AUTHOR_INFERENCE_LEDGER.stage, AUTHOR_INFERENCE_LEDGER.batchId) as Array<{ stage: ImportRunStage; batch_id: string }>
+      WHERE run_id=? AND state='complete' AND NOT (stage=? AND batch_id IN (?,?)) ORDER BY rowid
+    `).all(row.id, RUN_OPTION_STAGE, AUTHOR_INFERENCE_LEDGER.batchId, CORE_REPLACE_LEDGER.batchId) as Array<{ stage: ImportRunStage; batch_id: string }>
     for (const entry of rows) completed[entry.stage] = [...(completed[entry.stage] ?? []), entry.batch_id]
     return completed
   }
@@ -911,10 +916,27 @@ function completedBatches(row: ImportRunRow): Partial<Record<ImportRunStage, str
   return parsed as Partial<Record<ImportRunStage, string[]>>
 }
 
-function readAuthorInference(runId: string): boolean {
+type RunOption = typeof AUTHOR_INFERENCE_LEDGER | typeof CORE_REPLACE_LEDGER
+
+function readRunOption(runId: string, option: RunOption): boolean {
   if (!hasEffectLedger()) return false
   return Boolean(db().prepare('SELECT 1 FROM import_effect_ledger WHERE run_id=? AND stage=? AND batch_id=?')
-    .get(runId, AUTHOR_INFERENCE_LEDGER.stage, AUTHOR_INFERENCE_LEDGER.batchId))
+    .get(runId, option.stage, option.batchId))
+}
+
+function readAuthorInference(runId: string): boolean {
+  return readRunOption(runId, AUTHOR_INFERENCE_LEDGER)
+}
+
+function readCoreWriteMode(runId: string): ImportCoreWriteMode {
+  return readRunOption(runId, CORE_REPLACE_LEDGER) ? 'replace' : 'fill-empty'
+}
+
+// evidence_kind 只能取 M04 的四个值；legacy-checkpoint 是现有直接检查点（无收据）用的那个，校验也认它。
+function recordRunOption(runId: string, effectNamespace: string, option: RunOption): void {
+  db().prepare(`INSERT INTO import_effect_ledger(
+    run_id,stage,batch_id,effect_namespace,effect_key,state,evidence_kind,diagnostic_code
+  ) VALUES(?,?,?,?,?,'complete','legacy-checkpoint','')`).run(runId, option.stage, option.batchId, effectNamespace, option.effectKey)
 }
 
 function hasEffectLedger(): boolean {
@@ -1116,7 +1138,7 @@ function assertStageCheckpointComplete(row: ImportRunRow, stage: ImportRunStage)
     ) throw new Error('IMPORT_RUN_STAGE_INCOMPLETE')
     return
   }
-  if (stage === 'blueprints' && row.purpose === 'author-manuscript') {
+  if (stage === 'blueprints' && readCoreWriteMode(row.id) === 'fill-empty') {
     if (chaptersMissingBlueprint(row.id) !== 0) throw new Error('IMPORT_RUN_STAGE_INCOMPLETE')
     return
   }
@@ -1711,6 +1733,7 @@ export class ImportRunRepository {
         JSON.stringify(sourceDisplay),
         candidate.locale,
       )
+      if (candidate.coreWriteMode === 'replace') recordRunOption(runId, `import:${candidate.purpose}:${runId}`, CORE_REPLACE_LEDGER)
       const insertSource = db().prepare(`
         INSERT INTO import_run_sources (
           run_id, source_index, source_id, source_fingerprint, legacy_source_fingerprint, display_json
@@ -2105,13 +2128,7 @@ export class ImportRunRepository {
           manifestContentSize,
           manifestWordCount,
         )
-        if (candidate.authorInference) {
-          // evidence_kind 只能取 M04 的四个值；legacy-checkpoint 是现有直接检查点（无收据）用的那个，校验也认它。
-          db().prepare(`INSERT INTO import_effect_ledger(
-            run_id,stage,batch_id,effect_namespace,effect_key,state,evidence_kind,diagnostic_code
-          ) VALUES(?,?,?,?,?,'complete','legacy-checkpoint','')`).run(runId, AUTHOR_INFERENCE_LEDGER.stage,
-            AUTHOR_INFERENCE_LEDGER.batchId, `import:${candidate.purpose}:${runId}`, AUTHOR_INFERENCE_LEDGER.effectKey)
-        }
+        if (candidate.authorInference) recordRunOption(runId, `import:${candidate.purpose}:${runId}`, AUTHOR_INFERENCE_LEDGER)
         const insertChapter = db().prepare(`
           INSERT INTO import_run_chapters (
             run_id, chapter_number, source_id, source_chapter_number,
@@ -2266,6 +2283,7 @@ export class ImportRunRepository {
         manifestContentSize,
         manifestWordCount,
       )
+      if (candidate.coreWriteMode === 'replace') recordRunOption(runId, `import:${candidate.purpose}:${runId}`, CORE_REPLACE_LEDGER)
       const insertChapter = db().prepare(`
         INSERT INTO import_run_chapters (
           run_id, chapter_number, source_id, source_chapter_number,
@@ -2438,8 +2456,8 @@ export class ImportRunRepository {
       assertExecution(runId, execution, now)
       assertCheckpointCanApply(run, stage, batchId, 'receipt')
       let effectReceipt: unknown
-      // 作者原稿只补空白；模式由运行用途决定，不随载荷传。
-      const fillMode: ImportGlobalFactsMode = run.purpose === 'author-manuscript' ? 'fill-empty' : 'replace'
+      // 模式在运行创建时冻结，不随载荷传。
+      const fillMode = readCoreWriteMode(run.id)
       const generationRunHandle = (validatedReceipt.payload as { generationRunHandle?: MainGenerationRunHandle }).generationRunHandle
       if (generationRunHandle) {
         if (!assertGenerationSources || !['global', 'style', 'blueprints'].includes(stage)) throw new Error('GENERATION_GUARD_REQUIRED')
@@ -2624,6 +2642,9 @@ export class ImportRunRepository {
         restartingParsing ? 0 : source.manifest_content_size,
         restartingParsing ? 0 : source.manifest_word_count,
       )
+      if (readCoreWriteMode(source.id) === 'replace') {
+        recordRunOption(normalizedNextId, `import:${source.purpose}:${normalizedNextId}`, CORE_REPLACE_LEDGER)
+      }
       if (restartingParsing) {
         db().prepare(`
           INSERT INTO import_run_sources (

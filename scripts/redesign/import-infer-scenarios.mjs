@@ -116,7 +116,7 @@ export async function confirmAndWait(page, dialog, chapterCount) {
   await runSheet.waitForRunDone(page, 120_000)
 }
 
-async function trackOpenedSession(app) {
+export async function trackOpenedSession(app) {
   await app.evaluate(({ ipcMain }) => {
     const handlers = ipcMain._invokeHandlers
     const original = handlers.get('project:open')
@@ -128,7 +128,7 @@ async function trackOpenedSession(app) {
   })
 }
 
-async function readBook({ app, page, invoke }) {
+export async function readBook({ app, page, invoke }) {
   const session = await app.evaluate(() => globalThis.__driveOpened)
   assert.ok(session?.leaseId, '记下了界面打开作品的会话')
   return {

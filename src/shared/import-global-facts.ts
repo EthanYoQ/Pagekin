@@ -27,8 +27,6 @@ export interface ImportGlobalFactsRequest {
   characterEntries: CharacterRosterEntry[]
 }
 
-export type ImportGlobalFactsMode = 'replace' | 'fill-empty'
-
 interface ImportGlobalFactsReceiptBase {
   operationId: string
   payloadHash: string

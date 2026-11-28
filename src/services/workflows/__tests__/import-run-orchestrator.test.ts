@@ -25,6 +25,7 @@ import { shownFailure } from '../../../stores/__tests__/run-failure-expect'
 function runSnapshot(overrides: Partial<ImportRunSnapshot> = {}): ImportRunSnapshot {
   return {
     id: 'run-1', purpose: 'reference', rootRunId: 'run-1', effectNamespace: 'import:reference:run-1',
+    coreWriteMode: overrides.purpose === 'author-manuscript' ? 'fill-empty' : 'replace',
     sourceDisplay: [{ displayName: 'reference.txt', mediaType: 'text/plain', size: 1 }],
     locale: 'en-US', stage: 'knowledge', status: 'running', completedBatches: {},
     lastError: '', resumable: true, cancelRequested: false, totalChapters: 25,

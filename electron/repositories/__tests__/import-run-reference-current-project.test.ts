@@ -138,6 +138,7 @@ function dependencies(trace: Trace): ImportRunOrchestratorDependencies {
       completeBlueprintCharacterSync(receipt)
     },
     listBlueprintChapterNumbers: async () => new Set(BlueprintRepository.getAll().map(item => item.chapterNumber)),
+    isAuthorDraftReplaced: async () => false,
     refresh: async () => undefined,
     completeBatch: async (runId, stage, batchId, execution) => (
       ImportRunRepository.completeBatch(runId, stage, batchId, execution)
@@ -260,5 +261,34 @@ describe('升级前进行到一半的参考导入', () => {
     expect(ImportRunRepository.get(RUN_ID)).toMatchObject({ status: 'completed' })
     expect(authorCore()).toEqual(AUTHOR_FILLED)
     expect(BlueprintRepository.getByChapter(2)).toMatchObject({ title: '作者写的第2章蓝图', keyEvents: '作者的事件' })
+  })
+})
+
+describe('参考小说导入对话框新建的项目', () => {
+  it('整体写入反推值，新项目的默认总章数等也被覆盖', async () => {
+    BlueprintRepository.upsert(AUTHOR_BLUEPRINT)
+    prepareReferenceRun({ coreWriteMode: 'replace' })
+    const trace: Trace = { blueprintCalls: [] }
+
+    await runRemainingStages(trace)
+
+    expect(ImportRunRepository.get(RUN_ID)).toMatchObject({ status: 'completed', coreWriteMode: 'replace' })
+    expect(ProjectCoreRepository.get()).toMatchObject({ ...INFERRED_CORE, writingStyle: INFERRED_STYLE })
+    expect(trace.blueprintCalls).toEqual([[1, 2, 3]])
+    expect(BlueprintRepository.getAll().map(item => item.title)).toEqual(['参考蓝图1', '参考蓝图2', '参考蓝图3'])
+  })
+
+  it('失败后重新开始的运行沿用整体写入', () => {
+    prepareReferenceRun({ coreWriteMode: 'replace' })
+    getProjectDb()!.prepare("UPDATE import_runs SET status = 'failed' WHERE id = ?").run(RUN_ID)
+
+    expect(ImportRunRepository.restart(RUN_ID, 'restarted-run')).toMatchObject({ coreWriteMode: 'replace' })
+  })
+
+  it('当前项目的运行重新开始后仍只补空白', () => {
+    prepareReferenceRun()
+    getProjectDb()!.prepare("UPDATE import_runs SET status = 'failed' WHERE id = ?").run(RUN_ID)
+
+    expect(ImportRunRepository.restart(RUN_ID, 'restarted-run')).toMatchObject({ coreWriteMode: 'fill-empty' })
   })
 })
