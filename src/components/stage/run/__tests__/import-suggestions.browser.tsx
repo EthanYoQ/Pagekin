@@ -132,3 +132,22 @@ it('读建议失败后从英文切到日文，报错跟着换成日文', async (
   await act(async () => useLocaleStore.setState({ interfaceLocale: 'ja-JP', locale: 'en-US' }))
   await expect.poll(alert).toBe(translate('ja-JP', 'error.projectNotOpen'))
 })
+
+it('采用失败时显示主进程给的说明，不退回成按码的通用说明', async () => {
+  Object.defineProperty(window, 'aiNovelAPI', { configurable: true, value: { on: () => () => {}, invoke: async (channel: string, ...args: unknown[]) => {
+    if (channel === 'db:import-run-effect-receipt-get') {
+      return args[1] === 'global' ? { state: 'committed', effectReceipt: { mode: 'fill-empty', suggestions: [{ field: 'genre', current: '', inferred: '科幻' }] } } : null
+    }
+    if (channel === 'db:project-core-get') return { genre: '奇幻' }
+    if (channel === 'db:project-core-update') return { success: false, failure: { code: 'PROJECT_CORE_UPDATE_FAILED', note: { key: 'error.projectSessionStale' } } }
+    throw new Error(`unexpected ${channel}`)
+  } } })
+  useLocaleStore.setState({ interfaceLocale: 'zh-CN', locale: 'zh-CN' })
+  await act(async () => root!.render(<ImportSuggestions run={run} />))
+  const adoptButton = () => host!.querySelector<HTMLButtonElement>('.run-suggestion button')
+  await expect.poll(adoptButton).not.toBeNull()
+
+  await act(async () => adoptButton()!.click())
+
+  await expect.poll(() => host!.querySelector('[role="alert"]')?.textContent).toBe(translate('zh-CN', 'error.projectSessionStale'))
+})
