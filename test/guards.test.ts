@@ -312,6 +312,7 @@ describe('失败的码与说明（#844）', () => {
       'try {} catch (error) { items.map(({ error }) => authorOwned(error)) }',
     ]) expect(rawTextInNoteArguments('src/x.ts', allowed), allowed).toEqual([])
     expect(rawTextInNoteArguments('src/x.ts', 'try {} catch (error) { items.map(item => authorOwned(`${item}: ${error}`)) }')).toHaveLength(1)
+    expect(rawTextInNoteArguments('src/x.ts', 'try {} catch (error) { ({ [authorOwned(`${error}`)](error: unknown) {} }) }')).toHaveLength(1)
   })
 
   it('断言成 AuthorNote、Failure 或作者数据只许在 src/shared/failure.ts 和测试里', () => {
