@@ -10,6 +10,7 @@ import type { ConsistencyExemption } from '../../../../shared/consistency-prefli
 import type { ProjectData } from '../../../../shared/ipc-channels'
 import { continuityCheckChapter, continuityFindingKey } from '../../../../shared/blueprint-continuity-check'
 import { globalEventBus } from '../../../../shared/event-bus'
+import { translate } from '../../../../i18n/core'
 import { setActiveProjectSessionContext } from '../../../../shared/project-session-context'
 import { disposeProjectService, initProjectService } from '../../../../services/project-service'
 import type { ChapterBlueprint } from '../../../../services/workflows/directory-workflow'
@@ -1225,6 +1226,33 @@ describe('蓝图阶段', () => {
     await expect.element(page.getByRole('button', { name: '写第 3 章' })).toBeVisible()
     await act(async () => page.getByRole('button', { name: '本次写作选项' }).click())
     await expect.element(page.getByRole('dialog', { name: '本次写作选项' }).getByLabelText(/作者微操指导/)).toHaveValue('')
+  })
+})
+
+describe('保存此章被主进程拒绝时按界面语言说明（#939）', () => {
+  it.each([
+    ['zh-CN', '保存此章', '保存失败'],
+    ['en-US', 'Save chapter', 'Could not save the blueprint.'],
+    ['ja-JP', 'Save chapter', 'ブループリントを保存できませんでした。'],
+  ] as const)('%s', async (locale, saveLabel, summary) => {
+    useLocaleStore.setState({ interfaceLocale: locale, locale: locale === 'zh-CN' ? 'zh-CN' : 'en-US' })
+    try {
+      await act(async () => root?.render(<div className="paper-ink"><StageBlueprint projectKey={PROJECT_PATH} /></div>))
+      const save = page.getByRole('button', { name: saveLabel })
+      await expect.element(save).toBeVisible()
+      const base = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
+      invoke.mockImplementation(async (channel: string, ...args: unknown[]) => channel === 'db:blueprint-upsert'
+        ? { success: false, failure: { code: 'BLUEPRINT_WRITE_FAILED', note: { key: 'error.blueprintWriteFailed' } } } : base(channel, ...args))
+
+      await act(async () => save.click())
+
+      await vi.waitFor(() => expect([...document.querySelectorAll('.pi-toast')].map(toast => toast.textContent))
+        .toEqual([`${summary}${translate(locale, 'error.blueprintWriteFailed')}`]))
+    } finally {
+      for (const close of document.querySelectorAll<HTMLButtonElement>('.pi-toast:not([data-exiting]) button[aria-label]')) await act(async () => close.click())
+      await vi.waitFor(() => expect(document.querySelector('.pi-toast')).toBeNull())
+      useLocaleStore.setState({ interfaceLocale: 'zh-CN', locale: 'zh-CN' })
+    }
   })
 })
 

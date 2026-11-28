@@ -103,6 +103,15 @@ describe('test:guards 的成员是经 repoSourceFiles() 扫源码的测试', () 
     expect(members).not.toContain('electron/controllers/__tests__/import-controller-secure-file.test.ts')
     expect(members.filter(file => BASELINE.includes(file))).toEqual([])
   })
+
+  it('不扫源码、但守着跨模块不变式的测试按名字登记，改名或删掉就红', () => {
+    const members = guardTestFiles()
+    expect(members).toEqual(expect.arrayContaining([
+      'electron/__tests__/startup-native-isolation.test.ts',
+      'electron/services/__tests__/live-row-sentinel.test.ts',
+    ]))
+    expect(members.filter(file => !existsSync(join(REPO_ROOT, file)))).toEqual([])
+  })
 })
 
 describe('测试文件按标识符禁用列目录原语', () => {
@@ -148,6 +157,17 @@ describe('测试文件按标识符禁用列目录原语', () => {
     const code = "import fs from 'node:fs'\nimport { it } from 'vitest'\nit('x', () => { fs.readdirSync(process.cwd()) })\n"
     expect(await listingErrors('src/__tests__/new-scan.test.ts', code)).toEqual([expect.stringContaining('repoSourceFiles()')])
   })
+
+  it('不在 baseline 里的测试文件都受这条规则约束，后面的覆盖块没把它冲掉', async () => {
+    const exempt = new Set([REPO_SOURCE_FILES_MODULE, 'test/helpers/temporary-directory.ts', ...BASELINE])
+    const testFiles = ['electron', 'scripts', 'src', 'test'].flatMap(dir => repoSourceFiles(dir))
+      .filter(file => /\.(?:test|spec)\.|\/__tests__\/|^test\//u.test(file) && /\.(?:ts|tsx|mjs)$/u.test(file) && !exempt.has(file))
+    const unguarded: string[] = []
+    for (const file of testFiles) {
+      if ((await listingErrors(file, "import { opendirSync } from 'node:fs'\nopendirSync('.')\n")).length === 0) unguarded.push(file)
+    }
+    expect(unguarded).toEqual([])
+  }, 120_000)
 })
 
 describe('存量 baseline 只减不增', () => {
@@ -260,6 +280,39 @@ describe('失败的码与说明（#844）', () => {
       expect(failureRewrites('src/x.ts', allowed), allowed).toEqual([])
     }
     expect(failureRewrites('electron/x.ts', 'Object.assign(new Error(code), { code })')).toEqual([])
+  })
+
+  it('复合赋值和包了一层的左值也算改码或 message', () => {
+    for (const planted of [
+      "error.code += '_X'", "error.code ??= 'X_Y'", 'error.message ||= text', 'error.message &&= text', "error['message'] += text",
+      "(error.code) = 'X_Y'", "(error.code as string) = 'X_Y'", "error.code! = 'X_Y'",
+    ]) expect(failureRewrites('src/x.ts', planted), planted).toHaveLength(1)
+    for (const allowed of ['this.code ??= code', "this['message'] += text", "state['status'] ??= 'done'", 'count += 1']) {
+      expect(failureRewrites('src/x.ts', allowed), allowed).toEqual([])
+    }
+  })
+
+  it('catch 变量本身以值的形式进说明参数也算异常原文，包一层断言或逗号也认得出', () => {
+    for (const argument of [
+      'e', 'e as string', '<string>e', 'e!', 'e satisfies unknown', '(0, e)', '`${e as string}`', '`${e!}`', "'失败：' + e", "ok ? e : '失败'", "e ?? '失败'",
+    ]) {
+      const planted = `try {} catch (e) { authorOwned(${argument}) }`
+      expect(rawTextInNoteArguments('src/x.ts', planted), planted).toHaveLength(1)
+    }
+    for (const argument of ['e.fileName', 'describe(e)', "e === undefined ? '甲' : '乙'", 'files[e.index]']) {
+      const allowed = `try {} catch (e) { authorOwned(${argument}) }`
+      expect(rawTextInNoteArguments('src/x.ts', allowed), allowed).toEqual([])
+    }
+  })
+
+  it('回调参数和 catch 变量同名时，用的是回调参数，不算异常原文', () => {
+    for (const allowed of [
+      'try {} catch (error) { items.map(error => authorOwned(`${error}`)) }',
+      'try {} catch (error) { items.map(function (error) { return authorOwned(error) }) }',
+      'try {} catch (error) { items.map(({ error }) => authorOwned(error)) }',
+    ]) expect(rawTextInNoteArguments('src/x.ts', allowed), allowed).toEqual([])
+    expect(rawTextInNoteArguments('src/x.ts', 'try {} catch (error) { items.map(item => authorOwned(`${item}: ${error}`)) }')).toHaveLength(1)
+    expect(rawTextInNoteArguments('src/x.ts', 'try {} catch (error) { ({ [authorOwned(`${error}`)](error: unknown) {} }) }')).toHaveLength(1)
   })
 
   it('断言成 AuthorNote、Failure 或作者数据只许在 src/shared/failure.ts 和测试里', () => {

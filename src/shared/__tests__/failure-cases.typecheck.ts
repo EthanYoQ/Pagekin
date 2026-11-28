@@ -37,7 +37,7 @@ export function rawTextIsRejected(error: Error, n: number, zhSummary: string, en
     // @ts-expect-error 过 IPC 的失败不能带类实例的说明
     { code: 'NETWORK_ERROR', note: note('甲', 'A') } satisfies WireFailure,
     // @ts-expect-error 过 IPC 的失败必须有码
-    { note: { key: 'x' } } satisfies WireFailure,
+    { note: wireNote('error.embeddingModelNotConfigured') } satisfies WireFailure,
     // @ts-expect-error 小写不是码
     'network_error' satisfies FailureCode,
     // @ts-expect-error 手写 copy 对象字面量

@@ -26,7 +26,14 @@ export function reachesRepoSourceFiles(root: string, file: string, seen = new Se
   })
 }
 
+/** 不经 repoSourceFiles() 扫源码，按 import 推断不出来，但守着跨模块不变式的测试。 */
+const NAMED_GUARD_TESTS = [
+  'electron/__tests__/startup-native-isolation.test.ts',
+  'electron/services/__tests__/live-row-sentinel.test.ts',
+]
+
 export function guardTestFiles(): string[] {
-  return ['electron', 'scripts', 'src', 'test'].flatMap(dir => repoSourceFiles(dir))
+  const scanning = ['electron', 'scripts', 'src', 'test'].flatMap(dir => repoSourceFiles(dir))
     .filter(file => TEST_FILE.test(file) && reachesRepoSourceFiles(REPO_ROOT, file))
+  return [...new Set([...scanning, ...NAMED_GUARD_TESTS])]
 }
