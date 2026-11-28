@@ -51,7 +51,6 @@ import type {
 } from '../../src/shared/import-run'
 import {
   AUTHOR_IMPORT_PREVIEW_STALE,
-  importCoreWriteModeFor,
   isImportRunDirectCheckpointStage,
 } from '../../src/shared/import-run'
 import { ImportSourceIdentityRepository } from '../repositories/import-source-identity-repository'
@@ -332,7 +331,6 @@ export function registerDatabaseController() {
       legacyCollectionFingerprint: sourceIdentity.legacyCollectionFingerprint,
       sourceDisplay,
       locale: request.locale,
-      coreWriteMode: importCoreWriteModeFor(request.purpose, request.target),
     })
     for (let sourceIndex = 0; sourceIndex < sourceIdentity.sourceIds.length; sourceIndex++) {
       const sourceId = sourceIdentity.sourceIds[sourceIndex]!

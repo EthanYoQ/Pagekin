@@ -16,14 +16,15 @@ export interface ImportFillPlan<Field extends ImportFillField> {
 
 type FillKind = 'text' | 'count'
 
-const FILL_RULES: Record<ImportFillField, { kind: FillKind; suggest: boolean }> = {
+/** projectDefault 是建库时 project_core 的列默认值：项目里仍是它，就当作者没设过。 */
+const FILL_RULES: Record<ImportFillField, { kind: FillKind; suggest: boolean; projectDefault?: string | number }> = {
   genre: { kind: 'text', suggest: true },
   subGenre: { kind: 'text', suggest: true },
   targetAudience: { kind: 'text', suggest: true },
-  totalChapters: { kind: 'count', suggest: false },
-  wordsPerChapter: { kind: 'count', suggest: true },
-  plotStructure: { kind: 'text', suggest: true },
-  narrativePov: { kind: 'text', suggest: true },
+  totalChapters: { kind: 'count', suggest: false, projectDefault: 100 },
+  wordsPerChapter: { kind: 'count', suggest: true, projectDefault: 3000 },
+  plotStructure: { kind: 'text', suggest: true, projectDefault: 'three_act' },
+  narrativePov: { kind: 'text', suggest: true, projectDefault: 'third_limited' },
   goldenFinger: { kind: 'text', suggest: true },
   globalGuidance: { kind: 'text', suggest: true },
   coreOutline: { kind: 'text', suggest: true },
@@ -42,6 +43,10 @@ export function isImportFillValueEmpty(field: ImportFillField, value: unknown): 
   return typeof value !== 'string' || value.trim() === ''
 }
 
+function isProjectValueBlank(field: ImportFillField, value: unknown): boolean {
+  return isImportFillValueEmpty(field, value) || value === FILL_RULES[field].projectDefault
+}
+
 function normalized(value: string | number): string | number {
   return typeof value === 'string' ? value.trim() : value
 }
@@ -57,7 +62,7 @@ export function planImportFill<Field extends ImportFillField>(
     const next = normalized(inferred[field])
     if (isImportFillValueEmpty(field, next)) continue
     const existing = current[field]
-    if (isImportFillValueEmpty(field, existing)) {
+    if (isProjectValueBlank(field, existing)) {
       patch[field] = next as ImportFillValues[Field]
       continue
     }

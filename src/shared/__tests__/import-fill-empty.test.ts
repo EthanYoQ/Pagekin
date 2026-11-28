@@ -33,7 +33,7 @@ describe('作者原稿反推的判空与补空计划', () => {
     expect(isImportFillValueEmpty(field, '有内容')).toBe(false)
   })
 
-  it.each(CHOICE_FIELDS)('选项字段 %s：只有空才算空，新项目的默认值不算空', field => {
+  it.each(CHOICE_FIELDS)('选项字段 %s：只有空才算空，反推出默认选项也算有值', field => {
     for (const empty of ['', ' ', null, undefined]) expect(isImportFillValueEmpty(field, empty)).toBe(true)
     expect(isImportFillValueEmpty(field, field === 'plotStructure' ? 'three_act' : 'third_limited')).toBe(false)
   })
@@ -56,8 +56,8 @@ describe('作者原稿反推的判空与补空计划', () => {
 
   it('已有设定：非空字段一字不改，不同的进建议，相同的不进', () => {
     const current = {
-      genre: '悬疑', subGenre: '社会派', targetAudience: '', totalChapters: 100, wordsPerChapter: 3000,
-      plotStructure: 'three_act', narrativePov: 'first_person', goldenFinger: '', globalGuidance: '',
+      genre: '悬疑', subGenre: '社会派', targetAudience: '', totalChapters: 80, wordsPerChapter: 2000,
+      plotStructure: 'save_the_cat', narrativePov: 'first_person', goldenFinger: '', globalGuidance: '',
       coreOutline: '我写的大纲', worldSetting: '', protagonistProfile: '', premise: '', worldbuilding: '',
       synopsis: '', writingStyle: '长句',
     }
@@ -68,16 +68,31 @@ describe('作者原稿反推的判空与补空计划', () => {
     })
     expect(plan.suggestions).toEqual([
       { field: 'subGenre', current: '社会派', inferred: '本格' },
-      { field: 'wordsPerChapter', current: 3000, inferred: 2400 },
-      { field: 'plotStructure', current: 'three_act', inferred: 'heros_journey' },
+      { field: 'wordsPerChapter', current: 2000, inferred: 2400 },
+      { field: 'plotStructure', current: 'save_the_cat', inferred: 'heros_journey' },
       { field: 'coreOutline', current: '我写的大纲', inferred: '侦探追查旧案' },
       { field: 'writingStyle', current: '长句', inferred: '短句，白描' },
     ])
   })
 
-  it('导入章数不是计划总章数：已有总章数时既不覆盖也不建议', () => {
-    const plan = planImportFill(['totalChapters'], { totalChapters: 100 }, { totalChapters: 5 })
+  it('导入章数不是计划总章数：作者设过总章数时既不覆盖也不建议', () => {
+    const plan = planImportFill(['totalChapters'], { totalChapters: 80 }, { totalChapters: 5 })
     expect(plan).toEqual({ patch: {}, suggestions: [] })
+  })
+
+  it('仍是新建项目默认值的总章数、每章字数、故事结构、叙事视角算空白，换成反推值', () => {
+    const fields = ['totalChapters', 'wordsPerChapter', 'plotStructure', 'narrativePov'] as const
+    const created = { totalChapters: 100, wordsPerChapter: 3000, plotStructure: 'three_act', narrativePov: 'third_limited' }
+    const plan = planImportFill(fields, created, inferred)
+    expect(plan).toEqual({
+      patch: { totalChapters: 5, wordsPerChapter: 2400, plotStructure: 'heros_journey', narrativePov: 'first_person' },
+      suggestions: [],
+    })
+  })
+
+  it('反推出的值碰巧是默认选项时仍是反推结果：作者设了别的值就进建议', () => {
+    const plan = planImportFill(['plotStructure'], { plotStructure: 'freeform' }, { plotStructure: 'three_act' })
+    expect(plan).toEqual({ patch: {}, suggestions: [{ field: 'plotStructure', current: 'freeform', inferred: 'three_act' }] })
   })
 
   it('比较前去掉首尾空白：只差空白不算不同；反推值为空时什么也不做', () => {

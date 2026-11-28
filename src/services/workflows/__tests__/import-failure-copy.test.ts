@@ -27,7 +27,6 @@ const BARE_CODE = /\b[a-z]+_[a-z_]+\b|\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/u
 function snapshotFor(locale: Locale, stage: ImportRunSnapshot['stage']): ImportRunSnapshot {
   return {
     id: 'import-run-1', purpose: 'reference', rootRunId: 'import-run-1', effectNamespace: 'import:reference:import-run-1',
-    coreWriteMode: 'replace',
     sourceDisplay: [{ displayName: 'reference.txt', mediaType: 'text/plain', size: 20 }],
     locale, stage, status: 'running', completedBatches: {},
     lastError: '', resumable: true, cancelRequested: false, totalChapters: 1,

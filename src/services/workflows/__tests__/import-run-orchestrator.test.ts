@@ -25,7 +25,6 @@ import { shownFailure } from '../../../stores/__tests__/run-failure-expect'
 function runSnapshot(overrides: Partial<ImportRunSnapshot> = {}): ImportRunSnapshot {
   return {
     id: 'run-1', purpose: 'reference', rootRunId: 'run-1', effectNamespace: 'import:reference:run-1',
-    coreWriteMode: overrides.purpose === 'author-manuscript' ? 'fill-empty' : 'replace',
     sourceDisplay: [{ displayName: 'reference.txt', mediaType: 'text/plain', size: 1 }],
     locale: 'en-US', stage: 'knowledge', status: 'running', completedBatches: {},
     lastError: '', resumable: true, cancelRequested: false, totalChapters: 25,
@@ -93,6 +92,7 @@ function harness(total = 25, overrides: Partial<ImportRunSnapshot> = {}, interfa
     inferGlobal: vi.fn(async (_chapters, _stats, _run, commit) => { await commit({ global: true }) }),
     analyzeStyle: vi.fn(async (_chapters, _run, commit) => { await commit({ writingStyle: 'style' }) }),
     inferBlueprints: vi.fn(async (_chapters, _batchId, _run, commit) => { await commit({ blueprints: true }) }),
+    listBlueprintChapterNumbers: vi.fn(async () => new Set<number>()),
     isAuthorDraftReplaced: vi.fn(async () => false),
     refresh: vi.fn(),
     completeBatch: vi.fn(async (_runId: string, stage: ImportRunStage, batchId: string) => {
