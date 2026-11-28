@@ -16,13 +16,12 @@ import { showFinalizationRepairNotice } from '../components/finalization-repair-
 import { showLedgerSealedNotice } from '../components/ledger-sealed-notice'
 import { confirm } from '../components/ui/Confirm'
 import { pushToast } from '../components/ui/ToastStack'
-import { appErrorMessage, displayedErrorMessage, failureText, legacyImportFailureMessage, projectDeleteFailureMessage, projectOpenFailureMessage, resultFailure, authorError } from '../i18n/app-errors'
+import { appErrorMessage, displayedErrorMessage, failureText, legacyImportFailureMessage, projectDeleteFailureMessage, projectOpenFailureMessage, resultFailure, authorError, authorErrorOr, catalogNote } from '../i18n/app-errors'
 import { saveDirtyEditorChangesForExit, useEditorStore } from './editor-store'
 import { countUnsavedEditorItemsForProject } from './editor-unsaved'
 import { useLayoutStore } from './layout-store'
 import { currentInterfaceLocale, useLocaleStore } from './locale-store'
 import { requireIpcSuccess } from '../services/ipc-result'
-import { specificWriteFailure } from '../services/specific-write-failure'
 import {
   projectPathKey,
   projectSessionContextFromProject,
@@ -922,7 +921,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     else {
       const result = await ipc.invokeWithProjectSession(expectedProjectSession, 'db:project-core-commit-generated',
         { data, aiSources, generationRunHandle }, project.path)
-      if (!result.success) throw new Error(specificWriteFailure(result)?.code ?? 'GENERATION_FORMAL_COMMIT_FAILED')
+      if (!result.success) throw authorErrorOr(currentInterfaceLocale(), resultFailure(result), catalogNote('error.projectCoreWriteFailed'))
     }
     const current = get().currentProject
     if (!current || !sameProjectSessionContext(expectedProjectSession, projectSessionContextFromProject(current))) return false
