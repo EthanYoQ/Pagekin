@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { presentWorkflowFailure } from '../ai-output-failure-presentation'
 import { shown } from '../../../i18n/__tests__/shown-locale'
@@ -129,5 +129,21 @@ describe('generation error codes on the run card', () => {
 
   it('keeps an uncoded reason as written', () => {
     expect(presentWorkflowFailure(undefined, '模型服务返回 HTTP 429', shown('zh-CN'), false).reason).toBe('模型服务返回 HTTP 429')
+  })
+})
+
+describe('没登记的码不显示给作者，只进日志（#859）', () => {
+  const GENERIC = { 'zh-CN': '出了意外问题，暂时说不清原因。请再试一次。', 'en-US': 'Something unexpected went wrong', 'ja-JP': '予期しない問題' } as const
+  it.each([
+    ['工作流未完成', 'zh-CN', 'MADE_UP_RUN_CODE', undefined],
+    ['IPC 包着的码', 'en-US', "Error invoking remote method 'db:save': Error: MADE_UP_WRAPPED_CODE", undefined],
+    ['审稿未完成', 'ja-JP', 'MADE_UP_REVIEW_CODE', { operation: 'review-chapter' }],
+  ] as const)('%s（%s）', (_name, locale, raw, activity) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const reason = presentWorkflowFailure(undefined, raw, shown(locale), false, undefined, activity as never).reason
+    expect(reason).not.toMatch(/MADE_UP_/u)
+    expect(reason).toContain(GENERIC[locale])
+    expect(warn.mock.calls.flat().join(' ')).toContain(raw.replace(/^.*Error: /u, ''))
+    warn.mockRestore()
   })
 })

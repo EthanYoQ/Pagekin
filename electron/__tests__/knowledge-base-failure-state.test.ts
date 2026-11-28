@@ -99,7 +99,7 @@ describe('what the author is told after a failure that already changed the knowl
 
     expect(result).toMatchObject({ success: false, error: 'KNOWLEDGE_BASE_DISK_FULL' })
     expect((await getEmbeddingSpaces(projectPath)).activeGeneration).toBeNull()
-    expect(await search(projectPath, '潮位表', vector, 5, space)).toEqual([expect.objectContaining({ fileName: 'old.txt', text: '旧港潮位表' })])
+    expect(await search(projectPath, '潮位表', { queryVector: vector, embeddingSpace: space }, 5)).toEqual([expect.objectContaining({ fileName: 'old.txt', text: '旧港潮位表' })])
     expect((await listDocuments(projectPath)).map(document => document.id)).toEqual(['old-document'])
     expect(displayedErrorMessage(shown('zh-CN'), result.error)).not.toMatch(/没有改动/u)
     expect(displayedErrorMessage(shown('en-US'), result.error)).not.toMatch(/not changed/iu)

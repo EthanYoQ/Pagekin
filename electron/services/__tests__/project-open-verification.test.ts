@@ -10,7 +10,7 @@ import { migrateSchema } from '../../migrations/runner'
 import { SqliteSchemaAdapter } from '../../migrations/sqlite-schema-adapter'
 import { createCanonicalProjectManifest } from '../../../src/shared/project-format'
 import { getProjectDatabasePath, openCanonicalProjectData } from '../project-data-locator'
-import { projectOpenFailureMessage } from '../../../src/i18n/app-errors'
+import { caughtFailure, projectOpenFailureMessage } from '../../../src/i18n/app-errors'
 import { shown } from '../../../src/i18n/__tests__/shown-locale'
 
 const Database = createRequire(import.meta.url)('better-sqlite3') as typeof import('better-sqlite3')
@@ -292,9 +292,9 @@ describe('作品库是空的或不在时，打开说作品文件里没有内容�
     try { openCanonicalProjectData(root) } catch (error) { failure = error }
 
     expect(failure).toBeDefined()
-    const zh = projectOpenFailureMessage(shown('zh-CN'), String(failure))
-    const en = projectOpenFailureMessage(shown('en-US'), String(failure))
-    const ja = projectOpenFailureMessage(shown('ja-JP'), String(failure))
+    const zh = projectOpenFailureMessage(shown('zh-CN'), caughtFailure(String(failure)))
+    const en = projectOpenFailureMessage(shown('en-US'), caughtFailure(String(failure)))
+    const ja = projectOpenFailureMessage(shown('ja-JP'), caughtFailure(String(failure)))
     expect(zh).toMatch(/没有内容[\s\S]*「从本地存档恢复副本」/u)
     expect(en).toMatch(/no content[\s\S]*Restore a copy from local archive/u)
     expect(ja).toMatch(/内容がない[\s\S]*「ローカルアーカイブからコピーを復元」/u)

@@ -616,9 +616,9 @@ export function legacyImportFailureMessage(locale: ErrorDisplayLocale, error: un
 const OPEN_RETRY_CODES: ReadonlySet<string> = new Set(['PROJECT_OPEN_FILES_BUSY', 'PROJECT_OPEN_IO_FAILED', 'PROJECT_OPEN_FILES_LOCKED'])
 
 /** 打开作品失败的说明。作品文件暂时读不了时接上下一步：书架上有书名就指向「打开《书名》」这个按钮。 */
-export function projectOpenFailureMessage(locale: ErrorDisplayLocale, error: unknown, title?: string): string {
-  const message = failureText(locale, caughtFailure(error))
-  if (!OPEN_RETRY_CODES.has(readCode(error) ?? '')) return message
+export function projectOpenFailureMessage(locale: ErrorDisplayLocale, failure: Failure | undefined, title?: string): string {
+  const message = failureText(locale, failure)
+  if (!OPEN_RETRY_CODES.has((failure && codeOf(failure)) ?? '')) return message
   const next = title ? translate(locale, 'error.projectOpenRetryBook', { title }) : translate(locale, 'error.projectOpenRetry')
   return joinSentences(locale, message, next)
 }
@@ -626,9 +626,9 @@ export function projectOpenFailureMessage(locale: ErrorDisplayLocale, error: unk
 const DELETE_LEFTOVER_CODES: ReadonlySet<string> = new Set(['PROJECT_DELETE_FAILED', 'PROJECT_DELETE_FILES_BUSY', 'PROJECT_DELETE_ACCESS_DENIED'])
 
 /** 删除作品失败的说明。文件夹没删完时接上作品现在的状态：还开着就再删一次；已关闭（closedTitle）就自己删文件夹。 */
-export function projectDeleteFailureMessage(locale: ErrorDisplayLocale, error: unknown, closedTitle?: string): string {
-  const message = failureText(locale, caughtFailure(error))
-  if (!DELETE_LEFTOVER_CODES.has(readCode(error) ?? '')) return message
+export function projectDeleteFailureMessage(locale: ErrorDisplayLocale, failure: Failure | undefined, closedTitle?: string): string {
+  const message = failureText(locale, failure)
+  if (!DELETE_LEFTOVER_CODES.has((failure && codeOf(failure)) ?? '')) return message
   const next = closedTitle === undefined
     ? translate(locale, 'error.projectDeleteStillOpen')
     : translate(locale, 'error.projectDeleteClosed', { title: closedTitle })
@@ -842,8 +842,11 @@ export function reasonOf(error: unknown): Failure | undefined {
 }
 
 type NoAny<P> = { readonly [K in keyof P]: 0 extends 1 & P[K] ? never : P[K] }
+/** P 是 any 时 P & NoAny<P> 也会塌成 any，所以改用一个造不出的必填参数来拒绝。 */
+type NoAnyObject<P> = 0 extends 1 & P ? [paramsAreAny: never] : []
 
-export function wireNote<const P extends NoteParams>(key: MessageKey, params?: P & NoAny<P>): WireNote {
+export function wireNote<const P extends NoteParams>(key: MessageKey, params?: P & NoAny<P>, ...anyGuard: NoAnyObject<P>): WireNote
+export function wireNote(key: MessageKey, params?: NoteParams): WireNote {
   return { key: key as string as WireNoteKey, ...(params ? { params } : {}) }
 }
 

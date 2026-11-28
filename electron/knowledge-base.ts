@@ -86,7 +86,7 @@ function knowledgeFailureDetails(error: unknown): { error: string; errorCode?: t
 function embeddingSpaceFor(
   protocol: 'openai' | 'gemini',
   model: { baseUrl: string; modelName?: string },
-): EmbeddingSpaceIdentity {
+): Required<EmbeddingSpaceIdentity> {
   // 只持久化可公开比较的模型身份，绝不写入 API key。
   return {
     modelFingerprint: `${protocol}|${model.baseUrl.trim().replace(/\/+$/, '')}|${model.modelName?.trim() || 'default'}`,
@@ -176,9 +176,8 @@ export async function searchKnowledge(
   return storeSearch(
     projectPath,
     query,
-    queryVector,
+    queryVector && { queryVector, embeddingSpace: embeddingSpaceFor(protocol, model) },
     topK,
-    embeddingSpaceFor(protocol, model),
     excludedCorpusKinds,
   )
 }
@@ -788,12 +787,5 @@ export async function searchKnowledgeFTS(
   excludedCorpusKinds: readonly KnowledgeCorpusKind[] = [],
 ): Promise<Array<{ text: string; score: number; fileName: string }>> {
   await ensureMigration(projectPath)
-  return storeSearch(
-    projectPath,
-    query,
-    undefined,
-    topK,
-    undefined,
-    excludedCorpusKinds,
-  )
+  return storeSearch(projectPath, query, undefined, topK, excludedCorpusKinds)
 }

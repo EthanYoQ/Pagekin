@@ -83,3 +83,17 @@ describe('未迁移的产生点在运行卡片上：登记码照常说明，没�
     expect(await failedCard(thrown)).toEqual({ expandable: true, stepError, notice })
   })
 })
+
+describe('没登记的码不显示给作者，只进日志（#859）', () => {
+  it.each([
+    ['en-US', 'MADE_UP_ENGLISH_CODE', 'Something unexpected went wrong'],
+    ['ja-JP', 'MADE_UP_JAPANESE_CODE', '予期しない問題'],
+  ] as const)('%s 界面', async (locale, code, generic) => {
+    useLocaleStore.setState({ locale: 'en-US', interfaceLocale: locale, initialized: true })
+    await failedCard(new Error(`Error invoking remote method 'db:save': Error: ${code}`))
+    expect(host.textContent).not.toContain(code)
+    expect(host.querySelector('.run-step-error')?.textContent).toContain(generic)
+    expect(host.querySelector('.pi-notice-text p')?.textContent).toContain(generic)
+    expect(vi.mocked(console.warn).mock.calls.flat().join(' ')).toContain(code)
+  })
+})
