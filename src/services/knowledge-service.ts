@@ -20,7 +20,7 @@ export interface PlanningMaterial {
   text: string
 }
 
-/** 主进程旧 error 字段的说明按系统语言写，不采用；failure 里的目录说明照用。 */
+/** 不采用主进程旧 error 字段，它按系统语言写，和界面语言可能不一致。 */
 export class KnowledgeBaseServiceError extends AuthorError {
   constructor(failure: Failure) {
     super(failure, failureText(currentInterfaceLocale(), failure))

@@ -105,7 +105,6 @@ function promptBudgetAdjustment(
   }
 }
 
-/** 句子照原样显示；整条是码时按码说明，没登记的码只进日志。 */
 function reasonText(locale: ErrorDisplayLocale, error: string | undefined): string | undefined {
   const coded = failureOf(error)
   return knownAppErrorMessage(locale, error) ?? (coded ? failureText(locale, coded) : error?.trim() || undefined)

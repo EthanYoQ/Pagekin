@@ -1658,7 +1658,6 @@ describe('project:open：作品文件坏了、被占用或没有权限时，说�
     mocks.verifyCanonicalProjectData.mockRejectedValueOnce(error)
     return handler('project:open')({ sender: { id: 17 } }, selectedProject(projectB), `open-B-${error.message}`, projectA)
   }
-  // 与 project-store 一样按 resultFailure 说明。
   const explain = (shownResult: unknown) => {
     const failure = resultFailure(shownResult as { errorCode?: string, error?: string })
     return {
