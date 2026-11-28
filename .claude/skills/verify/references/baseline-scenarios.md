@@ -1,38 +1,34 @@
-# 旧外壳基线场景
+# 基线场景
 
-> 历史说明：本文件按当时的改造或 issue 记录场景与对照步骤，不随当前构建更新。其中的对照命令（旧外壳场景、`--shell`、指向 trunk 的 `--app-root`）只适用于当时的 trunk，在当前构建上不能照抄。当前构建的做法以正文和 `driver.md` 为准；某个场景现在能不能对 head 跑，以 `driver.md`「RD-10 删除旧外壳之后」的分类为准。
-
-RD-10 之前的旧外壳场景，只对 trunk（`--app-root`）跑。做旧外壳对照或改 `scenarios.mjs` 时读。
+`baseline-all` 的 8 个场景走纸墨外壳，对当前构建跑（#940 起）。下面「不进 baseline-all 的场景」一节仍是 RD-10 之前的旧外壳场景，只对当时的 trunk（`--app-root`）跑；某个场景现在能不能对 head 跑，以 `driver.md`「RD-10 删除旧外壳之后」的分类为准。改 `scenarios.mjs` 时读。
 
 ## 场景
 
 | 名称 | 对应流程 | 单跑时截图停在 | `baseline-all` 里的不同 | 用夹具模型 |
 |---|---|---|---|---|
-| `new-project` | 新建作品 | 新作品的小说配置页 | 无 | 否 |
-| `open-sample` | 打开示例作品 | 项目树刷新完成（蓝图 2/100 章、角色图谱已生成），显示第 1 章与草稿_v1 | 无 | 否 |
-| `write-chapter` | 写作此章 | 草稿标签已打开，正文非空 | 已有预置的草稿_v1，写出的是草稿_v2 | 是 |
-| `review` | AI 审稿 | 审稿报告标签 | 审的是最新一稿草稿_v2 | 是 |
-| `revise-merge` | 按确认意见修稿并合并 | 修稿合并对话框；截图后点完成合并，等对话框关闭 | 修的是草稿_v2 | 是 |
-| `finalize` | 定稿 | 已定稿（只读），AI 输出显示后处理完成 | 定稿的是合并后的草稿_v2，不是草稿_v1 | 是 |
-| `run-panel` | 打开运行面板（现为 AI 输出） | 重开作品后从右侧栏打开 AI 输出，显示一条持久运行「第1章候选」 | 无；它排在审稿之前，因为草稿被修稿改动后这条记录变成「第1章生成记录」 | 是 |
-| `settings` | 打开设置 | 设置弹窗 | 截图后关闭设置，接着跑 new-project | 否 |
+| `settings` | 打开设置 | 设置页，落在「AI 模型」 | 截图后关闭设置，接着跑 new-project | 否 |
+| `new-project` | 新建作品 | 新作品的设定页（核心大纲输入框） | 无 | 否 |
+| `open-sample` | 打开示例作品 | 流程脊显示蓝图 2 / 100 章，第 1 章打开，是预置的定稿 | 无 | 否 |
+| `write-chapter` | 从蓝图写第 2 章 | 第 2 章正文写出 | 无 | 是 |
+| `run-panel` | 重开作品后打开运行侧页 | 运行侧页没有残留的进行中运行，第 2 章仍是写出的草稿 v1 | 无 | 是 |
+| `review` | 第 2 章 AI 审稿 | 审稿报告与「按 N 项意见修稿」 | 审的是上一步写出的草稿 | 是 |
+| `revise-merge` | 按意见修稿并合并 | 修稿合并视图；截图后全部用修稿、完成合并，等「定稿」出现 | 无 | 是 |
+| `finalize` | 第 2 章定稿 | 已定稿（只读），定稿后处理全部完成 | 定稿的是合并后的那一稿 | 是 |
 | `baseline-all` | 按共享前置串成 2 个会话跑上面 8 个场景 | 8 张截图 | | |
 | `startup-timing` | 只启动 | 不截图，输出启动耗时 | | 否 |
 
-示例作品名为「灯塔」，第 1 章「旧港」，由公开 IPC 预置后从书房打开；打开后等项目树统一刷新结束再继续，之前的画面随刷新进度变化。
+示例作品名为「灯塔」，由公开 IPC 预置后从书房打开：2 章蓝图（「旧港」「北堤」），每章 100 字，第 1 章导入为定稿。第 1 章的正文与假模型的写稿回复不重叠，否则写第 2 章会被判为与上一章结尾重演。`review`、`revise-merge`、`finalize` 单跑时另预置第 2 章草稿 v1。纸墨外壳的运行历史只在内存里，重载后清空，所以 `run-panel` 查的是重开后仍在的东西：没有卡住的运行、写出的草稿。
 
 场景的 `run` 可以调 `context.restart()`：退出应用、用同一隔离目录冷启动（不重写外观），context 里的 `app`、`page` 换成新的，用于验证「重启后仍保持」。
 
 `scripts/redesign/scenarios.mjs` 里每个场景分三段：`setup` 是单跑时的前置（预置作品、写一章、审稿等），`run` 从前置状态走到截图状态，`after` 在截图后执行。一个会话只跑首个场景的 `setup`，然后依次 `run`、截图、`after`。`baseline-all` 的会话在 `BASELINE_SESSIONS`：
 
 - `baseline-shelf`：`settings` → `new-project`。不预置作品，`new-project` 要在空项目目录里建「灯塔」，与示例作品不能共存。
-- `baseline-sample`：`open-sample` → `write-chapter` → `run-panel` → `review` → `revise-merge` → `finalize`。预置一次带草稿_v1 的示例作品，后面每步接着上一步的状态。
-
-改动前 `baseline-all` 每个场景各冷启动一次（8 次）；现在 2 次。
+- `baseline-sample`：`open-sample` → `write-chapter` → `run-panel` → `review` → `revise-merge` → `finalize`。预置一次不带第 2 章草稿的示例作品，后面每步接着上一步的状态。
 
 ## 不进 baseline-all 的场景
 
-`scenarios.mjs` 的 `EXTRA_SCENARIOS` 只能单跑，不进 `baseline-all`。`run` 的返回值写进结果的 `measured`。需要卡住模型调用时，场景从上下文的 `fake.gate` 调 `hold()`，在 `after` 里 `release()`。`hold()` 只卡对话请求；只走嵌入的步骤（参考文本入库）用 `hold({ embeddings: true })` 连嵌入一起卡。`fake.gate.waiting` 是正卡在门上的请求数，截图前等它大于 0，画面才停在确定的那一步。
+`scenarios.mjs` 的 `EXTRA_SCENARIOS` 只能单跑，不进 `baseline-all`。其中用 `seedWithoutDraft` 预置的场景（`write-latency`、`nav-*` 等）共用上面的预置，它现在从纸墨书房打开作品，所以这些旧外壳场景对 RD-10 之前的 trunk 也跑不通了。`run` 的返回值写进结果的 `measured`。需要卡住模型调用时，场景从上下文的 `fake.gate` 调 `hold()`，在 `after` 里 `release()`。`hold()` 只卡对话请求；只走嵌入的步骤（参考文本入库）用 `hold({ embeddings: true })` 连嵌入一起卡。`fake.gate.waiting` 是正卡在门上的请求数，截图前等它大于 0，画面才停在确定的那一步。
 
 | 名称 | 检查 | 单跑时截图停在 | 用夹具模型 |
 |---|---|---|---|
