@@ -82,7 +82,7 @@ fnm exec --using=22.23.1 -- node scripts/redesign/drive.mjs --scenario <名称> 
 | 键盘、英文界面、宽度、对比度、标签菜单这类横跨页面的场景 | `references/rd-review-scenarios.md` |
 | 某个已修 issue 的回归场景（#382 起） | `references/issue-scenarios/<短名>.md`，用法见 `references/issue-scenarios.md` |
 | 截图可重复性、启动耗时、空闲内存、页面内计时 | `references/measurement.md` |
-| RD-10 之前的旧外壳基线场景，只对 trunk 跑 | `references/baseline-scenarios.md` |
+| `baseline-all` 的 8 个基线场景，以及只对 trunk 跑的旧外壳场景 | `references/baseline-scenarios.md` |
 
 参考里没写到的场景，以 `scripts/redesign/*-scenarios.mjs` 的源码为准。
 
