@@ -8,7 +8,7 @@
 
 ## 决定
 
-导入运行的来源清单、授权与身份只留在主进程；渲染端拿到的是有界、安全的显示视图。作者原稿导入要把确认绑到被检查的章节清单与权威指纹，并在提交事务里复核。反推全局事实分整体写入与只补空白两种模式。下面按文件列出各条口径。
+导入运行的来源清单、授权与身份只留在主进程；渲染端拿到的是有界、安全的显示视图。作者原稿导入要把确认绑到被检查的章节清单与权威指纹，并在提交事务里复核。反推结果写进设定、文风与蓝图分整体写入与只补空白两种模式，由导入目标在创建运行时冻结，不从用途派生。下面按文件列出各条口径。
 
 ## 共享层口径（注释清理 #852 第 3 个 PR，src/shared）
 
@@ -20,7 +20,7 @@
 
 ### `src/shared/import-fill-empty.ts`
 
-- `ImportFillField`：作者原稿反推只补空白：每个可补字段按类型判空，非空且与反推值不同的进建议。
+- `ImportFillField`：只补空白：每个可补字段按类型判空，非空且与反推值不同的进建议。
 - `FILL_RULES`：suggest=false：导入章数不是作者计划的总章数，只在项目没有总章数时补上，不当作建议。
 
 ### `src/shared/import-generation.ts`
@@ -28,12 +28,10 @@
 - `IMPORT_SLOT_MAX_REQUESTS`：一个导入 slot 最多发出的请求数（含推演、语法修复和补卡）。主进程按请求序号核对，根的额度更大也不能超过。
 - `ImportGenerationSlot`：持久的导入检查点，绝非渲染端选定的生成根（原文：A durable import checkpoint, never a renderer-selected generation root.）
 
-### `src/shared/import-global-facts.ts`
-
-- `ImportGlobalFactsMode`：replace：参考小说整体写入；fill-empty：作者原稿只补空白，非空字段的反推值进 suggestions。
-
 ### `src/shared/import-run.ts`
 
+- `ImportCoreWriteMode`：运行创建时冻结（2026-11-28，#855）。replace：参考小说导入对话框新建的项目，设定、文风与每章蓝图整体写入；fill-empty：导入已有的当前项目（参考小说与作者原稿都是），非空字段不动，不同的反推值进 suggestions，已有蓝图的章不调模型、不改动。主进程账本只记非默认的 replace，所以升级前没有这一行的运行续跑时按 fill-empty，导入新项目时进行到一半的也一样（维护者 2026-11-28 定：宁可少写，不毁数据）。冻结后只有一个例外，而且只能收窄：导入当前项目的选择接手同一来源的旧运行时（解析中复用，或解析完成后匹配到可续跑的运行），把它改成 fill-empty；反过来从不放宽。
+- `importCoreWriteModeFor`：导入目标到写入模式的唯一映射。缺失或无法识别的目标按当前项目处理。
 - `IMPORT_STAGE_PLANS`：阶段顺序由运行用途和冻结的反推选项决定；作者原稿的反推放在后处理之后，知识库里已经有定稿正文。
 - 蓝图分批、持久收据与仓库检查点共用的规范身份（原文：Canonical identity shared by blueprint batching, durable receipts, and repository checkpoints.）
 - 存储提交前与渲染端重放共用的绑定检查（原文：Common binding checks used before storage commit and renderer replay.）

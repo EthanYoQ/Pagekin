@@ -1,6 +1,14 @@
 import type { Failure } from './failure'
 export type ImportRunLocale = 'zh-CN' | 'en-US'
 export type ImportPurpose = 'reference' | 'author-manuscript'
+/** 反推结果怎样写进项目设定、文风与蓝图；运行创建时冻结。 */
+export type ImportCoreWriteMode = 'replace' | 'fill-empty'
+export type ImportTarget = 'new-project' | 'current-project'
+
+/** 只有参考小说导入对话框新建的项目才整体写入；落到已有项目一律只补空白。 */
+export function importCoreWriteModeFor(purpose: ImportPurpose, target: ImportTarget | undefined): ImportCoreWriteMode {
+  return purpose === 'reference' && target === 'new-project' ? 'replace' : 'fill-empty'
+}
 export const AUTHOR_IMPORT_PREVIEW_STALE = 'AUTHOR_IMPORT_PREVIEW_STALE' as const
 
 export class AuthorImportPreviewStaleError extends Error {
@@ -228,6 +236,7 @@ export interface ImportRunPrepareRequest {
   authorityFingerprint?: string
   expectedManifestFingerprint?: string
   authorInference?: boolean
+  coreWriteMode?: ImportCoreWriteMode
   chapters: ImportRunChapterInput[]
 }
 
@@ -241,6 +250,7 @@ export interface ImportRunBeginParsingRequest {
   legacyCollectionFingerprint?: string
   sourceDisplay: ImportSourceDisplayMetadata[]
   locale: ImportRunLocale
+  coreWriteMode?: ImportCoreWriteMode
 }
 
 export type ImportChapterTargetStatus = 'new' | 'duplicate' | 'conflict'
@@ -274,6 +284,7 @@ export type ImportRunPrepareFromInspectionRequest = {
   runId: string
   purpose: 'reference'
   locale: ImportRunLocale
+  target: ImportTarget
 } | {
   inspectionId: string
   runId: string
@@ -288,6 +299,7 @@ export interface ImportNovelFileSelectionRequest {
   runId: string
   purpose: ImportPurpose
   locale: ImportRunLocale
+  target: ImportTarget
   expectedProjectPath: string
 }
 
@@ -299,6 +311,7 @@ export interface ImportRunSnapshot {
   manifestFingerprint?: string
   authorityFingerprint?: string
   authorInference?: boolean
+  coreWriteMode: ImportCoreWriteMode
   sourceDisplay: ImportSourceDisplayMetadata[]
   unfinishedSourceDisplay?: ImportSourceDisplayMetadata[]
   locale: ImportRunLocale
