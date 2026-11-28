@@ -64,7 +64,6 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
   const [targetMode, setTargetMode] = useState<'new' | 'current'>('new')
   const [purpose, setPurpose] = useState<ImportPurpose>('reference')
   const [authorInference, setAuthorInference] = useState(true)
-  // 本次打开对话框时新建的项目；取消选文件或拆章失败后重选，仍算导入新项目。
 
   const [previousOpen, setPreviousOpen] = useState(open)
   if (previousOpen !== open) {
