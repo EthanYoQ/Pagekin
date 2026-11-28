@@ -103,6 +103,15 @@ describe('test:guards 的成员是经 repoSourceFiles() 扫源码的测试', () 
     expect(members).not.toContain('electron/controllers/__tests__/import-controller-secure-file.test.ts')
     expect(members.filter(file => BASELINE.includes(file))).toEqual([])
   })
+
+  it('不扫源码、但守着跨模块不变式的测试按名字登记，改名或删掉就红', () => {
+    const members = guardTestFiles()
+    expect(members).toEqual(expect.arrayContaining([
+      'electron/__tests__/startup-native-isolation.test.ts',
+      'electron/services/__tests__/live-row-sentinel.test.ts',
+    ]))
+    expect(members.filter(file => !existsSync(join(REPO_ROOT, file)))).toEqual([])
+  })
 })
 
 describe('测试文件按标识符禁用列目录原语', () => {
