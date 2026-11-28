@@ -11,7 +11,6 @@ import type {
   ImportRunPreparationResult,
   ImportRunPrepareFromInspectionRequest,
   ImportRunSnapshot,
-  ImportTarget,
 } from '../../shared/import-run'
 import type { AuthorManuscriptImportPreview } from '../../shared/author-manuscript-import'
 import {
@@ -65,15 +64,12 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
   const [targetMode, setTargetMode] = useState<'new' | 'current'>('new')
   const [purpose, setPurpose] = useState<ImportPurpose>('reference')
   const [authorInference, setAuthorInference] = useState(true)
-  // 本次打开对话框时新建的项目；取消选文件或拆章失败后重选，仍算导入新项目。
-  const [createdProjectPath, setCreatedProjectPath] = useState<string | null>(null)
 
   const [previousOpen, setPreviousOpen] = useState(open)
   if (previousOpen !== open) {
     setPreviousOpen(open)
     if (open) {
       setSavePath(null)
-      setCreatedProjectPath(null)
     }
   }
 
@@ -202,7 +198,6 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
     try {
       let project = useProjectStore.getState().currentProject
       let projectSession = captureProjectSession(project)
-      let target: ImportTarget = project && project.path === createdProjectPath ? 'new-project' : 'current-project'
       if (targetMode === 'new' && !explicitRun) {
         if (!name.trim() || !savePath) throw authorError(currentInterfaceLocale(), { note: note('请先填写新项目名称和保存位置，再选择小说文件。', 'Enter the new project name and save location before choosing novel files.') })
         const success = await createProject({
@@ -217,10 +212,6 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
         project = useProjectStore.getState().currentProject
         projectSession = captureProjectSession(project)
         setTargetMode('current')
-        if (project) {
-          setCreatedProjectPath(project.path)
-          target = 'new-project'
-        }
       }
       if (!project || !projectSession) throw authorError(currentInterfaceLocale(), { note: note('目标项目缺少有效会话，已拒绝读取小说文件。', 'The target project has no valid session, so the novel files were not read.') })
       operationSession = projectSession
@@ -230,7 +221,6 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
         runId,
         purpose,
         locale: runLocale,
-        target,
         expectedProjectPath: project.path,
       }, projectSession)
       if (!isProjectSessionCurrent(projectSession)) return
@@ -276,7 +266,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
     } finally {
       setSplitting(false)
     }
-  }, [createProject, createdProjectPath, locale, name, purpose, savePath, targetMode])
+  }, [createProject, locale, name, purpose, savePath, targetMode])
 
   /** 选择保存路径 */
   const handleSelectFolder = useCallback(async () => {

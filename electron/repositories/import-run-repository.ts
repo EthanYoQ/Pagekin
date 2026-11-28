@@ -32,7 +32,6 @@ import type {
   ImportSourceDisplayMetadata,
   ImportPurpose,
   ImportRunLocale,
-  ImportCoreWriteMode,
 } from '../../src/shared/import-run'
 import type { AuthorManuscriptImportPreview } from '../../src/shared/author-manuscript-import'
 import { getCurrentProjectPath, getProjectDb } from '../database'
@@ -198,13 +197,11 @@ const IMPORT_RUN_STAGE_VALUES = new Set<ImportRunStage>([
   'refresh', 'completed',
 ])
 /**
- * 运行创建时冻结的选项，各占导入账本里的一行，有这一行即选中。
- * 它们不是进度：completedBatches 不读它们。
- * 整体写入只记非默认的 replace，所以升级前没有这一行的运行续跑时按 fill-empty。
+ * 运行创建时冻结的选项，占导入账本里的一行，有这一行即选中。
+ * 它不是进度：completedBatches 不读它。
  */
 const RUN_OPTION_STAGE = 'prepared'
 const AUTHOR_INFERENCE_LEDGER = { stage: RUN_OPTION_STAGE, batchId: 'author-inference', effectKey: 'option:author-inference' } as const
-const CORE_REPLACE_LEDGER = { stage: RUN_OPTION_STAGE, batchId: 'core-replace', effectKey: 'option:core-replace' } as const
 
 /** 完成只能走 complete()，所以 refresh 之后没有可推进的阶段。 */
 function nextStageForRun(row: ImportRunRow, stage: ImportRunStage): ImportRunStage | undefined {
@@ -696,9 +693,7 @@ function persistedProgress(row: ImportRunRow): {
       ...sources,
       completedChapters,
       progressCompleted,
-      progressTotal: readCoreWriteMode(row.id) === 'fill-empty'
-        ? progressCompleted + chaptersMissingBlueprint(row.id)
-        : row.total_chapters,
+      progressTotal: progressCompleted + chaptersMissingBlueprint(row.id),
     }
   }
   if (row.stage === 'global' || row.stage === 'style' || row.stage === 'refresh') {
@@ -729,7 +724,6 @@ function rowToSnapshot(row: ImportRunRow): ImportRunSnapshot {
       ...(row.authority_fingerprint ? { authorityFingerprint: row.authority_fingerprint } : {}),
       authorInference: readAuthorInference(row.id),
     } : {}),
-    coreWriteMode: readCoreWriteMode(row.id),
     sourceDisplay: parseJson<ImportSourceDisplayMetadata[]>(row.source_display_json, []),
     unfinishedSourceDisplay: unfinishedSourceDisplay(row.id),
     locale: row.locale,
@@ -896,8 +890,8 @@ function completedBatches(row: ImportRunRow): Partial<Record<ImportRunStage, str
     const completed: Partial<Record<ImportRunStage, string[]>> = {}
     const rows = db().prepare(`
       SELECT stage,batch_id FROM import_effect_ledger
-      WHERE run_id=? AND state='complete' AND NOT (stage=? AND batch_id IN (?,?)) ORDER BY rowid
-    `).all(row.id, RUN_OPTION_STAGE, AUTHOR_INFERENCE_LEDGER.batchId, CORE_REPLACE_LEDGER.batchId) as Array<{ stage: ImportRunStage; batch_id: string }>
+      WHERE run_id=? AND state='complete' AND NOT (stage=? AND batch_id=?) ORDER BY rowid
+    `).all(row.id, RUN_OPTION_STAGE, AUTHOR_INFERENCE_LEDGER.batchId) as Array<{ stage: ImportRunStage; batch_id: string }>
     for (const entry of rows) completed[entry.stage] = [...(completed[entry.stage] ?? []), entry.batch_id]
     return completed
   }
@@ -916,34 +910,19 @@ function completedBatches(row: ImportRunRow): Partial<Record<ImportRunStage, str
   return parsed as Partial<Record<ImportRunStage, string[]>>
 }
 
-type RunOption = typeof AUTHOR_INFERENCE_LEDGER | typeof CORE_REPLACE_LEDGER
-
-function readRunOption(runId: string, option: RunOption): boolean {
+function readAuthorInference(runId: string): boolean {
   if (!hasEffectLedger()) return false
   return Boolean(db().prepare('SELECT 1 FROM import_effect_ledger WHERE run_id=? AND stage=? AND batch_id=?')
-    .get(runId, option.stage, option.batchId))
-}
-
-function readAuthorInference(runId: string): boolean {
-  return readRunOption(runId, AUTHOR_INFERENCE_LEDGER)
-}
-
-function readCoreWriteMode(runId: string): ImportCoreWriteMode {
-  return readRunOption(runId, CORE_REPLACE_LEDGER) ? 'replace' : 'fill-empty'
+    .get(runId, AUTHOR_INFERENCE_LEDGER.stage, AUTHOR_INFERENCE_LEDGER.batchId))
 }
 
 // evidence_kind 只能取 M04 的四个值；legacy-checkpoint 是现有直接检查点（无收据）用的那个，校验也认它。
-function recordRunOption(runId: string, effectNamespace: string, option: RunOption): void {
+function recordAuthorInference(runId: string, effectNamespace: string): void {
   db().prepare(`INSERT INTO import_effect_ledger(
     run_id,stage,batch_id,effect_namespace,effect_key,state,evidence_kind,diagnostic_code
-  ) VALUES(?,?,?,?,?,'complete','legacy-checkpoint','')`).run(runId, option.stage, option.batchId, effectNamespace, option.effectKey)
-}
-
-// 导入当前项目的请求接手一个旧运行时只能把写入模式收窄为只补空白，不能反过来放宽（#855）。
-function adoptCoreWriteMode(runId: string, requested: ImportCoreWriteMode): void {
-  if (requested === 'replace' || !hasEffectLedger()) return
-  db().prepare('DELETE FROM import_effect_ledger WHERE run_id=? AND stage=? AND batch_id=?')
-    .run(runId, CORE_REPLACE_LEDGER.stage, CORE_REPLACE_LEDGER.batchId)
+  ) VALUES(?,?,?,?,?,'complete','legacy-checkpoint','')`).run(
+    runId, AUTHOR_INFERENCE_LEDGER.stage, AUTHOR_INFERENCE_LEDGER.batchId, effectNamespace, AUTHOR_INFERENCE_LEDGER.effectKey,
+  )
 }
 
 function hasEffectLedger(): boolean {
@@ -1145,11 +1124,11 @@ function assertStageCheckpointComplete(row: ImportRunRow, stage: ImportRunStage)
     ) throw new Error('IMPORT_RUN_STAGE_INCOMPLETE')
     return
   }
-  if (stage === 'blueprints' && readCoreWriteMode(row.id) === 'fill-empty') {
+  if (stage === 'blueprints') {
     if (chaptersMissingBlueprint(row.id) !== 0) throw new Error('IMPORT_RUN_STAGE_INCOMPLETE')
     return
   }
-  if (stage !== 'knowledge' && stage !== 'blueprints') throw new Error('IMPORT_RUN_STAGE_INCOMPLETE')
+  if (stage !== 'knowledge') throw new Error('IMPORT_RUN_STAGE_INCOMPLETE')
 
   const allChapters = chapterRowsForRange(row.id, 1, Number.MAX_SAFE_INTEGER)
   const covered = new Set<number>()
@@ -1720,7 +1699,6 @@ export class ImportRunRepository {
         db().prepare(`
           UPDATE import_runs SET source_display_json = ?, updated_at = datetime('now') WHERE id = ?
         `).run(JSON.stringify(sourceDisplay), existing.id)
-        adoptCoreWriteMode(existing.id, candidate.coreWriteMode ?? 'fill-empty')
         return this.get(existing.id)!
       }
       if (readRunRow(runId)) throw new Error('IMPORT_RUN_ID_CONFLICT')
@@ -1741,7 +1719,6 @@ export class ImportRunRepository {
         JSON.stringify(sourceDisplay),
         candidate.locale,
       )
-      if (candidate.coreWriteMode === 'replace') recordRunOption(runId, `import:${candidate.purpose}:${runId}`, CORE_REPLACE_LEDGER)
       const insertSource = db().prepare(`
         INSERT INTO import_run_sources (
           run_id, source_index, source_id, source_fingerprint, legacy_source_fingerprint, display_json
@@ -1937,7 +1914,6 @@ export class ImportRunRepository {
       const resumable = matchingResumableRun(run.purpose, run.source_fingerprint, manifestFingerprint)
       if (resumable && resumable.id !== runId) {
         const duplicateChapterNumbers = chapters.map(chapter => chapter.number)
-        adoptCoreWriteMode(resumable.id, readCoreWriteMode(runId))
         discardProvisionalParsingRun(runId)
         return {
           classification: 'resumable' as const,
@@ -2137,7 +2113,7 @@ export class ImportRunRepository {
           manifestContentSize,
           manifestWordCount,
         )
-        if (candidate.authorInference) recordRunOption(runId, `import:${candidate.purpose}:${runId}`, AUTHOR_INFERENCE_LEDGER)
+        if (candidate.authorInference) recordAuthorInference(runId, `import:${candidate.purpose}:${runId}`)
         const insertChapter = db().prepare(`
           INSERT INTO import_run_chapters (
             run_id, chapter_number, source_id, source_chapter_number,
@@ -2292,7 +2268,6 @@ export class ImportRunRepository {
         manifestContentSize,
         manifestWordCount,
       )
-      if (candidate.coreWriteMode === 'replace') recordRunOption(runId, `import:${candidate.purpose}:${runId}`, CORE_REPLACE_LEDGER)
       const insertChapter = db().prepare(`
         INSERT INTO import_run_chapters (
           run_id, chapter_number, source_id, source_chapter_number,
@@ -2465,8 +2440,6 @@ export class ImportRunRepository {
       assertExecution(runId, execution, now)
       assertCheckpointCanApply(run, stage, batchId, 'receipt')
       let effectReceipt: unknown
-      // 模式在运行创建时冻结，不随载荷传。
-      const fillMode = readCoreWriteMode(run.id)
       const generationRunHandle = (validatedReceipt.payload as { generationRunHandle?: MainGenerationRunHandle }).generationRunHandle
       if (generationRunHandle) {
         if (!assertGenerationSources || !['global', 'style', 'blueprints'].includes(stage)) throw new Error('GENERATION_GUARD_REQUIRED')
@@ -2476,7 +2449,7 @@ export class ImportRunRepository {
         case 'project-global-facts':
           effectReceipt = ImportGlobalFactsRepository.commit(
             parseJson<ImportGlobalFactsRequest>(row.payload_json, {} as ImportGlobalFactsRequest),
-            fillMode,
+            'fill-empty',
           )
           break
         case 'project-writing-style': {
@@ -2485,11 +2458,6 @@ export class ImportRunRepository {
             throw new Error('IMPORT_RUN_RECEIPT_PAYLOAD_INVALID')
           }
           const writingStyle = payload.writingStyle.trim()
-          if (fillMode === 'replace') {
-            ProjectCoreRepository.update({ writingStyle })
-            effectReceipt = { writingStyle }
-            break
-          }
           const fill = planImportFill(['writingStyle'], { writingStyle: ProjectCoreRepository.get()?.writingStyle }, { writingStyle })
           ProjectCoreRepository.update(fill.patch)
           effectReceipt = {
@@ -2504,7 +2472,7 @@ export class ImportRunRepository {
             parseJson<BlueprintRangeCommitRequest>(row.payload_json, {} as BlueprintRangeCommitRequest),
             undefined,
             undefined,
-            fillMode,
+            'fill-empty',
           )
           break
         case 'author-finalized-batch': {
@@ -2651,9 +2619,6 @@ export class ImportRunRepository {
         restartingParsing ? 0 : source.manifest_content_size,
         restartingParsing ? 0 : source.manifest_word_count,
       )
-      if (readCoreWriteMode(source.id) === 'replace') {
-        recordRunOption(normalizedNextId, `import:${source.purpose}:${normalizedNextId}`, CORE_REPLACE_LEDGER)
-      }
       if (restartingParsing) {
         db().prepare(`
           INSERT INTO import_run_sources (

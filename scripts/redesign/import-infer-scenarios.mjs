@@ -203,10 +203,8 @@ export const IMPORT_INFER_SCENARIOS = {
     assert.equal(core.premise, INFERRED.architectureFiles.premise, '空的故事前提被补上')
     assert.equal(core.writingStyle, INFERRED_STYLE, '空的文风被补上')
     assert.deepEqual(blueprints.map(item => item.title), ['反推第1章', '反推第2章', '反推第3章'], '每个导入章都有蓝图')
-    const region = runSheet.sheet(page).getByRole('region', { name: '反推建议' })
-    await region.waitFor({ state: 'visible' })
-    const suggested = await region.locator('.run-suggestion-name').allInnerTexts()
-    assert.deepEqual(suggested, ['每章字数'], '空项目只剩新建默认的每章字数可建议')
+    assert.notEqual(core.wordsPerChapter, 3000, '仍是新建默认的每章字数换成按原稿算的值')
+    assert.equal(await runSheet.sheet(page).getByRole('region', { name: '反推建议' }).count(), 0, '空项目没有要作者取舍的建议')
 
     await shootStagePage(page, shoot, 'import-infer-empty-setup', '设定')
     await shootStagePage(page, shoot, 'import-infer-empty-architecture', '架构')

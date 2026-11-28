@@ -116,12 +116,12 @@ describe('ImportGlobalFactsRepository transaction seam', () => {
   })
 
   it('补空模式：已有字段一字不变，空字段补上，非空且不同的记成建议，角色仍走提议', () => {
-    ProjectCoreRepository.update({ genre: '武侠', coreOutline: '作者自己的大纲', premise: '', wordsPerChapter: 3000 })
+    ProjectCoreRepository.update({ genre: '武侠', coreOutline: '作者自己的大纲', premise: '', wordsPerChapter: 2800, totalChapters: 60 })
 
     const receipt = ImportGlobalFactsRepository.commit(request(), 'fill-empty')
 
     expect(ProjectCoreRepository.get()).toMatchObject({
-      genre: '武侠', coreOutline: '作者自己的大纲', wordsPerChapter: 3000, totalChapters: 100,
+      genre: '武侠', coreOutline: '作者自己的大纲', wordsPerChapter: 2800, totalChapters: 60,
       subGenre: '讽刺', premise: '个人与社会冲突', worldSetting: '辛亥前后的江南乡村', synopsis: '阿Q的命运',
     })
     expect(receipt).toMatchObject({
@@ -133,7 +133,7 @@ describe('ImportGlobalFactsRepository transaction seam', () => {
     expect(receipt.suggestions).toEqual(expect.arrayContaining([
       { field: 'genre', current: '武侠', inferred: '现实' },
       { field: 'coreOutline', current: '作者自己的大纲', inferred: '阿Q由自尊走向幻灭' },
-      { field: 'wordsPerChapter', current: 3000, inferred: 2500 },
+      { field: 'wordsPerChapter', current: 2800, inferred: 2500 },
     ]))
     expect(receipt.suggestions?.map(item => item.field)).not.toContain('totalChapters')
     expect(getProjectDb()!.prepare('SELECT COUNT(*) FROM characters').pluck().get()).toBe(0)
