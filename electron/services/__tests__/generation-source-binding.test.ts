@@ -436,6 +436,14 @@ describe('main rebuilt generation sources', () => {
             expect(shown, locale).not.toMatch(/GENERATION_|SyntaxError|JSON|Unexpected/u);
         }
     });
+    it('删掉的项目提示词（渲染端写成空文件）不再挡生成，回退到全局提示词', () => {
+        const f = fixture();
+        put(f.deps.globalDataRoot, 'prompts/draft.zh-CN.json', JSON.stringify({ key: 'draft', writingLanguage: 'zh-CN', content: 'global' }));
+        const global = f.build();
+        put(f.deps.projectStorageRoot, 'prompts/draft.zh-CN.json', '');
+        put(f.deps.projectStorageRoot, 'prompts/draft.json', ' \n');
+        expect(f.build().binding.fingerprint.templateHash).toBe(global.binding.fingerprint.templateHash);
+    });
     it('binds actual selected Skill bytes and rejects a missing binding target', () => { const f = fixture(); put(f.deps.projectStorageRoot, 'writing-skills.json', JSON.stringify({ version: 1, bindings: { drafting: 'project:author' } })); expect(() => f.build()).toThrow(); put(f.deps.projectStorageRoot, 'skills/author/SKILL.md', '---\nname: author\nlanguage: zh-CN\nstage: drafting\n---\n保持作者事实。'); const a = f.build(); put(f.deps.projectStorageRoot, 'skills/author/SKILL.md', '---\nname: author\nlanguage: zh-CN\nstage: drafting\n---\n新作者规则。'); expect(f.build().binding.fingerprint.skillSnapshotHash).not.toBe(a.binding.fingerprint.skillSnapshotHash); });
     const installFolderSkill = (f: ReturnType<typeof fixture>, files: { path: string; content: string }[]) => {
         const skill = '---\nname: voice\nlanguage: zh-CN\n---\n遵循 references/voice.md。';

@@ -519,9 +519,10 @@ export function buildGenerationSourceBinding(deps: GenerationSourceBindingDepend
         for (const [candidateScope, root] of [['project', deps.projectStorageRoot], ['global', deps.globalDataRoot]] as const) {
             for (const relative of [`prompts/${key}.${facts.language}.json`, ...(facts.language === 'zh-CN' ? [`prompts/${key}.json`] : [])]) {
                 const bytes = observe(root, relative, true);
-                if (!selected && bytes) {
+                // 删掉的提示词在渲染端写成空文件，与没有这个文件一样，回退到下一层。
+                if (!selected && bytes && bytes.toString('utf8').trim()) {
                     const parsed = parsedPrompt(bytes);
-                    if (!parsed || parsed.key !== key ||(parsed.writingLanguage ?? 'zh-CN') !== facts.language)
+                    if (!parsed || parsed.key !== key || (parsed.writingLanguage ?? 'zh-CN') !== facts.language)
                         fail('GENERATION_PROMPT_INVALID');
                     selected = bytes;
                     scope = candidateScope + ':' + relative;
