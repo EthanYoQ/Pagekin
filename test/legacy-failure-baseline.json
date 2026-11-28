@@ -141,7 +141,7 @@
     "authorOwned": 1
   },
   "src/services/prompt-catalog.ts": {
-    "authorOwned": 1
+    "authorOwned": 2
   },
   "src/services/workflows/chapter-workflow.ts": {
     "authorOwned": 1

@@ -297,6 +297,27 @@ it('explains a cached damaged project prompt in the interface language current a
   }
 })
 
+it('主进程只回登记过的码时，读取被拒照码说明，不误报提示词文件损坏', async () => {
+  const { useLocaleStore } = await import('../../stores/locale-store')
+  const original = useLocaleStore.getState()
+  const spy = vi.spyOn(ipc, 'invokeWithProjectSession').mockImplementation((async (_session: unknown, channel: string) => {
+    if (channel === 'fs:check-exists') return true
+    if (channel === 'fs:list-dir') return [{ name: `${builtin.key}.json`, path: `${builtin.key}.json`, isDir: false }]
+    if (channel === 'fs:read-file') return { success: false, failure: { code: 'PROJECT_SESSION_STALE' } }
+    throw new Error(`unexpected ${channel}`)
+  }) as never)
+  try {
+    useLocaleStore.setState({ interfaceLocale: 'en-US', locale: 'en-US' })
+    const catalog = new PromptCatalog([builtin], persistence({ loadProject: ipcPromptPersistence.loadProject }), () => session)
+    const shown = await catalog.resolve(builtin.key, session).then(() => '', (error: Error) => error.message)
+    expect(shown).toBe('The project was switched or reopened, and this action belonged to the earlier session, so it was rejected. Repeat it in the project that is open now.')
+    expect(shown).not.toContain('malformed')
+  } finally {
+    spy.mockRestore()
+    useLocaleStore.setState(original, true)
+  }
+})
+
 it('原来能看到的具体说明逐字保留：项目提示词读取被拒时说明租约过期', async () => {
   const { useLocaleStore } = await import('../../stores/locale-store')
   const { catalogNote } = await import('../../i18n/app-errors')
