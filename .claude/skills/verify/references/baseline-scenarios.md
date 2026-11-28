@@ -1,6 +1,6 @@
 # 基线场景
 
-`baseline-all` 的 8 个场景走纸墨外壳，对当前构建跑（#940 起）。下面「不进 baseline-all 的场景」一节是 RD-10 之前的旧外壳场景，现在在哪个构建上都跑不通，见该节。改 `scenarios.mjs` 时读。
+`baseline-all` 的 8 个场景走纸墨外壳，对当前构建跑（#940 起）。下面「不进 baseline-all 的场景」一节是 RD-10 之前的旧外壳场景，能在哪里跑见该节。改 `scenarios.mjs` 时读。
 
 ## 场景
 
@@ -28,7 +28,7 @@
 
 ## 不进 baseline-all 的场景
 
-`scenarios.mjs` 的 `EXTRA_SCENARIOS` 只能单跑，不进 `baseline-all`。表里的场景走旧外壳：RD-10 起 head 没有旧外壳；用 `seedWithoutDraft`、`seedWithDraft` 预置的（`write-latency`、全部 `nav-*`）又共用上面的预置，它从 #940 起从纸墨书房打开作品、第 1 章导入为定稿，所以对 RD-10 之前的 trunk 也跑不通。下面的用法只作历史记录。`run` 的返回值写进结果的 `measured`。需要卡住模型调用时，场景从上下文的 `fake.gate` 调 `hold()`，在 `after` 里 `release()`。`hold()` 只卡对话请求；只走嵌入的步骤（参考文本入库）用 `hold({ embeddings: true })` 连嵌入一起卡。`fake.gate.waiting` 是正卡在门上的请求数，截图前等它大于 0，画面才停在确定的那一步。
+`scenarios.mjs` 的 `EXTRA_SCENARIOS` 只能单跑，不进 `baseline-all`。表里的场景走旧外壳，RD-10 起 head 没有旧外壳。其中 `write-latency` 与全部 `nav-*` 用 `seedWithoutDraft`、`seedWithDraft` 预置，共用上面的预置，它从 #940 起从纸墨书房打开作品、第 1 章导入为定稿，所以对 RD-10 之前的 trunk 也跑不通；只有 `settings-appearance` 还能对 trunk 跑。`run` 的返回值写进结果的 `measured`。需要卡住模型调用时，场景从上下文的 `fake.gate` 调 `hold()`，在 `after` 里 `release()`。`hold()` 只卡对话请求；只走嵌入的步骤（参考文本入库）用 `hold({ embeddings: true })` 连嵌入一起卡。`fake.gate.waiting` 是正卡在门上的请求数，截图前等它大于 0，画面才停在确定的那一步。
 
 | 名称 | 检查 | 单跑时截图停在 | 用夹具模型 |
 |---|---|---|---|
@@ -47,4 +47,4 @@
 
 `nav-` 场景对 trunk（`--app-root`）与 head 各跑一次，两边都通过即行为一致。`write-latency` 与 `startup-timing` 一样交替各跑 5 次取中位数。
 
-上面这段和 `settings-appearance` 的「head 比 trunk 多」都是 RD-10 之前的做法。RD-10 起 head 没有旧外壳，`nav-*`、`write-latency`、`settings-appearance` 对 head 跑必然失败：它们只对 trunk 跑，head 一侧改跑对应的纸墨外壳场景（设置类用 `stage-settings-*`，其余按页面在 `rd-stage-scenarios.md` 里找），分类见 `driver.md`「RD-10 删除旧外壳之后」。当前构建没有等价的 `writeToOutputMs` 测量，`write-latency` 的 trunk 与 head 对比不可用；`write-stream` 测的是流式出字，不是同一指标。
+上面这段和 `settings-appearance` 的「head 比 trunk 多」都是 RD-10 之前的做法。RD-10 起 head 没有旧外壳，`nav-*`、`write-latency`、`settings-appearance` 对 head 跑必然失败；#940 起前两类在 trunk 上也跑不通，只有 `settings-appearance` 还能对 trunk 跑。head 一侧改跑对应的纸墨外壳场景（设置类用 `stage-settings-*`，其余按页面在 `rd-stage-scenarios.md` 里找），分类见 `driver.md`「RD-10 删除旧外壳之后」。当前构建没有等价的 `writeToOutputMs` 测量，`write-latency` 的 trunk 与 head 对比不可用；`write-stream` 测的是流式出字，不是同一指标。
