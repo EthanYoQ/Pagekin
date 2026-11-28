@@ -22,7 +22,7 @@ import {
 } from '../../prompt-templates'
 import { ArchitecturePromptBuilder } from '../../prompts/prompt-builder'
 import { ipc } from '../../ipc-client'
-import { requireIpcSuccess } from '../../ipc-result'
+import { type ActionName, requireIpcSuccess } from '../../ipc-result'
 import { specificWriteFailure } from '../../specific-write-failure'
 import { projectSessionContextFromProject, sameProjectSessionContext } from '../../../shared/project-session-context'
 import {
@@ -654,8 +654,7 @@ export async function savePartialData(
   projectPath: string,
   data: PartialArchData,
   projectSession: ProjectSessionContext,
-  operationLabel: string,
-  fallbackMessage?: string | AuthorNote,
+  unexplained: ActionName | AuthorNote,
 ): Promise<void> {
   const result = await ipc.invokeWithProjectSession(
     projectSession,
@@ -664,7 +663,7 @@ export async function savePartialData(
     data,
     projectPath,
   )
-  requireIpcSuccess(result, operationLabel, fallbackMessage)
+  requireIpcSuccess(result, unexplained)
 }
 
 async function writeArchToDb(
@@ -959,8 +958,7 @@ export class GenerateCoreSeedCommand extends BaseWorkflowCommand<string> {
       expectedProjectPath,
       partial,
       projectSession,
-      text('保存架构生成进度', 'Save architecture-generation progress'),
-      text('保存架构生成进度失败', 'Failed to save the architecture-generation progress.'),
+      note('保存架构生成进度失败', 'Failed to save the architecture-generation progress.'),
     )
     context.data.partial = partial
 
@@ -1288,7 +1286,7 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
         const session = requireWorkflowProjectSession(params.context)
         const partial = (params.context.data.partial as PartialArchData) || await loadPartialData(this.snapshot.expectedProjectPath, session)
         partial.world_building_generation_handle = handle
-        await savePartialData(this.snapshot.expectedProjectPath, partial, session, 'Save generation run navigation',
+        await savePartialData(this.snapshot.expectedProjectPath, partial, session,
           catalogNote('error.generationRunRecordSaveFailed'))
         params.context.data.partial = partial
       },
@@ -1524,8 +1522,7 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
       expectedProjectPath,
       partial,
       projectSession,
-      text('保存架构生成进度', 'Save architecture-generation progress'),
-      text('保存架构生成进度失败', 'Failed to save the architecture-generation progress.'),
+      note('保存架构生成进度失败', 'Failed to save the architecture-generation progress.'),
     )
     context.data.partial = partial
 
@@ -1558,8 +1555,7 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
       expectedProjectPath,
       partial,
       projectSession,
-      workflowUiText(context, '保存世界观未完成候选', 'Save the incomplete worldbuilding candidate'),
-      workflowUiText(context, '保存世界观未完成候选失败', 'Failed to save the incomplete worldbuilding candidate.'),
+      note('保存世界观未完成候选失败', 'Failed to save the incomplete worldbuilding candidate.'),
     )
     context.data.partial = partial
   }
@@ -1594,7 +1590,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
         const session = requireWorkflowProjectSession(params.context)
         const partial = (params.context.data.partial as PartialArchData) || await loadPartialData(this.snapshot.expectedProjectPath, session)
         partial.synopsis_generation_handle = handle
-        await savePartialData(this.snapshot.expectedProjectPath, partial, session, 'Save generation run navigation',
+        await savePartialData(this.snapshot.expectedProjectPath, partial, session,
           catalogNote('error.generationRunRecordSaveFailed'))
         params.context.data.partial = partial
       },
@@ -1644,10 +1640,10 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
     const resumeRequested = this.options.resumeSynopsis === true
     callbacks.log(text(
       resumeRequested
-        ? '正在读取情节大纲中断检查点...'
+        ? '正在读取上次中断的情节大纲...'
         : '生成情节大纲...',
       resumeRequested
-        ? 'Reading the interrupted plot-outline checkpoint...'
+        ? 'Reading the interrupted plot outline...'
         : 'Generating plot outline...',
     ))
 
@@ -1679,10 +1675,10 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
     if (resumeRequested) {
       // ---- 断点续写：无有效检查点必须 fail-closed，绝不退化为覆盖生成 ----
       if (!interrupted) {
-        throw authorError(context.interfaceLocale, { note: note('未找到中断的情节大纲检查点（当前大纲没有未完成的批次）。请从「AI 生成故事架构」重新生成。', 'No interrupted plot-outline checkpoint was found (no batch is incomplete). Regenerate from “Generate story architecture” instead.') })
+        throw authorError(context.interfaceLocale, { note: note('没有可续写的情节大纲。请从「AI 生成故事架构」重新生成。', 'There is no interrupted plot outline to resume. Regenerate from “Generate story architecture”.') })
       }
       if (!partial.synopsis_range) {
-        throw authorError(context.interfaceLocale, { note: note('中断检查点缺少批次范围，无法续写。请从「AI 生成故事架构」重新生成。', 'The interrupted checkpoint is missing its batch range. Regenerate from “Generate story architecture” instead.') })
+        throw authorError(context.interfaceLocale, { note: note('上次中断的进度不完整，无法续写。请从「AI 生成故事架构」重新生成。', 'The saved progress is incomplete and cannot be resumed. Regenerate from “Generate story architecture”.') })
       }
       from = partial.synopsis_range.from
       to = partial.synopsis_range.to
@@ -1726,7 +1722,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       )
       }
       if (composeVisibleContinuation(confirmedPrefix, seedText).length < MIN_SYNOPSIS_PARTIAL_PERSIST_CHARS) {
-        throw authorError(context.interfaceLocale, { note: note('中断检查点内容过短，无法安全续写。请从「AI 生成故事架构」重新生成。', 'The interrupted checkpoint is too short to resume safely. Regenerate from “Generate story architecture” instead.') })
+        throw authorError(context.interfaceLocale, { note: note('上次中断时保存的内容太短，无法续写。请从「AI 生成故事架构」重新生成。', 'Too little was saved before the interruption to resume. Regenerate from “Generate story architecture”.') })
       }
       mode = 'resume'
     } else {
@@ -1764,7 +1760,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
               'The outline must grow contiguously: chapters up to {coveredTo} are confirmed, so this batch must start at chapter {continueFrom}.', chapters) })
         }
         if (!partial.synopsis_range) {
-          throw authorError(context.interfaceLocale, { note: note('续批检查点缺少上一批范围，无法确认连续覆盖。请从第 1 章重新生成。', 'The continuation checkpoint is missing the previous batch range. Regenerate from chapter 1.') })
+          throw authorError(context.interfaceLocale, { note: note('上一批的进度不完整，无法接着生成。请从第 1 章重新生成。', 'The previous batch’s progress is incomplete, so generation cannot continue. Regenerate from chapter 1.') })
         }
         if (partial.synopsis_step_guidance === undefined) {
           throw authorError(context.interfaceLocale, { note: note('这份旧版情节大纲缺少生成时的输入记录，不能接着生成。已有内容都已保留，请从第 1 章重新生成。', 'This older plot outline lacks its generation inputs, so it cannot be continued. Everything is kept; regenerate from chapter 1.') })
@@ -1811,8 +1807,8 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
 
     if (mode === 'resume') {
       callbacks.log(text(
-        `检测到中断检查点，正在续写第 ${from}–${to} 章（全书 ${totalChapters} 章）...`,
-        `An interrupted checkpoint was found; resuming chapters ${from}-${to} of ${totalChapters}...`,
+        `正在续写上次中断的第 ${from}–${to} 章（全书 ${totalChapters} 章）...`,
+        `Resuming the interrupted chapters ${from}-${to} of ${totalChapters}...`,
       ))
     } else if (mode === 'fresh') {
       callbacks.log(text(
@@ -1948,7 +1944,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
     if (previousBatchPartial && stagedBatchPartial
       && stripPlotOutlineProgressLine(merged).trim() === confirmedPrefix.trim()) {
       await this.rollbackSynopsisCheckpoint(expectedProjectPath, projectSession, context, previousBatchPartial, stagedBatchPartial)
-      throw authorError(context.interfaceLocale, { note: note('本批没有新增情节大纲内容，已保留上一批检查点。', 'This batch added no plot-outline content; the previous checkpoint was preserved.') })
+      throw authorError(context.interfaceLocale, { note: note('这一批没有写出新的情节大纲，上一批的内容已保留。', 'This batch added no plot-outline content; the previous batch was kept.') })
     }
 
     // ===== 完成校验：正文必须完整覆盖本批；附带进度行时也必须与范围一致 =====
@@ -1991,8 +1987,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       expectedProjectPath,
       partial,
       projectSession,
-      text('保存情节大纲本批进度', 'Save the plot-outline batch progress'),
-      text('保存情节大纲本批进度失败', 'Failed to save the plot-outline batch progress.'),
+      note('保存情节大纲本批进度失败', 'Failed to save the plot-outline batch progress.'),
     )
     if (context.cancelled) {
       await this.rollbackSynopsisCheckpoint(
@@ -2033,8 +2028,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
           '{}',
           expectedProjectPath,
         ),
-        text('清理架构生成进度', 'Clear architecture-generation progress'),
-        text('清理架构生成进度失败', 'Failed to clear the architecture-generation progress.'),
+        note('清理架构生成进度失败', 'Failed to clear the architecture-generation progress.'),
       )
     }
 
@@ -2100,7 +2094,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       if (complete) partial.synopsis_result = body
       else delete partial.synopsis_result
       context.data.partial = partial
-      await savePartialData(expectedProjectPath, partial, session, text('保存情节大纲进度', 'Save plot-outline navigation'))
+      await savePartialData(expectedProjectPath, partial, session, ['保存情节大纲进度', 'save the plot-outline progress', '情節大綱の進捗の保存'])
     }
     const stopped = (cursor: Extract<PlotOutlineProgress['cursor'], { kind: 'stopped' }>) => {
       if (cursor.reason === 'source-invalid') return authorError(context.interfaceLocale, { note: writtenNote(plotOutlineSourceInvalidText(sourceExpected.synopsis, workflowUiLocale(context))) })
@@ -2159,7 +2153,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
     const synopsis = renderPlotOutlineRange(outline.composition?.text ?? '', outline.range, sourceExpected)
     try {
       const committed = await ipc.invokeWithProjectSession(session, 'db:project-core-synopsis-commit', { synopsis, expected: sourceExpected, generationRunHandle: handle }, expectedProjectPath)
-      requireIpcSuccess(committed, text('保存完整情节大纲', 'Save the complete plot outline'))
+      requireIpcSuccess(committed, ['保存完整情节大纲', 'save the complete plot outline', '情節大綱全体の保存'])
     } catch (error) {
       // 最后一章生成完、正式保存前来源变了：主进程在保存这一步只报通用码，不分模型还是其他来源。
       const code = failureCode(errorCodeOf(error))
@@ -2185,7 +2179,6 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
     previousPartial: PartialArchData,
     writtenPartial: PartialArchData,
   ): Promise<void> {
-    const text = (zhCNText: string, enUSText: string) => workflowUiText(context, zhCNText, enUSText)
     const readResult = await ipc.invokeWithProjectSession(
       projectSession,
       'fs:read-json',
@@ -2193,7 +2186,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       expectedProjectPath,
     )
     if (!readResult.success || !readResult.data) {
-      throw authorError(context.interfaceLocale, { note: note('无法回读当前架构检查点', 'The current architecture checkpoint could not be read back.') })
+      throw authorError(context.interfaceLocale, { note: note('读不到刚保存的生成进度，请再试一次。', 'The saved generation progress could not be read back. Try again.') })
     }
     const currentPartial = readResult.data as PartialArchData
     if (!sameSynopsisCheckpoint(currentPartial, writtenPartial)) {
@@ -2205,8 +2198,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       expectedProjectPath,
       restored,
       projectSession,
-      text('恢复上一版情节大纲进度', 'Restore the previous plot-outline progress'),
-      text('恢复上一版情节大纲进度失败', 'Failed to restore the previous plot-outline progress.'),
+      note('恢复上一版情节大纲进度失败', 'Failed to restore the previous plot-outline progress.'),
     )
     context.data.partial = restored
   }
@@ -2243,7 +2235,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
         )
       } catch (rollbackError) {
         throw authorError(context.interfaceLocale, {
-          note: note('情节大纲没能保存，旧检查点也没能安全恢复', 'The plot outline could not be saved, and the previous checkpoint could not be restored safely either.'),
+          note: note('情节大纲没能保存，之前的进度也没能恢复。', 'The plot outline could not be saved, and the previous progress could not be restored either.'),
           because: commitFailure,
         }, { cause: rollbackError })
       }
@@ -2298,8 +2290,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       expectedProjectPath,
       partial,
       projectSession,
-      text('保存中断时的情节大纲进度', 'Save the interrupted plot-outline progress'),
-      text('保存中断时的情节大纲进度失败', 'Failed to save the interrupted plot-outline progress.'),
+      note('保存中断时的情节大纲进度失败', 'Failed to save the interrupted plot-outline progress.'),
     )
     // Main owns interrupted candidate text; formal synopsis remains unchanged.
     if (this.requireGenerationExecution().mainOwned) return

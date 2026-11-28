@@ -6,8 +6,8 @@
  */
 
 import { ipc } from './ipc-client'
-import { authorError, failureText, resultFailure } from '../i18n/app-errors'
-import { AuthorError, type Failure } from '../shared/failure'
+import { authorErrorOr, failureText, resultFailure } from '../i18n/app-errors'
+import { AuthorError, authorOwned, note, type Failure } from '../shared/failure'
 import { currentInterfaceLocale } from '../stores/locale-store'
 import type {
   AppFailure,
@@ -130,8 +130,8 @@ export async function selectPlanningMaterials(): Promise<PlanningMaterial[]> {
   for (const grant of grants) {
     const result = await ipc.invoke('fs:grant-read-file', grant.grantId)
     if (!result.success) {
-      const failure = resultFailure(result)
-      throw failure ? authorError(currentInterfaceLocale(), failure) : new Error(`Could not read ${grant.displayName}`)
+      throw authorErrorOr(currentInterfaceLocale(), resultFailure(result),
+        note('读不了「{file}」，请重新选择。', 'Could not read “{file}”. Choose it again.', { file: authorOwned(grant.displayName) }))
     }
     materials.push({ fileName: grant.displayName, text: result.content })
   }

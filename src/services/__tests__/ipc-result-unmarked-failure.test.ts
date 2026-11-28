@@ -1,3 +1,4 @@
+import { note } from '../../shared/failure'
 import { afterEach, expect, it, vi } from 'vitest'
 import { requireIpcSuccess } from '../ipc-result'
 import { useLocaleStore } from '../../stores/locale-store'
@@ -30,19 +31,19 @@ it('requireIpcSuccess 遇到没有码的失败时作者看到调用点的兜底�
     ['不带失败', { success: false }],
   ]
   for (const [name, result] of cases) {
-    const withFallback = thrownBy(() => requireIpcSuccess(result, '保存草稿', '草稿没有保存，请再试一次。'))
+    const withFallback = thrownBy(() => requireIpcSuccess(result, note('草稿没有保存，请再试一次。', 'The draft was not saved. Try again.')))
     expect(displayedErrorMessage(shown('zh-CN'), withFallback), name).toBe('草稿没有保存，请再试一次。')
     expect(failureText(shown('zh-CN'), caughtFailure(withFallback)), name).toBe('草稿没有保存，请再试一次。')
-    const withoutFallback = thrownBy(() => requireIpcSuccess(result, '保存草稿'))
+    const withoutFallback = thrownBy(() => requireIpcSuccess(result, ['保存草稿', 'save the draft', '草稿の保存']))
     expect(displayedErrorMessage(shown('zh-CN'), withoutFallback), name).toBe('没能保存草稿，请再试一次。')
     expect(withoutFallback.message, name).not.toContain('ECONNREFUSED')
   }
   expect(warn.mock.calls.flat().some(arg => String(arg).includes(raw))).toBe(true)
 
   useLocaleStore.setState({ interfaceLocale: 'en-US', locale: 'en-US' })
-  const english = thrownBy(() => requireIpcSuccess({ success: false }, '保存草稿'))
-  expect(displayedErrorMessage(shown('en-US'), english)).toBe('The operation did not finish. Try again.')
-  expect(displayedErrorMessage(shown('ja-JP'), english)).toBe('操作は完了しませんでした。もう一度お試しください。')
+  const english = thrownBy(() => requireIpcSuccess({ success: false }, ['保存草稿', 'save the draft', '草稿の保存']))
+  expect(displayedErrorMessage(shown('en-US'), english)).toBe('Could not save the draft. Try again.')
+  expect(displayedErrorMessage(shown('ja-JP'), english)).toBe('草稿の保存に失敗しました。もう一度お試しください。')
 })
 
 it('原来能看到的具体说明逐字保留', () => {
@@ -61,7 +62,7 @@ it('原来能看到的具体说明逐字保留', () => {
       '作品已切换或重新打开，这次操作属于之前打开的作品，结果不可用。请在当前作品里查看，需要时重新操作。'],
   ]
   for (const [name, value, expected] of cases) {
-    const thrown = thrownBy(() => requireIpcSuccess(overIpc(value), '保存', '调用点兜底说明。'))
+    const thrown = thrownBy(() => requireIpcSuccess(overIpc(value), note('调用点兜底说明。', 'Fallback at the call site.')))
     expect(thrown.message, name).toBe(expected)
     expect(displayedErrorMessage(shown('zh-CN'), thrown), name).toBe(expected)
   }
@@ -70,8 +71,8 @@ it('原来能看到的具体说明逐字保留', () => {
 it('兜底说明不改失败带的码，定稿后处理记下的码与之前相同', () => {
   vi.spyOn(console, 'warn').mockImplementation(() => {})
   vi.spyOn(console, 'error').mockImplementation(() => {})
-  expect(errorCodeOf(thrownBy(() => requireIpcSuccess(overIpc({ success: false, error: 'boom' }), '导入知识库')))).toBe('IPC_HANDLER_FAILED')
-  expect(errorCodeOf(thrownBy(() => requireIpcSuccess({ success: false, error: 'WORKFLOW_UNREGISTERED_TEST_CODE' } as { success: boolean }, '导入知识库'))))
+  expect(errorCodeOf(thrownBy(() => requireIpcSuccess(overIpc({ success: false, error: 'boom' }), ['导入知识库', 'import into the knowledge base', 'ナレッジベースへの取り込み'])))).toBe('IPC_HANDLER_FAILED')
+  expect(errorCodeOf(thrownBy(() => requireIpcSuccess({ success: false, error: 'WORKFLOW_UNREGISTERED_TEST_CODE' } as { success: boolean }, ['导入知识库', 'import into the knowledge base', 'ナレッジベースへの取り込み']))))
     .toBe('WORKFLOW_UNREGISTERED_TEST_CODE')
-  expect(errorCodeOf(thrownBy(() => requireIpcSuccess({ success: false }, '导入知识库')))).toBeUndefined()
+  expect(errorCodeOf(thrownBy(() => requireIpcSuccess({ success: false }, ['导入知识库', 'import into the knowledge base', 'ナレッジベースへの取り込み'])))).toBeUndefined()
 })

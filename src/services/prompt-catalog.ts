@@ -382,7 +382,7 @@ export const ipcPromptPersistence: PromptPersistence = {
           file.path,
           projectSession.projectPath,
         )
-        requireIpcSuccess(result, '读取项目提示词', catalogNote('error.promptFileDamaged', { file: authorOwned(file.name) }))
+        requireIpcSuccess(result, catalogNote('error.promptFileDamaged', { file: authorOwned(file.name) }))
         if (!result.content.trim()) continue
         const parsed = JSON.parse(result.content) as PromptTemplate
         if (!validTemplate(parsed)) throw new Error('PROMPT_TEMPLATE_INVALID')
@@ -409,7 +409,7 @@ export const ipcPromptPersistence: PromptPersistence = {
   async saveGlobal(template) {
     requireIpcSuccess(
       await ipc.invoke('prompt:save-global', template as unknown as { key: string; [key: string]: unknown }),
-      '保存自定义提示词',
+      ['保存自定义提示词', 'save the custom prompt', 'カスタムプロンプトの保存'],
     )
   },
 
@@ -427,13 +427,13 @@ export const ipcPromptPersistence: PromptPersistence = {
         'fs:mkdir',
         `${projectSession.projectPath}/${CANONICAL_PROJECT_DIRECTORY}`,
         projectSession.projectPath,
-      ), '创建项目配置目录')
+      ), ['创建项目配置目录', 'create the project settings folder', 'プロジェクト設定フォルダーの作成'])
       requireIpcSuccess(await ipc.invokeWithProjectSession(
         projectSession,
         'fs:mkdir',
         dirPath,
         projectSession.projectPath,
-      ), '创建项目提示词目录')
+      ), ['创建项目提示词目录', 'create the project prompt folder', 'プロジェクトのプロンプトフォルダーの作成'])
     }
     const writingLanguage = templateLanguage(template)
     requireIpcSuccess(await ipc.invokeWithProjectSession(
@@ -442,7 +442,7 @@ export const ipcPromptPersistence: PromptPersistence = {
       `${dirPath}/${template.key}.${writingLanguage}.json`,
       JSON.stringify({ ...template, writingLanguage }, null, 2),
       projectSession.projectPath,
-    ), '保存项目提示词')
+    ), ['保存项目提示词', 'save the project prompt', 'プロジェクトのプロンプトの保存'])
     if (writingLanguage === 'zh-CN') {
       const legacyPath = `${dirPath}/${template.key}.json`
       const legacyExists = await ipc.invokeWithProjectSession(
@@ -458,7 +458,7 @@ export const ipcPromptPersistence: PromptPersistence = {
           legacyPath,
           '',
           projectSession.projectPath,
-        ), '迁移旧版项目提示词')
+        ), ['迁移旧版项目提示词', 'migrate the old project prompt', '旧版プロジェクトプロンプトの移行'])
       }
     }
   },
@@ -466,7 +466,7 @@ export const ipcPromptPersistence: PromptPersistence = {
   async deleteGlobal(key, writingLanguage = 'zh-CN') {
     requireIpcSuccess(
       await ipc.invoke('prompt:delete-global', key, resolveWritingLanguage(writingLanguage)),
-      '删除自定义提示词',
+      ['删除自定义提示词', 'delete the custom prompt', 'カスタムプロンプトの削除'],
     )
   },
 
@@ -488,7 +488,7 @@ export const ipcPromptPersistence: PromptPersistence = {
         filePath,
         '',
         projectSession.projectPath,
-      ), '删除项目提示词')
+      ), ['删除项目提示词', 'delete the project prompt', 'プロジェクトのプロンプトの削除'])
     }
   },
 }

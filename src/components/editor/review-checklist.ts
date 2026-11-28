@@ -503,7 +503,6 @@ export function useReviewChecklist({
       }
       const createResult = requireIpcSuccess(
         createResponse,
-        text('保存确认审稿清单', 'Save confirmed review checklist'),
         note('确认审稿清单时发生错误。', 'An error occurred while confirming the review checklist.'),
       )
       if (!isProjectSessionCurrent(projectSession)) return null

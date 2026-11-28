@@ -4,6 +4,8 @@ import type { ProjectCoreData } from '../../../electron/repositories/project-cor
 import type { ImportFillField, ImportFillSuggestion } from '../../shared/import-fill-empty'
 import { ipc } from '../ipc-client'
 import { specificWriteFailure } from '../specific-write-failure'
+import { authorError } from '../../i18n/app-errors'
+import { currentInterfaceLocale } from '../../stores/locale-store'
 import { useProjectStore } from '../../stores/project-store'
 import { useEditorStore } from '../../stores/editor-store'
 import { createProjectArchTabId, shouldSyncProjectArchTab } from '../../components/editor/arch-file-refresh-policy'
@@ -93,7 +95,7 @@ export async function adoptImportSuggestions(
   const atClick = useProjectStore.getState().currentProject?.novelConfig
   const patch = Object.fromEntries(items.map(item => [item.field, item.inferred])) as Partial<Record<ImportFillField, string | number>>
   const result = await ipc.invokeWithProjectSession(session, 'db:project-core-update', patch as Partial<ProjectCoreData>, projectPath)
-  if (!result.success) throw new Error(specificWriteFailure(result)?.code ?? 'PROJECT_CORE_UPDATE_FAILED')
+  if (!result.success) throw authorError(currentInterfaceLocale(), specificWriteFailure(result) ?? { code: 'PROJECT_CORE_UPDATE_FAILED' })
   const core = await ipc.invokeWithProjectSession(session, 'db:project-core-get', projectPath)
   if (core) {
     const keys = new Set<string>(items.map(item => item.field === 'narrativePov' ? 'narrativePOV' : item.field))

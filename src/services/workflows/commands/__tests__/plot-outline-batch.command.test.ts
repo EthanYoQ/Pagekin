@@ -519,7 +519,7 @@ ${'宗门封锁前夜，林舟发现了旧铁锤里的秘密，并沿着灵脉�
     const command = makeCommand({ resumeSynopsis: true })
 
     await expect(command.execute({ step: {}, context, callbacks }))
-      .rejects.toThrow('未找到中断的情节大纲检查点')
+      .rejects.toThrow('没有可续写的情节大纲')
     expect(generateStream).not.toHaveBeenCalled()
     expect(harness.partialWrites).toHaveLength(0)
     expect(harness.coreUpdates).toHaveLength(0)
@@ -659,7 +659,7 @@ ${'宗门封锁前夜，林舟发现了旧铁锤里的秘密，并沿着灵脉�
     const harness = harnessWith(prior, dbOutline)
     mainOwnedResponses(harness, prefixBody)
 
-    await expect(makeCommand({ synopsisRange: { from: 21, to: 100 } }, true).execute({ step: {}, context, callbacks })).rejects.toThrow('本批没有新增情节大纲内容')
+    await expect(makeCommand({ synopsisRange: { from: 21, to: 100 } }, true).execute({ step: {}, context, callbacks })).rejects.toThrow('这一批没有写出新的情节大纲')
 
     expect(harness.partialWrites.at(-1)).toMatchObject(prior)
     expect(harness.synopsisCommits).toHaveLength(0)
@@ -954,7 +954,7 @@ ${'宗门封锁前夜，林舟发现了旧铁锤里的秘密，并沿着灵脉�
     useFakeModelStream.setState({ generateStream })
 
     await expect(makeCommand({ resumeSynopsis: true }).execute({ step: {}, context, callbacks }))
-      .rejects.toThrow('检查点正文与数据库原文不一致')
+      .rejects.toThrow('和保存的进度对不上')
     expect(generateStream).not.toHaveBeenCalled()
     expect(harness.partialWrites).toHaveLength(0)
   })

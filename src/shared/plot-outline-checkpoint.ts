@@ -74,8 +74,8 @@ export function assertCheckpointDbMirrorCurrent(
     || (partial.synopsis_incomplete === true && coveredTo >= range.to)
   ) {
     throw fail(note(
-      '情节大纲检查点的章节范围或进度已损坏，无法安全续写。请从第 1 章重新生成。',
-      'The plot-outline checkpoint has a damaged range or progress value and cannot be continued safely. Regenerate from chapter 1.',
+      '保存的情节大纲进度已损坏，无法续写。请从第 1 章重新生成。',
+      'The saved plot-outline progress is damaged and cannot be resumed. Regenerate from chapter 1.',
     ))
   }
   const checkpointBody = typeof partial.synopsis_result === 'string'
@@ -83,16 +83,16 @@ export function assertCheckpointDbMirrorCurrent(
     : ''
   if (!checkpointBody) {
     throw fail(note(
-      '情节大纲检查点缺少正文，无法安全续写。请从第 1 章重新生成。',
-      'The plot-outline checkpoint has no body and cannot be continued safely. Regenerate from chapter 1.',
+      '保存的情节大纲进度里没有正文，无法续写。请从第 1 章重新生成。',
+      'The saved plot-outline progress has no text and cannot be resumed. Regenerate from chapter 1.',
     ))
   }
   const dbOutlineHash = synopsisFactsFingerprint([dbOutlineText])
   const recordedHash = partial.synopsis_db_hash
   if (recordedHash === undefined) {
     throw fail(note(
-      '续批检查点没有数据库镜像指纹，无法确认大纲未被手动修改。请从「AI 生成故事架构」从第 1 章重新生成大纲。',
-      'The continuation checkpoint has no database-mirror fingerprint, so we cannot confirm the outline was not edited by hand. Regenerate the outline from chapter 1 in “Generate story architecture”.',
+      '无法确认情节大纲有没有被手动改过，不能续写。请在「AI 生成故事架构」里从第 1 章重新生成。',
+      'We cannot confirm the outline was not edited by hand, so it cannot be resumed. Regenerate from chapter 1 in “Generate story architecture”.',
     ))
   }
   if (recordedHash !== dbOutlineHash) {
@@ -106,8 +106,8 @@ export function assertCheckpointDbMirrorCurrent(
       && partial.synopsis_body_hash !== synopsisFactsFingerprint([checkpointBody]))
   ) {
     throw fail(note(
-      '情节大纲检查点正文与数据库原文不一致，无法安全续写。数据库正文未被覆盖。',
-      'The plot-outline checkpoint body does not exactly match the database source. The database outline was not overwritten.',
+      '现有情节大纲没有改动。它和保存的进度对不上，无法续写。',
+      'The current plot outline was not changed. It does not match the saved progress, so it cannot be resumed.',
     ))
   }
   return checkpointBody

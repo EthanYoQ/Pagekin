@@ -622,7 +622,8 @@ describe('workflow pause at a safe step boundary', () => {
     const reason = runFailure(run!, shown('zh-CN')).presentation.reason
     expect(reason).toContain('提示词共 13,000 UTF-8 字节')
     expect(reason).toContain('全局指导 12,020')
-    expect(reason).toContain('模型：model-a；结果码：PROMPT_BUDGET_EXHAUSTED')
+    expect(reason).toContain('模型：model-a。')
+    expect(reason).not.toContain('PROMPT_BUDGET_EXHAUSTED')
     expect(reason).not.toContain('知识库')
   })
 

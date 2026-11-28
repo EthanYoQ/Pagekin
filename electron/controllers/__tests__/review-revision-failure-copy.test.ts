@@ -191,7 +191,7 @@ describe('定稿后处理的重试规则不变', () => {
   const storedStepError = async (failure: () => never) => {
     mocks.finalization.linkKnowledgeDocument.mockImplementation(failure)
     try {
-      requireIpcSuccess(await received('db:finalization-link-knowledge-document', [7, 'doc-1', PATH]) as Received & { success: boolean }, '登记定稿知识文档身份')
+      requireIpcSuccess(await received('db:finalization-link-knowledge-document', [7, 'doc-1', PATH]) as Received & { success: boolean }, ['关联定稿知识库文档', 'link the finalized knowledge-base document', '確定稿のナレッジベース文書の関連付け'])
     } catch (error) {
       return error instanceof Error ? error.message : String(error)
     }

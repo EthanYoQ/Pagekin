@@ -121,7 +121,7 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
 
   setDefaultModel: async (modelId) => {
     try {
-      requireIpcSuccess(await ipc.invoke('llm:set-default-model', modelId), '保存默认模型')
+      requireIpcSuccess(await ipc.invoke('llm:set-default-model', modelId), ['保存默认模型', 'save the default model', '既定モデルの保存'])
       set({ defaultModelId: modelId })
       return true
     } catch (error) {
@@ -135,7 +135,7 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
     try {
       requireIpcSuccess(
         await ipc.invoke('llm:set-default-embedding-model', modelId),
-        '保存默认向量模型',
+        ['保存默认向量模型', 'save the default embedding model', '既定の埋め込みモデルの保存'],
       )
       set({ defaultEmbeddingModelId: modelId })
       return true
@@ -148,7 +148,7 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
 
   setDefaultRerankModel: async (modelId) => {
     try {
-      requireIpcSuccess(await ipc.invoke('llm:set-default-rerank-model', modelId), '保存默认重排模型')
+      requireIpcSuccess(await ipc.invoke('llm:set-default-rerank-model', modelId), ['保存默认重排模型', 'save the default rerank model', '既定のリランクモデルの保存'])
       set({ defaultRerankModelId: modelId })
       return true
     } catch (error) {

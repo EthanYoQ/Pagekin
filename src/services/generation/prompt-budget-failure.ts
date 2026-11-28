@@ -292,7 +292,7 @@ export function formatPromptBudgetFailure(report: PromptBudgetReport, locale: Lo
       `提示词共 ${formatInteger(report.totalUtf8Bytes, locale)} UTF-8 字节，超过上限 ${formatInteger(report.limitUtf8Bytes, locale)} 字节；输出预留额度为 ${formatInteger(report.reservedOutputTokens, locale)}。`,
       `模型上下文：${contextWindow}；估算输入：${estimatedInput}。`,
       `主要占用：${contributors}。`,
-      `模型：${report.modelId}；结果码：${report.errorCode}。`,
+      `模型：${report.modelId}。`,
     ].join('')
   }
 
@@ -306,7 +306,7 @@ export function formatPromptBudgetFailure(report: PromptBudgetReport, locale: Lo
     `The prompt uses ${formatInteger(report.totalUtf8Bytes, locale)} UTF-8 bytes, exceeding the ${formatInteger(report.limitUtf8Bytes, locale)}-byte limit; the reserved output allowance is ${formatInteger(report.reservedOutputTokens, locale)}. `,
     `Model context: ${contextWindow}; estimated input: ${estimatedInput}. `,
     `Top contributors: ${contributors}. `,
-    `Model: ${report.modelId}; result code: ${report.errorCode}.`,
+    `Model: ${report.modelId}.`,
   ].join('')
 }
 

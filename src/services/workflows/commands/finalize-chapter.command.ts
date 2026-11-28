@@ -15,7 +15,7 @@ import { useProjectStore } from '../../../stores/project-store'
 import { resolvePromptTemplate } from '../../prompt-templates'
 import { PostProcessPromptBuilder } from '../../prompts/prompt-builder'
 import { ipc } from '../../ipc-client'
-import { requireIpcSuccess } from '../../ipc-result'
+import { type ActionName, requireIpcSuccess } from '../../ipc-result'
 import { commitFinalizationSnapshot, finalizationFailure } from '../../finalization-client'
 import { finalizationContentRevision, type FinalizationSnapshot } from '../../finalization-snapshot'
 import {
@@ -58,6 +58,11 @@ import {
   type ReplacedFinalCleanupStepKey,
 } from '../../../shared/finalization-step-error'
 import { pluralEn } from '../../../shared/plural-en'
+
+const REPLACED_FINAL_CLEANUP_ACTIONS: Readonly<Record<ReplacedFinalCleanupStepKey, ActionName>> = {
+  remove_replaced_knowledge: ['删除旧版本的知识库文档', 'remove the replaced version from the knowledge base', '差し替え前の版のナレッジベース文書の削除'],
+  remove_replaced_manuscripts: ['删除旧版本的正文文件', "delete the replaced version's manuscript file", '差し替え前の版の本文ファイルの削除'],
+}
 
 export interface FinalizeChapterParams {
   draftPath: string
@@ -146,7 +151,7 @@ export function buildFinalizePostProcessSteps(
       ) as { success: boolean; error?: string; chunkCount?: number; docId?: string }
       const code = result.error ? finalizationStepErrorCode(result.error) : undefined
       if (code) throw new Error(code)
-      requireIpcSuccess(result, text('导入知识库', 'Import into knowledge base'))
+      requireIpcSuccess(result, ['导入知识库', 'import into the knowledge base', 'ナレッジベースへの取り込み'])
       if (finalizedDraftId !== undefined) {
         if (!result.docId) throw authorError(context.interfaceLocale, { note: note('知识库导入成功但缺少文档身份收据', 'The knowledge-base import succeeded but returned no document identity receipt.') })
         const linked = await ipc.invokeWithProjectSession(
@@ -156,10 +161,7 @@ export function buildFinalizePostProcessSteps(
           result.docId,
           _project.path,
         )
-        requireIpcSuccess(linked, text(
-          '把已导入的知识库文档关联到定稿章节',
-          'Link the imported knowledge-base document to the finalized chapter',
-        ))
+        requireIpcSuccess(linked, ['把已导入的知识库文档关联到定稿章节', 'link the imported knowledge-base document to the finalized chapter', '取り込んだナレッジベース文書と確定章の関連付け'])
       }
       callbacks.log(workflowUiText(
         context,
@@ -228,10 +230,7 @@ export function buildFinalizePostProcessSteps(
             },
             _project.path,
           )
-          requireIpcSuccess(continuityResult, text(
-            '保存定稿连续性事实',
-            'Save finalized continuity facts',
-          ))
+          requireIpcSuccess(continuityResult, ['保存定稿连续性事实', 'save the finalized continuity facts', '確定稿の連続性情報の保存'])
           callbacks.log(workflowUiText(
             context,
             `已投影连续性事实：${facts.length} 条`,
@@ -248,7 +247,7 @@ export function buildFinalizePostProcessSteps(
           cleanNotes,
           _project.path,
         )
-        requireIpcSuccess(result, text('写入章节剧情要点', 'Write chapter plot notes'))
+        requireIpcSuccess(result, ['写入章节剧情要点', 'write the chapter plot notes', '章のあらすじ要点の書き込み'])
         callbacks.log(
           result.updated === false
             ? workflowUiText(
@@ -322,7 +321,7 @@ export function buildFinalizePostProcessSteps(
           )
           const code = !result.success && result.stepError ? finalizationStepErrorCode(result.stepError) : undefined
           if (code) throw new Error(code)
-          requireIpcSuccess(result, label)
+          requireIpcSuccess(result, REPLACED_FINAL_CLEANUP_ACTIONS[key])
           callbacks.log(workflowUiText(context, ...done))
         },
       }

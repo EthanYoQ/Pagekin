@@ -54,7 +54,7 @@ const failing = (error: Error): WindowsSafeFileSystem => ({
 
 async function shown(result: Promise<unknown>): Promise<string> {
   try {
-    requireIpcSuccess(receivedIpcResult(await result) as { success: boolean }, '读写文件')
+    requireIpcSuccess(receivedIpcResult(await result) as { success: boolean }, ['读写文件', 'read or write the file', 'ファイルの読み書き'])
   } catch (error) {
     return (error as Error).message
   }

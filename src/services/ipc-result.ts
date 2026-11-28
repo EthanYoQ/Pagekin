@@ -1,5 +1,5 @@
-import { authorError, catalogNote, IPC_HANDLER_FAILED, isRegisteredErrorCode, resultFailure, writtenNote } from '../i18n/app-errors'
-import { authorOwned, type AuthorNote, codeOf, type Failure } from '../shared/failure'
+import { authorError, catalogNote, IPC_HANDLER_FAILED, isRegisteredErrorCode, resultFailure } from '../i18n/app-errors'
+import { AuthorNote, authorOwned, codeOf, type Failure } from '../shared/failure'
 import { currentInterfaceLocale } from '../stores/locale-store'
 
 export interface IpcMutationResult {
@@ -7,6 +7,12 @@ export interface IpcMutationResult {
   error?: string
   failure?: Failure
 }
+
+/**
+ * 说不出原因时作者看到的动作名，三种界面语言各写一份：中文接在「没能」后，
+ * 英文接在 Could not 后（小写动词短语），日文接在「に失敗しました」前（名词短语）。
+ */
+export type ActionName = readonly [zhCN: string, enUS: string, jaJP: string]
 
 /**
  * IPC mutations report business failures as values rather than rejected
@@ -18,14 +24,14 @@ export interface IpcMutationResult {
  */
 export function requireIpcSuccess<T extends IpcMutationResult>(
   result: T,
-  action: string,
-  fallback?: string | AuthorNote,
+  unexplained: ActionName | AuthorNote,
 ): T {
   if (result.success) return result
   const failure = resultFailure(result)
   const code = failure && codeOf(failure)
   if (failure && (failure.note || code !== IPC_HANDLER_FAILED && isRegisteredErrorCode(code))) throw authorError(currentInterfaceLocale(), failure)
-  const note = typeof fallback === 'string' ? writtenNote(fallback)
-    : fallback ?? catalogNote('error.actionFailed', { action: authorOwned(action) })
+  const note = AuthorNote.minted(unexplained) ? unexplained : catalogNote('error.actionFailed', {
+    actionZh: authorOwned(unexplained[0]), actionEn: authorOwned(unexplained[1]), actionJa: authorOwned(unexplained[2]),
+  })
   throw authorError(currentInterfaceLocale(), code ? { code, note } : { note })
 }

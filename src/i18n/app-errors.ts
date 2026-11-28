@@ -249,6 +249,7 @@ const ERROR_KEYS = {
   GENERATION_IMPORT_CHECKPOINT_CHANGED: 'error.generationSourceChanged',
   GENERATION_REVIEW_SOURCE_CHANGED: 'error.sourceDraftChanged',
   GENERATION_SAVED_WITH_NEWER_AUTHOR_DRAFT: 'error.generationSavedWithNewerAuthorDraft',
+  GENERATION_CONFIG_COMMIT_FAILED: 'error.generationConfigSavedAfterSwitch',
   GENERATION_PLOT_OUTLINE_AUTHOR_SAVED: 'error.generationPlotOutlineAuthorSaved',
   // 生成途中关闭或切换了作品。
   GENERATION_PROJECT_CLOSED: 'error.generationProjectSessionStale',

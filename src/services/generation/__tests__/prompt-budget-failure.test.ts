@@ -36,6 +36,7 @@ describe('writing skill prompt budget diagnostics', () => {
     expect(formatPromptBudgetFailure(report, 'zh-CN')).toContain('输出预留额度为 4,096')
     expect(formatPromptBudgetFailure(report, 'en-US')).toContain('the reserved output allowance is 4,096')
     expect(JSON.stringify(report)).not.toContain('Prefer concrete action')
+    for (const locale of ['zh-CN', 'en-US'] as const) expect(formatPromptBudgetFailure(report, locale)).not.toMatch(/PROMPT_BUDGET_EXHAUSTED|结果码|result code/u)
   })
 
   it('separates requested, total reserved and trusted actual usage', () => {

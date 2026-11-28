@@ -1,3 +1,4 @@
+import { note } from '../../../../shared/failure'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 
@@ -392,15 +393,12 @@ describe('workflow mutation failure boundaries', () => {
       PROJECT_PATH,
       { premise_result: 'premise' },
       context().projectSession!,
-      '保存架构生成检查点',
+      ['保存架构生成进度', 'save the architecture-generation progress', 'アーキテクチャ生成の進捗の保存'],
     ))
-      .rejects.toThrow('没能保存架构生成检查点，请再试一次。')
+      .rejects.toThrow('没能保存架构生成进度，请再试一次。')
   })
 
-  it.each([
-    ['保存架构生成检查点', '保存架构生成检查点失败'],
-    ['Save architecture-generation checkpoint', 'Failed to save the architecture-generation checkpoint.'],
-  ])('uses the explicit architecture checkpoint fallback when IPC omits an error: %s', async (operationLabel, fallbackMessage) => {
+  it('uses the explicit architecture progress fallback when IPC omits an error', async () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'fs:write-json') return { success: false }
       throw new Error(`unexpected IPC: ${channel}`)
@@ -411,9 +409,8 @@ describe('workflow mutation failure boundaries', () => {
       PROJECT_PATH,
       { premise_result: 'premise' },
       context().projectSession!,
-      operationLabel,
-      fallbackMessage,
-    )).rejects.toThrow(fallbackMessage)
+      note('保存架构生成进度失败', 'Failed to save the architecture-generation progress.'),
+    )).rejects.toThrow('保存架构生成进度失败')
   })
 
   it('stops finalization when the atomic SQLite commit reports success=false', async () => {
