@@ -74,7 +74,6 @@ function readsRawText(node: ts.Node): boolean {
   return ts.forEachChild(node, readsRawText) ?? false
 }
 
-/** 去掉不改变值的包装：括号、类型断言、非空断言、satisfies，逗号表达式取最后一项。 */
 function unwrap(expression: ts.Expression): ts.Expression {
   for (;;) {
     if (ts.isParenthesizedExpression(expression) || ts.isAsExpression(expression) || ts.isTypeAssertionExpression(expression)
@@ -86,7 +85,6 @@ function unwrap(expression: ts.Expression): ts.Expression {
 
 const VALUE_JOINS = new Set([ts.SyntaxKind.PlusToken, ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.AmpersandAmpersandToken])
 
-/** 表达式的值里是否原样带着 catch 变量：它本身、+ 拼接、?? || && 与条件表达式的分支。 */
 function carriesCaughtValue(expression: ts.Expression): boolean {
   const value = unwrap(expression)
   if (ts.isConditionalExpression(value)) return carriesCaughtValue(value.whenTrue) || carriesCaughtValue(value.whenFalse)

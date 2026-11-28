@@ -10,7 +10,7 @@ function writeStderr(line) {
   try {
     fs.writeSync(2, line)
   } catch {
-    // 写不出就丢掉这一行：经 process.stderr 再报一次，断管时流会异步抛出没人接的 EPIPE，vitest 以 1 退出
+    // 不经 process.stderr 再报：断管时它异步抛出无人接的 EPIPE，vitest 会以 1 退出
   }
 }
 async function ignoreFailure(reason, run) {
