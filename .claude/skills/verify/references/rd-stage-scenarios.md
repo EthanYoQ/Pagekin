@@ -33,7 +33,7 @@
 
 lane 1 的旧外壳部分：head 与 trunk 各跑一次 `baseline-all`，逐张 `pixel-diff.mjs`，`maxRatio` 小于 0.005。
 
-这是 RD-3 到 RD-9 的做法。RD-10 起 head 没有旧外壳，`baseline-all` 只对 trunk（`--app-root`）跑，head 上跑必然失败。
+这是 RD-3 到 RD-9 的做法。RD-10 删除旧外壳后，`baseline-all` 先是只能对 trunk（`--app-root`）跑；#940 起它的 8 个场景改走纸墨外壳，对 head 跑，不再与旧外壳 trunk 逐张比对。
 
 perf：三组交替，各预热 2 次不计，再各计 5 次：trunk 旧外壳、head 旧外壳、head 新外壳。head 旧外壳对 trunk 旧外壳量的是新外壳模块被 `App.tsx` 静态引入后旧外壳用户付出的启动代价。这是 RD-3 到 RD-9 的做法；RD-10 起 head 没有旧外壳，只比 trunk 旧外壳与 head 纸墨外壳两组，下面带 `--shell stage` 的命令对 head 去掉 `--shell`。
 
