@@ -1375,7 +1375,8 @@ function activeSpace(registry: EmbeddingSpaceRegistry): EmbeddingSpace | undefin
 
 function requestMatchesActiveSpace(space: EmbeddingSpace, { queryVector, embeddingSpace }: VectorQuery): boolean {
   if (!vectorIsUsable(queryVector, space.vectorDimension)) return false
-  if (!embeddingSpace?.modelFingerprint?.trim()) return false
+  const fingerprint = embeddingSpace?.modelFingerprint?.trim()
+  if (!fingerprint || fingerprint === LEGACY_MODEL_FINGERPRINT || fingerprint.startsWith(LEGACY_COMPAT_MODEL_PREFIX)) return false
   const requested = normalizedIdentity(embeddingSpace, queryVector.length)
   return space.modelFingerprint === requested.modelFingerprint && space.distanceMetric === requested.distanceMetric
 }
