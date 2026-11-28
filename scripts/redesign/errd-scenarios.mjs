@@ -48,7 +48,7 @@ export const ERRD_SCENARIOS = {
     assert.match(notice, /Open Architecture and generate the plot outline again from chapter 6\./)
     assert.doesNotMatch(notice, /\p{Script=Han}/u, '英文界面的失败说明不夹中文（卡头的模型名是夹具数据，不在说明里）')
     assert.doesNotMatch(notice, /GENERATION_SOURCE_CHANGED|[A-Z]+_[A-Z_]+|Error invoking remote method/u, '不露码')
-    assert.equal(await last.getByRole('button', { name: 'Continue plot outline' }).count(), 0, '不提供必然被拒的断点续写')
+    assert.equal(await last.getByRole('button', { name: 'Continue the plot outline', exact: true }).count(), 0, '不提供必然被拒的断点续写')
     return { notice }
   } },
 }
