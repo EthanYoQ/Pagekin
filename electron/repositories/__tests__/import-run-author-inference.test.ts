@@ -38,7 +38,7 @@ function globalFacts(): ImportGlobalFactsRequest {
     expectedRosterRevision: 0,
     core: {
       genre: '悬疑', subGenre: '本格', targetAudience: '成人', totalChapters: 3, wordsPerChapter: 2400,
-      plotStructure: 'three_act', narrativePov: 'first_person', goldenFinger: '过目不忘', globalGuidance: '克制',
+      plotStructure: 'heros_journey', narrativePov: 'first_person', goldenFinger: '过目不忘', globalGuidance: '克制',
       coreOutline: '侦探追查旧案', worldSetting: '民国上海', protagonistProfile: '沈默，前巡捕',
       premise: '旧案重启', worldbuilding: '租界与华界', synopsis: '三章查清真相',
     },
@@ -140,7 +140,7 @@ describe('作者原稿运行的反推阶段', () => {
     commitGlobal(execution)
 
     expect(ProjectCoreRepository.get()).toMatchObject({
-      totalChapters: 3, wordsPerChapter: 2400, plotStructure: 'three_act', narrativePov: 'first_person',
+      totalChapters: 3, wordsPerChapter: 2400, plotStructure: 'heros_journey', narrativePov: 'first_person',
     })
   })
 
@@ -157,7 +157,7 @@ describe('作者原稿运行的反推阶段', () => {
     expect(suggestions.filter(item => ['totalChapters', 'wordsPerChapter', 'plotStructure', 'narrativePov'].includes(item.field)))
       .toEqual([
         { field: 'wordsPerChapter', current: 2000, inferred: 2400 },
-        { field: 'plotStructure', current: 'freeform', inferred: 'three_act' },
+        { field: 'plotStructure', current: 'freeform', inferred: 'heros_journey' },
         { field: 'narrativePov', current: 'multi_pov', inferred: 'first_person' },
       ])
   })
