@@ -1,17 +1,107 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 
 import * as runSheet from './pages/run-sheet.mjs'
 import * as stage from './pages/stage.mjs'
-import { inferenceReply, readBook, trackOpenedSession } from './import-infer-scenarios.mjs'
+import { EMPTY_BOOK, inferenceReply, readBook, seedEmptyBook, trackOpenedSession } from './import-infer-scenarios.mjs'
 import { seedStageSample } from './scenarios.mjs'
 import { STAGE_SAMPLE } from './stage-sample.mjs'
 
+const Database = createRequire(import.meta.url)('better-sqlite3')
 const settle = page => page.waitForTimeout(400)
 const KEPT_FIELDS = ['genre', 'subGenre', 'targetAudience', 'coreOutline', 'worldSetting', 'protagonistProfile', 'premise', 'worldbuilding', 'synopsis']
 
+const NEW_BOOK = '雾港新书'
+const GLOBAL_PROMPT = '逆向推演出这部小说的完整设定体系'
+const AUTHOR_EDITS = { genre: '武侠', total_chapters: 40 }
+const newBookDbFile = roots => path.join(roots.projects, NEW_BOOK, '.ai-novel', 'project.db')
+
+function readNewBook(roots, read) {
+  const db = new Database(newBookDbFile(roots), { readonly: true, fileMustExist: true })
+  try { return read(db) } finally { db.close() }
+}
+
+const latestRun = db => db.prepare('SELECT id, stage, status FROM import_runs ORDER BY rowid DESC LIMIT 1').get()
+
+async function untilRunStatus(roots, statuses) {
+  for (const deadline = Date.now() + 3 * 60_000; ; await new Promise(resolve => setTimeout(resolve, 500))) {
+    const run = fs.existsSync(newBookDbFile(roots)) ? readNewBook(roots, latestRun) : undefined
+    if (run && statuses.includes(run.status)) return run
+    assert.ok(Date.now() < deadline, `3 分钟内导入没有到 ${statuses.join('/')}：${JSON.stringify(run)}`)
+  }
+}
+
+async function newBookImportFailsThenAuthorEdits(context) {
+  const { app, page, roots, fake } = context
+  let globalBroken = true
+  fake.replyReview(prompt => {
+    if (!prompt.includes(GLOBAL_PROMPT)) return inferenceReply(prompt)
+    if (globalBroken) return '{"novelConfig":'
+    const inferred = JSON.parse(inferenceReply(prompt))
+    return JSON.stringify({ ...inferred, novelConfig: { ...inferred.novelConfig, plotStructure: 'heros_journey', narrativePOV: 'first_person' } })
+  })
+  const file = path.join(roots.temp, 'reference-new-book.txt')
+  fs.writeFileSync(file, '第1章 旧港\n旧港的潮水刚退，青石上还留着一层薄薄的盐霜。\n\n第2章 北堤\n北堤上的风很大，灯塔的光扫过雨幕。\n')
+  await app.evaluate(({ dialog }, picks) => {
+    dialog.showOpenDialog = async (first, second) => ({
+      canceled: false,
+      filePaths: [(second ?? first)?.properties?.includes('openDirectory') ? picks.folder : picks.file],
+    })
+  }, { folder: roots.projects, file })
+
+  await stage.openWorkMenuItem(page, EMPTY_BOOK, '小说拆解与仿写…')
+  const dialog = page.getByRole('dialog', { name: '小说拆解与仿写' })
+  await dialog.getByPlaceholder('拆解后创建的新项目名称').fill(NEW_BOOK)
+  await dialog.getByPlaceholder('选择项目保存目录').locator('xpath=following-sibling::button').click()
+  await dialog.getByTestId('import-source-choose').click()
+  await dialog.getByRole('button', { name: '导入当前项目（2 章）', disabled: false }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  const failed = await untilRunStatus(roots, ['failed'])
+  assert.equal(failed.stage, 'global', `失败停在全局反推：${JSON.stringify(failed)}`)
+  const created = readNewBook(roots, db => db.prepare('SELECT genre, total_chapters, words_per_chapter, plot_structure, narrative_pov FROM project_core').get())
+  assert.deepEqual(created, { genre: '', total_chapters: 100, words_per_chapter: 3000, plot_structure: 'three_act', narrative_pov: 'third_limited' },
+    '失败时新作品仍是建库默认值')
+
+  const db = new Database(newBookDbFile(roots), { fileMustExist: true, timeout: 10_000 })
+  try { db.prepare("UPDATE project_core SET genre = ?, total_chapters = ? WHERE id = 'main'").run(AUTHOR_EDITS.genre, AUTHOR_EDITS.total_chapters) } finally { db.close() }
+  globalBroken = false
+  return failed
+}
+
+async function resumeNewBookImport(context, button, shotName) {
+  const { page, roots, shoot } = context
+  const failed = await newBookImportFailsThenAuthorEdits(context)
+  await stage.openWorkMenuItem(page, NEW_BOOK, '小说拆解与仿写…')
+  const dialog = page.getByRole('dialog', { name: '小说拆解与仿写' })
+  await dialog.getByTestId('import-target-current').click()
+  const action = dialog.getByRole('button', { name: button, disabled: false })
+  await action.waitFor({ state: 'visible' })
+  await action.click()
+  await dialog.waitFor({ state: 'hidden' })
+  const done = await untilRunStatus(roots, ['completed'])
+  await runSheet.waitUntilOpen(page)
+  await runSheet.lastRun(page).filter({ hasText: '小说拆解与仿写' }).getByText(/已完成|Complete/).waitFor({ state: 'visible' })
+  await settle(page)
+  await shoot(shotName)
+  const core = readNewBook(roots, db => db.prepare(`SELECT genre, sub_genre, total_chapters, words_per_chapter, plot_structure, narrative_pov,
+    writing_style, core_outline FROM project_core`).get())
+  assert.equal(core.genre, AUTHOR_EDITS.genre, '作者改过的类型不变')
+  assert.equal(core.total_chapters, AUTHOR_EDITS.total_chapters, '作者改过的总章数不变')
+  assert.equal(core.sub_genre, '本格推理', '空白的子类型补上反推值')
+  assert.notEqual(core.words_per_chapter, 3000, '仍是默认值的每章字数换成反推值')
+  assert.equal(core.plot_structure, 'heros_journey', '仍是默认值的故事结构换成反推值')
+  assert.equal(core.narrative_pov, 'first_person', '仍是默认值的叙事视角换成反推值')
+  assert.ok(core.writing_style.length > 0 && core.core_outline.length > 0, '空白的文风与大纲补上')
+  return { failedRun: failed, finishedRun: done, core }
+}
+
 export const I855_SCENARIOS = {
+  'i855-new-book-continue': { model: true, shell: 'stage', setup: seedEmptyBook,
+    run: context => resumeNewBookImport(context, '继续导入', 'i855-new-book-continue-done') },
+  'i855-new-book-restart': { model: true, shell: 'stage', setup: seedEmptyBook,
+    run: context => resumeNewBookImport(context, '重新开始', 'i855-new-book-restart-done') },
   'i855-reference-into-existing': { model: true, shell: 'stage', setup: context => seedStageSample(context, {
     landOnChapter3: false, beforeReload: async ({ page, invoke, path: projectPath, session }) => {
       assert.equal((await invoke(page, 'db:blueprint-delete', 2, projectPath, session)).success, true)
