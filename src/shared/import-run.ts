@@ -1,7 +1,6 @@
 import type { Failure } from './failure'
 export type ImportRunLocale = 'zh-CN' | 'en-US'
 export type ImportPurpose = 'reference' | 'author-manuscript'
-/** 反推结果怎样写进项目设定；导入运行一律只补空白。 */
 export type ImportCoreWriteMode = 'replace' | 'fill-empty'
 export const AUTHOR_IMPORT_PREVIEW_STALE = 'AUTHOR_IMPORT_PREVIEW_STALE' as const
 

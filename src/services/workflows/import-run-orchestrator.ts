@@ -115,7 +115,6 @@ export interface ImportRunOrchestratorDependencies {
     draft: FinalizedDraftImportDraftReceipt,
     run: ImportRunSnapshot,
   ) => Promise<void>
-  /** 当前已有蓝图的章号：这些章不再反推蓝图。 */
   listBlueprintChapterNumbers: () => Promise<ReadonlySet<number>>
   isAuthorDraftReplaced: (draft: FinalizedDraftImportDraftReceipt) => Promise<boolean>
   refresh: (run: ImportRunSnapshot) => Promise<void>
@@ -542,7 +541,6 @@ export class ImportRunOrchestrator {
     await this.dependencies.advanceStage(run.id, 'style', nextStage(run, 'style'), execution.current)
   }
 
-  /** 只为还没有蓝图的章反推。 */
   private async blueprintChapterFilter(): Promise<(chapter: ImportRunChapterSnapshot) => boolean> {
     const existing = await this.dependencies.listBlueprintChapterNumbers()
     return chapter => !existing.has(chapter.number)

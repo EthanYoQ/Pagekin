@@ -33,7 +33,6 @@ async function untilRunStatus(roots, statuses) {
   }
 }
 
-/** 从对话框新建作品导入参考小说，全局反推第一次拿到坏结果而失败；作者随后改了类型和总章数。 */
 async function newBookImportFailsThenAuthorEdits(context) {
   const { app, page, roots, fake } = context
   let globalBroken = true
