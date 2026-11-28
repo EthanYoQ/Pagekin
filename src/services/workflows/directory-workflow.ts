@@ -1,7 +1,7 @@
 import type { DirectoryGenerationProgress } from '../../shared/generation-owner-contract'
 import { DEFAULT_PLANNING_TARGET_UNITS } from '../../shared/plot-outline-contract'
 import type { MainGenerationRunHandle } from '../generation/generation-runtime'
-import { workflowResourceKey, type WorkflowDefinition } from '../../stores/workflow-store'
+import { workflowResourceKey, type WorkflowContext, type WorkflowDefinition } from '../../stores/workflow-store'
 import { useProjectStore } from '../../stores/project-store'
 import { useLocaleStore, currentInterfaceLocale } from '../../stores/locale-store'
 import type { ErrorDisplayLocale, Locale } from '../../i18n/types'
@@ -30,8 +30,9 @@ import type {
 import { stripThinkingTags } from './workflow-utils'
 import { requireWorkflowProjectSession, workflowMainProcessError } from './workflow-project-session'
 import { specificWriteFailure } from '../specific-write-failure'
-import { authorError, caughtFailure, errorCodeOf, failureText } from '../../i18n/app-errors'
-import { failureCode, note } from '../../shared/failure'
+import { authorError, catalogNote, caughtFailure, errorCodeOf, failureText } from '../../i18n/app-errors'
+import { failureCode, note, type AuthorNote } from '../../shared/failure'
+import { planningRecoverable } from '../../shared/planning-recovery'
 import { isWorkflowCancellation, WorkflowCancelledError } from './workflow-cancellation'
 
 // ==========================================
@@ -257,6 +258,15 @@ export async function getBlueprintCount(
   }
 }
 
+async function uncommittedFailureNote(context: WorkflowContext): Promise<AuthorNote> {
+  const handle = context.mainGenerationRunHandle
+  const recovery = handle
+    ? await ipc.invokeWithProjectSession(requireWorkflowProjectSession(context), 'generation:read-context', { handle }).catch(() => null)
+    : null
+  const kept = !!recovery?.blueprintRecovery?.draft.trim() && planningRecoverable(recovery)
+  return catalogNote(kept ? 'error.blueprintGenerationFailedRecoveryKept' : 'error.blueprintGenerationFailedNothingKept')
+}
+
 // ==========================================
 // 3. 工作流定义映射工厂 (Command 调度层)
 // ==========================================
@@ -383,7 +393,9 @@ export function createDirectoryWorkflow(
             if (error instanceof TerminalProviderFailureError) throw error
             // 原文可能带主进程以外的内容，不转出；稳定错误码照常带上，运行记录才说得清是哪种失败。
             const code = failureCode(errorCodeOf(error))
-            const retry = note('章节蓝图生成失败，请重试。', 'Chapter-blueprint generation failed. Please try again.')
+            const retry = context.data.blueprintCommitReceipt
+              ? note('章节蓝图生成失败，请重试。', 'Chapter-blueprint generation failed. Please try again.')
+              : await uncommittedFailureNote(context)
             throw authorError(context.interfaceLocale, code ? { code, note: retry } : { note: retry }, { cause: error })
           }
           // 返回可读摘要字符串（step.result 必须是 string，否则 AIOutputPanel 渲染会崩溃）
