@@ -25,6 +25,8 @@ export function writtenSentencesCannotCrossIpc(error: Error, sentence: string, m
 
 export function caughtTextCannotFillWireParams(error: Error, fileName: string): unknown[] {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const parsed: any = JSON.parse(fileName)
     return [
       wireNote('error.importRunCheckFailed', { code: authorOwned(fileName) }),
       // @ts-expect-error 直接传 err.message
@@ -37,6 +39,10 @@ export function caughtTextCannotFillWireParams(error: Error, fileName: string): 
       wireNote('error.importRunCheckFailed', { code: fileName }),
       // @ts-expect-error JSON.parse 出来的 any
       wireNote('error.importRunCheckFailed', { code: JSON.parse(fileName).message }),
+      // @ts-expect-error 整个参数对象是 any
+      wireNote('error.importRunCheckFailed', JSON.parse(fileName)),
+      // @ts-expect-error 先把 any 赋给变量再传
+      wireNote('error.importRunCheckFailed', parsed),
     ]
   } catch (caught) {
     try {

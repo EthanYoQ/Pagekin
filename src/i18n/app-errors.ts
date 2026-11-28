@@ -835,8 +835,11 @@ export function reasonOf(error: unknown): Failure | undefined {
 }
 
 type NoAny<P> = { readonly [K in keyof P]: 0 extends 1 & P[K] ? never : P[K] }
+/** 整个参数对象是 any 时，P & NoAny<P> 也塌成 any，只能多要一个造不出的参数来拒绝。 */
+type NoAnyObject<P> = 0 extends 1 & P ? [paramsAreAny: never] : []
 
-export function wireNote<const P extends NoteParams>(key: MessageKey, params?: P & NoAny<P>): WireNote {
+export function wireNote<const P extends NoteParams>(key: MessageKey, params?: P & NoAny<P>, ...anyGuard: NoAnyObject<P>): WireNote
+export function wireNote(key: MessageKey, params?: NoteParams): WireNote {
   return { key: key as string as WireNoteKey, ...(params ? { params } : {}) }
 }
 
