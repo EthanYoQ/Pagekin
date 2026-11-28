@@ -4,7 +4,7 @@ import { hashAuthorText } from '../../shared/source-ref'
 import { parseResourceUri } from '../../shared/project-paths'
 import { workflowResourceKey, type WorkflowContext, type WorkflowDefinition, type WorkflowStep, type StepCallbacks } from '../../stores/workflow-store'
 import { ipc } from '../ipc-client'
-import { guardChapterWriting } from '../workflow-guards'
+import { guardChapterWriting, guardStop } from '../workflow-guards'
 import type { ChapterInfo } from './chapter-workflow'
 import type { ChapterBlueprint } from './directory-workflow'
 import { GenerateDraftCommand } from './commands/generate-draft.command'
@@ -19,6 +19,10 @@ import { FINALIZATION_SHARED_WRITE_RESOURCE_KINDS } from '../../shared/workflow-
 import { requireWorkflowProjectSession, workflowMainProcessError } from './workflow-project-session'
 import { normalizeChapterWordsTarget } from './chapter-creation-parameters'
 import { WorkflowCancelledError } from './workflow-cancellation'
+import { authorError } from '../../i18n/app-errors'
+import { note } from '../../shared/failure'
+import { errorLocaleForRun } from '../../i18n/core'
+import { currentInterfaceLocale } from '../../stores/locale-store'
 
 /** 单次批量创作的安全上限，避免无边界调用模型；主进程准入（assertGenerationBatchIntent）同样执行。 */
 export { MAX_BATCH_CHAPTERS, MIN_BATCH_CHAPTERS }
@@ -214,11 +218,7 @@ async function runOneBatchChapter(
     : chapterNumber
   const guard = await guardChapterWriting(guardedChapterNumber, projectPath, projectSession, uiLocale)
   if (!guard.ok) {
-    throw new Error(guard.message || localeText(
-      uiLocale,
-      `第${chapterNumber}章不满足创作前置条件`,
-      `Chapter ${chapterNumber} does not meet the writing prerequisites.`,
-    ))
+    throw guardStop(errorLocaleForRun(uiLocale, currentInterfaceLocale()), guard, note('第{chapterNumber}章不满足创作前置条件', 'Chapter {chapterNumber} does not meet the writing prerequisites.', { chapterNumber }))
   }
 
   const [blueprint, existingDraft] = await Promise.all([
@@ -226,18 +226,10 @@ async function runOneBatchChapter(
     ipc.invokeWithProjectSession(projectSession, 'db:draft-get-latest', chapterNumber, projectPath),
   ])
   if (!blueprint) {
-    throw new Error(localeText(
-      uiLocale,
-      `未找到第${chapterNumber}章蓝图，批量创作已停止`,
-      `No blueprint was found for Chapter ${chapterNumber}. Batch writing stopped.`,
-    ))
+    throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note(`未找到第{chapterNumber}章蓝图，批量创作已停止`, `No blueprint was found for Chapter {chapterNumber}. Batch writing stopped.`, { chapterNumber }) })
   }
   if (existingDraft && (!saved || existingDraft.id !== saved.draftId)) {
-    throw new Error(localeText(
-      uiLocale,
-      `第${chapterNumber}章已有草稿，批量创作不会覆盖既有内容`,
-      `Chapter ${chapterNumber} already has a draft. Batch writing will not overwrite it.`,
-    ))
+    throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note(`第{chapterNumber}章已有草稿，批量创作不会覆盖既有内容`, `Chapter {chapterNumber} already has a draft. Batch writing will not overwrite it.`, { chapterNumber }) })
   }
 
   const chapterInfo = toChapterInfo(blueprint as ChapterBlueprint, projectPath, chapterWordsTarget)
@@ -271,11 +263,7 @@ async function runOneBatchChapter(
     const draftId = Number(context.data.draftId)
     const version = Number(context.data.draftVersion)
     if (!Number.isSafeInteger(draftId) || !Number.isSafeInteger(version)) {
-      throw new Error(localeText(
-        uiLocale,
-        `第${chapterNumber}章草稿已保存，但缺少可冻结的草稿身份，批量创作已停止`,
-        `Chapter ${chapterNumber} was saved, but its draft identity could not be frozen. Batch writing stopped.`,
-      ))
+      throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note(`第{chapterNumber}章草稿已保存，但缺少可冻结的草稿身份，批量创作已停止`, `Chapter {chapterNumber} was saved, but its draft identity could not be frozen. Batch writing stopped.`, { chapterNumber }) })
     }
     const committed = await ipc.invokeWithProjectSession(projectSession, 'generation:read-batch', { batchId: progress.batchId })
     if (!committed.completedChapters.some(item => item.chapterNumber === chapterNumber && item.draftId === draftId && item.version === version))
@@ -292,11 +280,7 @@ async function runOneBatchChapter(
 
   const draftPath = String(context.data.draftPath || '')
   if (!draftPath) {
-    throw new Error(localeText(
-      uiLocale,
-      `第${chapterNumber}章草稿已生成，但未取得草稿路径`,
-      `Chapter ${chapterNumber} was generated, but its draft path is unavailable.`,
-    ))
+    throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note(`第{chapterNumber}章草稿已生成，但未取得草稿路径`, `Chapter {chapterNumber} was generated, but its draft path is unavailable.`, { chapterNumber }) })
   }
 
   const existingFinalizationId = saved?.pendingFinalizationId ?? saved?.finalizationId
@@ -364,18 +348,14 @@ async function runOneBatchChapter(
 export function createBatchChapterWorkflow(params: BatchChapterWorkflowParams): BatchChapterWorkflowDefinition {
   const uiLocale: Locale = params.locale === 'en-US' ? 'en-US' : 'zh-CN'
   if (!sameProjectPathKey(params.projectSession.projectPath, params.projectPath)) {
-    throw new Error(localeText(uiLocale, '批量创作项目会话与目标路径不匹配', 'The batch-writing project session does not match the target path.'))
+    throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('批量创作项目会话与目标路径不匹配', 'The batch-writing project session does not match the target path.') })
   }
   const projectPath = params.projectPath
   const startChapterNumber = Math.max(1, Math.trunc(Number(params.startChapterNumber) || 1))
   const chapterCount = normalizeBatchChapterCount(params.chapterCount)
   const generationModelId = normalizeGenerationModelId(params.generationModelId)
   if (!generationModelId) {
-    throw new Error(localeText(
-      uiLocale,
-      '批量创作必须冻结一项可用的生成模型。',
-      'Batch writing requires a frozen generation model.',
-    ))
+    throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('批量创作必须冻结一项可用的生成模型。', 'Batch writing requires a frozen generation model.') })
   }
   const completionMode = normalizeCompletionMode(params.completionMode)
   const chapterWordsTarget = normalizeChapterWordsTarget(params.chapterWordsTarget)

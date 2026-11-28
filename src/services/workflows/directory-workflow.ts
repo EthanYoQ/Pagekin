@@ -3,9 +3,9 @@ import { DEFAULT_PLANNING_TARGET_UNITS } from '../../shared/plot-outline-contrac
 import type { MainGenerationRunHandle } from '../generation/generation-runtime'
 import { workflowResourceKey, type WorkflowDefinition } from '../../stores/workflow-store'
 import { useProjectStore } from '../../stores/project-store'
-import { useLocaleStore } from '../../stores/locale-store'
+import { useLocaleStore, currentInterfaceLocale } from '../../stores/locale-store'
 import type { ErrorDisplayLocale, Locale } from '../../i18n/types'
-import { localize } from '../../i18n/core'
+import { errorLocaleForRun } from '../../i18n/core'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { globalEventBus } from '../../shared/event-bus'
 import {
@@ -30,7 +30,7 @@ import type {
 import { stripThinkingTags } from './workflow-utils'
 import { requireWorkflowProjectSession, workflowMainProcessError } from './workflow-project-session'
 import { specificWriteFailure } from '../specific-write-failure'
-import { authorError, caughtFailure, errorCodeOf } from '../../i18n/app-errors'
+import { authorError, caughtFailure, errorCodeOf, failureText } from '../../i18n/app-errors'
 import { failureCode, note } from '../../shared/failure'
 import { isWorkflowCancellation, WorkflowCancelledError } from './workflow-cancellation'
 
@@ -79,11 +79,7 @@ export async function resolveDirectoryContinuation(params: DirectoryWorkflowPara
   const pacing = terminal.authorInputs?.find(item => item.id === 'directory:pacing-guidance')
   const config = terminal.authorInputs?.find(item => item.id === 'directory:author-config')
   if (!pacing || !config) {
-    throw new Error(localize(
-      uiLocale,
-      '旧目录进度缺少冻结作者输入，不能自动继续；已保存蓝图保持不变。',
-      'This older blueprint progress has no frozen author input, so it cannot continue automatically. The saved blueprints are unchanged.',
-    ))
+    throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('旧目录进度缺少冻结作者输入，不能自动继续；已保存蓝图保持不变。', 'This older blueprint progress has no frozen author input, so it cannot continue automatically. The saved blueprints are unchanged.') })
   }
   const authorConfig: DirectoryWorkflowProjectSnapshot['novelConfig'] = JSON.parse(config.text)
   if (!authorConfig || !Number.isSafeInteger(authorConfig.totalChapters) || authorConfig.totalChapters < terminal.remainingRange.endChapter) throw new Error('DIRECTORY_FROZEN_CONFIG_INVALID')
@@ -280,10 +276,7 @@ export function createDirectoryWorkflow(
     || !sameProjectPathKey(projectAtStart.path, expectedProjectPath)
     || !sameProjectSessionContext(sourceProjectSession, currentProjectSession)
   ) {
-    throw new Error(text(
-      '项目已切换，无法启动章节蓝图生成',
-      'The project changed, so chapter-blueprint generation could not start.',
-    ))
+    throw authorError(errorLocaleForRun(frozenUiLocale, currentInterfaceLocale()), { note: note('项目已切换，无法启动章节蓝图生成', 'The project changed, so chapter-blueprint generation could not start.') })
   }
   const projectSession = Object.freeze({ ...sourceProjectSession })
   const projectSnapshot: DirectoryWorkflowProjectSnapshot = {
@@ -327,10 +320,7 @@ export function createDirectoryWorkflow(
             'db:project-core-get',
             expectedProjectPath,
           )
-          if (!core) throw new Error(text(
-            '项目核心数据未初始化',
-            'Project core data has not been initialized.',
-          ))
+          if (!core) throw authorError(errorLocaleForRun(frozenUiLocale, currentInterfaceLocale()), { note: note('项目核心数据未初始化', 'Project core data has not been initialized.') })
 
           const parts: string[] = []
           if (core.premise && core.premise.length > 50) parts.push(core.premise)
@@ -338,10 +328,7 @@ export function createDirectoryWorkflow(
           if (core.worldbuilding && core.worldbuilding.length > 50) parts.push(core.worldbuilding)
           if (core.synopsis && core.synopsis.length > 50) parts.push(core.synopsis)
 
-          if (parts.length === 0) throw new Error(text(
-            '项目主要架构均未生成',
-            'The main story architecture has not been generated yet.',
-          ))
+          if (parts.length === 0) throw authorError(errorLocaleForRun(frozenUiLocale, currentInterfaceLocale()), { note: note('项目主要架构均未生成', 'The main story architecture has not been generated yet.') })
 
           context.data.architecture = parts.join('\n\n---\n\n')
           // 注入节奏指导到 context，供 Command 读取
@@ -378,22 +365,17 @@ export function createDirectoryWorkflow(
           } catch (error) {
             if (error instanceof PromptBudgetExceededError || error instanceof directoryCommand.DirectoryPartialCommitError) throw error
             if (error instanceof directoryCommand.DirectoryPostCommitSyncError) {
-              throw new Error(text(
-                '章节蓝图已保存，但角色同步失败。请重试角色同步。',
-                'Chapter blueprints were saved, but character synchronization failed. Retry character synchronization.',
-              ))
+              throw authorError(errorLocaleForRun(frozenUiLocale, currentInterfaceLocale()), { note: note('章节蓝图已保存，但角色同步失败。请重试角色同步。', 'Chapter blueprints were saved, but character synchronization failed. Retry character synchronization.') })
             }
             if (error instanceof directoryCommand.DirectoryPostCommitCancellationError) {
-              throw new WorkflowCancelledError(text(
+              const notice = note(
                 '章节蓝图已保存，但任务取消后角色同步可能未完成。',
                 'Chapter blueprints were saved, but character synchronization may be incomplete because the workflow was cancelled.',
-              ), true)
+              )
+              throw new WorkflowCancelledError(failureText(errorLocaleForRun(frozenUiLocale, currentInterfaceLocale()), { note: notice }), notice)
             }
             if (error instanceof directoryCommand.DirectoryCostLimitError) {
-              throw new Error(text(
-                '本次章节范围过大，请拆分为更小的范围生成。',
-                'The requested chapter range is too large. Generate a smaller range.',
-              ))
+              throw authorError(errorLocaleForRun(frozenUiLocale, currentInterfaceLocale()), { note: note('本次章节范围过大，请拆分为更小的范围生成。', 'The requested chapter range is too large. Generate a smaller range.') })
             }
             if (context.cancelled && isWorkflowCancellation(error)) {
               throw new WorkflowCancelledError(text('工作流已取消', 'Workflow was cancelled.'))

@@ -240,6 +240,12 @@ ai-novel-writer-setup-<版本号>.exe
 2. 安装后，应用可以在「设置 → 关于与更新」里检查更新。发现新版本时先提示你，你点「下载更新」后才开始下载，下载完再选择立即重启更新或稍后。
 3. 旧版便携 ZIP 不能自动获得更新器，需要手动安装一次正式安装包。
 
+也可通过 Windows 程序包管理器（WinGet）安装。WinGet 从 Pagekin 的 GitHub Releases 下载正式的 Windows x64 安装包。
+
+```powershell
+winget install --id EthanYoQ.Pagekin --exact --source winget
+```
+
 当前安装程序未进行代码签名。Windows 可能提示未知发布者。请确认下载页面是本项目的官方 GitHub Release 后再继续。
 
 ### macOS（Apple Silicon 与 Intel）

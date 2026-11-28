@@ -15,6 +15,7 @@ import { useEditorStore } from '../../../stores/editor-store'
 import { useLLMStore } from '../../../stores/llm-store'
 import { useWorkflowStore, type WorkflowContext } from '../../../stores/workflow-store'
 import type { GenerationBatchProgress, BeginGenerationBatchRequest } from '../../../shared/generation-owner-contract'
+import { shownFailure } from '../../../stores/__tests__/run-failure-expect'
 
 const doubles = vi.hoisted(() => ({
   batch: null as GenerationBatchProgress | null,
@@ -30,7 +31,8 @@ const doubles = vi.hoisted(() => ({
   generateDraftOptions: [] as Array<{ selectedCandidateDrafts?: Array<Record<string, unknown>> }>,
 }))
 
-vi.mock('../../workflow-guards', () => ({
+vi.mock('../../workflow-guards', async importOriginal => ({
+  ...await importOriginal<typeof import('../../workflow-guards')>(),
   guardChapterWriting: doubles.guardChapterWriting,
 }))
 
@@ -380,10 +382,8 @@ describe('batch chapter workflow completion mode', () => {
 
     await useWorkflowStore.getState().startWorkflow(workflow)
 
-    expect(useWorkflowStore.getState().history[0]).toMatchObject({
-      status: 'failed',
-      error: 'Chapter 1 has no blueprint yet.',
-    })
+    expect(useWorkflowStore.getState().history[0]).toMatchObject({ status: 'failed' })
+    expect(shownFailure(useWorkflowStore.getState().history[0], 'en-US')).toBe('Chapter 1 has no blueprint yet.')
     expect(doubles.generateDraftExecute).not.toHaveBeenCalled()
   })
 
@@ -488,7 +488,8 @@ describe('batch chapter workflow completion mode', () => {
     doubles.retryPublication.mockResolvedValueOnce({ success: false, committed: true, failure: { code: 'MANUSCRIPT_TARGET_CONFLICT' } })
     await useWorkflowStore.getState().startWorkflow(createBatchChapterWorkflow({ projectPath, projectSession: projectSession(), startChapterNumber: 1,
       chapterCount: 1, chapterWordsTarget: 2000, generationModelId: '原模型', completionMode: 'auto_finalize', resumeBatchId: '原批次', locale }))
-    expect(useWorkflowStore.getState().history[0]).toMatchObject({ status: 'failed', error })
+    expect(useWorkflowStore.getState().history[0]).toMatchObject({ status: 'failed' })
+    expect(shownFailure(useWorkflowStore.getState().history[0], locale)).toBe(error)
     expect(doubles.repairPostProcess).not.toHaveBeenCalled()
   })
 
@@ -505,7 +506,8 @@ describe('batch chapter workflow completion mode', () => {
     doubles.retryPublication.mockResolvedValueOnce({ success: false, committed: false, failure: { code: 'FINALIZATION_COMMIT_NOT_FOUND' } })
     await useWorkflowStore.getState().startWorkflow(createBatchChapterWorkflow({ projectPath, projectSession: projectSession(), startChapterNumber: 1,
       chapterCount: 1, chapterWordsTarget: 2000, generationModelId: '原模型', completionMode: 'auto_finalize', resumeBatchId: '原批次', locale }))
-    expect(useWorkflowStore.getState().history[0]).toMatchObject({ status: 'failed', error })
+    expect(useWorkflowStore.getState().history[0]).toMatchObject({ status: 'failed' })
+    expect(shownFailure(useWorkflowStore.getState().history[0], locale)).toBe(error)
   })
 
   it('keeps auto-finalize failure-stop semantics and does not start a later chapter', async () => {
@@ -532,7 +534,6 @@ describe('batch chapter workflow completion mode', () => {
     ])
     expect(useWorkflowStore.getState().history[0]).toMatchObject({
       status: 'failed',
-      error: 'post-process failed',
       steps: [
         expect.objectContaining({ status: 'completed' }),
         expect.objectContaining({ status: 'failed' }),
@@ -597,9 +598,9 @@ describe('batch chapter workflow completion mode', () => {
 
     expect(doubles.generateDraftExecute).toHaveBeenCalledOnce()
     expect(doubles.finalizeChapterExecute).not.toHaveBeenCalled()
+    expect(shownFailure(useWorkflowStore.getState().history[0], 'en-US')).toBe('No blueprint was found for Chapter 2. Batch writing stopped.')
     expect(useWorkflowStore.getState().history[0]).toMatchObject({
       status: 'failed',
-      error: 'No blueprint was found for Chapter 2. Batch writing stopped.',
     })
   })
 })

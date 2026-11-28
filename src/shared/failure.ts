@@ -38,12 +38,10 @@ export class AuthorNote {
 export const note = AuthorNote.copyOf
 export const catalogKeyNote = AuthorNote.catalogOf
 
-export interface LegacyReason { readonly legacy: string }
-
 export type Recovery = 'resume-plot-outline' | 'restart-plot-outline'
 
 interface FailureExtras {
-  readonly because?: Failure | LegacyReason
+  readonly because?: Failure
   readonly recovery?: Recovery
 }
 
@@ -73,7 +71,7 @@ export class AuthorError extends Error {
 
 export function codeOf(failure: Failure): FailureCode | undefined {
   if (failure.code) return failure.code
-  return failure.because && !('legacy' in failure.because) ? codeOf(failure.because) : undefined
+  return failure.because ? codeOf(failure.because) : undefined
 }
 
 const CODE_ONLY = /^(?:Error invoking remote method '[^']+': )?(?:[A-Za-z]*Error: )?([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)$/u

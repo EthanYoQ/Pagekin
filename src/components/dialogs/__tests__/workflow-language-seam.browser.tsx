@@ -343,7 +343,7 @@ describe('workflow launch language seams', () => {
       })
 
       const completedRun = useWorkflowStore.getState().history[0]
-      expect(completedRun, completedRun.error).toMatchObject({
+      expect(completedRun, JSON.stringify(completedRun.failure)).toMatchObject({
         type: 'architecture_generation',
         writingLanguage,
         uiLocale,

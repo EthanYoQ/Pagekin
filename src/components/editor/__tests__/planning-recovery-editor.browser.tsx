@@ -144,7 +144,7 @@ describe('planning recovery editors', () => {
     expect(useEditorStore.getState().tabs[0]).toMatchObject({ content: blueprintText, dirty: false })
     noModel()
   })
-  it('蓝图恢复页打开时读不出恢复上下文：提示只写原因，不带 Error 前缀', async () => {
+  it('蓝图恢复页打开时读不出恢复上下文：提示给通用说明，主进程原文不进提示', async () => {
     context = fixture('blueprint')
     openPlanningRecoveryDraft(context, session.projectPath, '蓝图恢复稿')
     const plain = invoke.getMockImplementation() as (channel: string, ...args: unknown[]) => Promise<unknown>
@@ -154,7 +154,7 @@ describe('planning recovery editors', () => {
     })
     const tab = useEditorStore.getState().tabs[0]
     await act(async () => root.render(<BlueprintRecovery tab={tab} projectKey={session.projectPath} />))
-    await vi.waitFor(() => expect(container.querySelector('[role="alert"]')?.textContent).toBe('恢复上下文读取失败'))
+    await vi.waitFor(() => expect(container.querySelector('[role="alert"]')?.textContent).toBe('出了意外问题，暂时说不清原因。请再试一次。'))
     noModel()
   })
   it('英文界面下保存恢复蓝图被拒、又没带原因时，提示也是英文', async () => {
@@ -229,7 +229,7 @@ describe('planning recovery editors', () => {
         globalEventBus.emit('WORKFLOW_COMPLETE', { type: 'architecture_generation', projectPath: session.projectPath, projectSession: session, runId: 'completed-recovery' })
       }
     })
-    await vi.waitFor(() => expect(container.querySelector('[role="alert"]')?.textContent).toContain('Recovery context reload failed'))
+    await vi.waitFor(() => expect(container.querySelector('[role="alert"]')?.textContent).toBe('出了意外问题，暂时说不清原因。请再试一次。'))
     noModel()
   })
 
@@ -591,7 +591,7 @@ describe('planning recovery editors', () => {
     it(`${kind} explicitly continues zero-prefix with frozen target and original source`, async () => {
       context = fixture(kind); await render(kind); noModel()
       await act(async () => button('继续生成缺少的章节').click())
-      await vi.waitFor(() => expect(invoke.mock.calls.some(([name]) => name === 'generation:restart'), JSON.stringify({ channels: invoke.mock.calls.map(([name]) => name), history: useWorkflowStore.getState().history.map(run => run.error), visible: container.textContent })).toBe(true))
+      await vi.waitFor(() => expect(invoke.mock.calls.some(([name]) => name === 'generation:restart'), JSON.stringify({ channels: invoke.mock.calls.map(([name]) => name), history: useWorkflowStore.getState().history.map(run => run.failure), visible: container.textContent })).toBe(true))
       const restart = invoke.mock.calls.find(([name]) => name === 'generation:restart')
       expect(restart?.[1]).toEqual(handle)
       expect(restart?.[2]).toMatchObject({ authorInputs: expect.arrayContaining([{ id: 'planning:target-units', text: '600' }]) })

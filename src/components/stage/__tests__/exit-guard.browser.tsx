@@ -144,7 +144,7 @@ describe('关窗时的退出确认', () => {
 
   it.each([
     ['business failure', () => Promise.resolve({ success: false }), '退出请求已失效，请重试'],
-    ['transport rejection', () => Promise.reject(new Error('IPC unavailable')), 'IPC unavailable'],
+    ['transport rejection', () => Promise.reject(new Error('IPC unavailable')), '出了意外问题，暂时说不清原因。请再试一次。'],
   ] as const)('keeps unsaved changes when discard-and-exit hits a %s', async (_label, failure, errorText) => {
     useEditorStore.setState({
       tabs: [{

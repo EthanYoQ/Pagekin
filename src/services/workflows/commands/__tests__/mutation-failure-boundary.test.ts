@@ -394,7 +394,7 @@ describe('workflow mutation failure boundaries', () => {
       context().projectSession!,
       '保存架构生成检查点',
     ))
-      .rejects.toThrow('checkpoint rejected')
+      .rejects.toThrow('保存架构生成检查点失败，请再试一次。')
   })
 
   it.each([
@@ -702,7 +702,7 @@ describe('workflow mutation failure boundaries', () => {
       'db:post-process-mark-step-failed',
       'run-1',
       'chapter_notes',
-      expect.stringContaining('输出达到本次请求长度限制'),
+      'POST_PROCESS_STEP_FAILED',
       PROJECT_PATH,
       workflowContext.projectSession,
     )
@@ -1323,7 +1323,7 @@ describe('workflow mutation failure boundaries', () => {
 
     await expect(command.execute({
       step: {},
-      context: { ...context(), uiLocale, writingLanguage },
+      context: { ...context(), uiLocale, interfaceLocale: shown(uiLocale), writingLanguage },
       callbacks: stepCallbacks,
     })).rejects.toThrow(expectedError)
 

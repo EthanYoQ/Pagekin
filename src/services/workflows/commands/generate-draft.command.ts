@@ -1,6 +1,6 @@
 import { chapterTimeContinuity } from '../../../shared/chapter-time-continuity'
 import { ignoreFailure } from '../../../shared/ignore-failure'
-import { authorError, displayedErrorMessage, englishWithReason, resultFailure } from '../../../i18n/app-errors'
+import { authorError, displayedErrorMessage, resultFailure } from '../../../i18n/app-errors'
 import { authorOwned, failureCode, note } from '../../../shared/failure'
 import { sanitizeDraftText, composeDraftVisibleContinuation, DRAFT_CONDENSE_PURPOSE, DRAFT_VISIBLE_TEXT_VERSION, isDraftVisibleTextVersion, type DraftVisibleTextVersion } from '../../../shared/draft-visible-text'
 import { DRAFT_RECONCILE_PURPOSE, draftReconciliationBlock } from '../../../shared/draft-reconciliation'
@@ -548,7 +548,7 @@ export function appendVisibleDraftContinuation(draft: string, continuation: stri
  * 因为带码的错误（workflowMainProcessError）message 里已经写好了概述，按码替换会丢掉它。
  */
 function shownReason(context: Pick<CommandExecuteParams['context'], 'interfaceLocale'>, error: unknown): string {
-  return displayedErrorMessage(context.interfaceLocale, error instanceof Error ? error.message : error)
+  return displayedErrorMessage(context.interfaceLocale, error)
 }
 
 export class GenerateDraftCommand extends BaseWorkflowCommand {
@@ -1364,12 +1364,13 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
           const persistenceDetail = shownReason(context, persistenceError)
           callbacks.log(uiText(
             `恢复候选保存失败；可见正文仍保留在当前步骤中：${persistenceDetail}`,
-            englishWithReason(context.interfaceLocale, 'Saving the recovery candidate failed. The visible prose remains in the current step', persistenceDetail, ': '),
+            `Saving the recovery candidate failed. The visible prose remains in the current step: ${persistenceDetail}`,
           ))
-          throw new Error(uiText(
-            `${failureDetail}；恢复候选保存失败：${persistenceDetail}`,
-            englishWithReason(context.interfaceLocale, `${failureDetail}; saving the recovery candidate failed`, persistenceDetail, ': '),
-          ))
+          throw authorError(context.interfaceLocale, { note: note(
+            '{failure}；恢复候选保存失败：{persistence}',
+            '{failure}; saving the recovery candidate failed: {persistence}',
+            { failure: authorOwned(failureDetail), persistence: authorOwned(persistenceDetail) },
+          ) })
         }
       } else if (!mainOwned && !draftPersisted) {
         callbacks.replaceText?.('')
@@ -1773,7 +1774,7 @@ ${params.candidate.text}`,
       const detail = shownReason(params.context, error)
       params.callbacks.log(uiText(
         `  压缩修订未完成，保留原稿：${detail}`,
-        englishWithReason(params.context.interfaceLocale, '  Condense revision did not complete; keeping the original draft', detail, ': '),
+        `  Condense revision did not complete; keeping the original draft: ${detail}`,
       ))
       return original()
     }

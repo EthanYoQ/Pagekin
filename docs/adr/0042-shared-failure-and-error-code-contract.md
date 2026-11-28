@@ -8,7 +8,7 @@
 
 ## 决定
 
-失败由稳定的大写下划线码和可选的作者可读说明组成。码只用于查目录与分流，从不直接显示；异常原文没有槽位，只有作者自己的数据（文件名、书名、章节名、模型名）才能经 `AuthorOwned` 插进说明。过 IPC 的失败是纯数据，说明只带目录键与参数。认失败发生在 catch 处，认不出的一律走旧字段。定稿后处理步骤的错误码单独成表，步骤记录里存码本身，展示时再按当前界面语言换成说明，并决定界面摆不摆重试。下面按文件列出各条口径。
+失败由稳定的大写下划线码和可选的作者可读说明组成。码只用于查目录与分流，从不直接显示；异常原文没有槽位，只有作者自己的数据（文件名、书名、章节名、模型名）才能经 `AuthorOwned` 插进说明。过 IPC 的失败是纯数据，说明只带目录键与参数。认失败发生在 catch 处，认不出的显示通用说明，原文只进控制台（#845 PR-H2 删掉了显示原文的旧字段与旧分支）。定稿后处理步骤的错误码单独成表，步骤记录里存码本身，展示时再按当前界面语言换成说明，并决定界面摆不摆重试。下面按文件列出各条口径。
 
 ## 共享层口径（注释清理 #852 第 3 个 PR，src/shared）
 
@@ -26,11 +26,10 @@
 - `FailureCode`：类型只挡小写和不带下划线的值，挡不住汉字句子，边界上一律用 failureCode() 判。
 - `AuthorOwned`：作者自己的数据（文件名、书名、章节名、模型名），可以插进说明。
 - `AuthorNote`：带私有字段，按名义比较，对象字面量和展开出来的对象都不是它；显示时再用 minted() 认一次，挡住 as 硬转。
-- `LegacyReason`：还没迁移的主进程通道给的原因：来路不明的文字，按旧规则显示。
 - `Recovery`：run-failure.ts 凭它出按钮，不凭码。
 - `Failure`：一次失败：码和说明至少有一个。码只拿去查目录和分流，从不直接显示；异常原文没有槽位。
 - `WireNote`：过 IPC 的失败是纯数据：类实例过不了结构化克隆，所以说明只带目录键和参数。
-- `failureOf`：catch 处认失败。认得出三种：AuthorError；整条 message 就是码；message 为空而 code 或 errorCode 上挂着码。 message 是句子又另挂码（句子可能比码的目录文案具体），或 message 与对象上的码不一致，都认不出，走旧字段。
+- `failureOf`：catch 处认失败。认得出三种：AuthorError；整条 message 就是码；message 为空而 code 或 errorCode 上挂着码。 message 是句子又另挂码（句子可能比码的目录文案具体），或 message 与对象上的码不一致，都认不出，显示通用说明。
 
 ### `src/shared/ipc-channels.ts`
 
@@ -45,6 +44,7 @@
 ### `test/helpers/legacy-failure-scan.ts`
 
 - `failureTypeAssertions`：只有 src/shared/failure.ts 可以断言成这些类型。
+- `REMOVED_FAILURE_NAMES`、`REMOVED_FAILURE_STRINGS`：#845 PR-H2 删掉的旧入口（englishWithReason、LegacyReason、error.unknown、直连名单等），在 src、electron、scripts、test 里再出现就红。
 
 ## 渲染端其余口径（注释清理 #852 第 4 个 PR，src 其余）
 
@@ -155,14 +155,15 @@
 
 ### `src/stores/workflow-store.ts`
 
-- `failure`：只有 caughtFailure 把认不出的原文记进控制台；message 非空时原文已在旧字段，不重复记。
-- `reason`：普通步骤失败交原错误，带 code 的按码说明；预算失败已写好说明。
+- `failure`：运行与步骤只存 `failure`（码与说明），旧 `error`、`errorCode` 字段已删（#845 PR-H2）。认不出的失败不存说明，运行卡片显示通用说明，原文只进控制台。
+- 日志里的原因：普通步骤失败按码或说明写，认不出的写通用说明；预算失败按运行语言写好说明。
 
 ## 过 IPC 的失败形状（#844 PR-B）
 
-- 失败结果另带 `failure`：码加可选的目录键说明。迁移期旧 `error`、`errorCode` 照旧写，值与以前相同。
-- 目录键只有 `wireNote()` 造得出（`WireNoteKey` 是品牌类型），手写的句子放不进来。`error.unknown` 整句只装原文，排除在外。
+- 失败结果另带 `failure`：码加可选的目录键说明。旧 `error`、`errorCode` 只剩给还没迁的通道读码用，里面不是码的文字不显示。
+- 目录键只有 `wireNote()` 造得出（`WireNoteKey` 是品牌类型），手写的句子放不进来。只装原文的 `error.unknown` 已删（#845 PR-H2），目录里没有可以装原文的键。
 - 参数只收数字或 `AuthorOwned`：普通字符串、catch 变量和 any 都编译不过，作者数据要显式经 `authorOwned()`（见 wire-failure.typecheck.ts）。守卫只扫 `authorOwned()` 的实参，`as AuthorOwned`、`as NoteParams` 只许在 src/shared/failure.ts。
-- 主进程出口 `publicIpcResult` 和渲染端入口 `receivedIpcResult` 各校验一次：码没登记换成 `IPC_HANDLER_FAILED`，说明不合格只留码。db:* 等直连通道不经 `handle()`，渲染端入口是它们唯一的校验。
+- 主进程出口 `publicIpcResult` 和渲染端入口 `receivedIpcResult` 各校验一次：码没登记换成 `IPC_HANDLER_FAILED`，说明不合格只留码。主进程只能经 `handle()` 注册 IPC（守卫「主进程只能经 handle() 注册 IPC」），直连名单已删。
 - 渲染端读失败走 `resultFailure`：先 `failure`，再旧字段里的码。旧 `error` 里不是码的文字不显示，只进日志。
+- 定稿后处理步骤落库的 `step.error` 列不删：新写入只存步骤表里的码、报错带的稳定码，或 `POST_PROCESS_STEP_FAILED`；旧记录里的原文照旧交给 `planFinalizationRetry` 判重试（认不出按「请重试」），显示处一律按步骤表说明，认不出的给通用说明。
 - 导入运行的失败只在码已登记时带 `failure`。没登记的码由渲染端照旧读 `errorCode`，参照导入的取消判定只凭这个码。

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createMainOwnedGenerationRuntime, type MainGenerationRunHandle, type MainGenerationRunView, type MainGenerationTransport } from '../generation-runtime'
 import type { GenerationOutcome, GenerationTask } from '../generation-harness'
-import { knownAppErrorMessage } from '../../../i18n/app-errors'
+import { knownAppErrorMessage, reasonOf } from '../../../i18n/app-errors'
 import { runFailure } from '../../../components/run/run-failure'
 import type { WorkflowContext, WorkflowRun } from '../../../stores/workflow-store'
 import { createStructuredBatchExecutor } from '../../workflows/structured-batch-executor'
@@ -124,10 +124,14 @@ describe('讨论区 #77：上下文超长码在每条消费路径上都保留', 
   })
 })
 
-const failedDraft = (error: string, result = ''): WorkflowRun => ({ id: '运行', title: '第 9 章 · 写稿', type: 'chapter_creation', status: 'failed',
-  uiLocale: 'zh-CN', writingLanguage: 'zh-CN', projectPath: 'C:/projects/旧港', projectSession: null, chapterWordsTarget: 4000,
-  currentStepIndex: 0, createdAt: '2026-10-25T00:00:00.000Z', error, errorCode: error,
-  steps: [{ id: 'draft', name: '写稿', description: '', status: 'failed', logs: [], error, errorCode: error, result }] }) as WorkflowRun
+/** 运行失败后 workflow-store 只存认得出的码（reasonOf），这里照它造运行。 */
+const failedDraft = (error: string, result = ''): WorkflowRun => {
+  const failure = reasonOf(new Error(error))
+  return { id: '运行', title: '第 9 章 · 写稿', type: 'chapter_creation', status: 'failed',
+    uiLocale: 'zh-CN', writingLanguage: 'zh-CN', projectPath: 'C:/projects/旧港', projectSession: null, chapterWordsTarget: 4000,
+    currentStepIndex: 0, createdAt: '2026-10-25T00:00:00.000Z', ...(failure ? { failure } : {}),
+    steps: [{ id: 'draft', name: '写稿', description: '', status: 'failed', logs: [], ...(failure ? { failure } : {}), result }] }
+}
 
 describe('讨论区 #77：服务商上下文超长', () => {
   it('主进程回执带上下文超长码时，运行以该码失败，不当作普通未完成', async () => {

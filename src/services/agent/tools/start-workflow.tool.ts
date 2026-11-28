@@ -3,7 +3,9 @@ import { launchCreativeWorkflow, type CreativeIntent } from '../../workflows/cre
 import { assertAgentToolActive, requireAgentProject, agentToolErrorDetail } from './project-context'
 import { DEFAULT_WRITING_LANGUAGE, writingLanguageText } from '../../../shared/writing-language'
 import { APP_BRAND } from '../../../shared/brand'
-import { containsHan } from '../../../i18n/app-errors'
+import { containsHan, authorError } from '../../../i18n/app-errors'
+import { note } from '../../../shared/failure'
+import { currentInterfaceLocale } from '../../../stores/locale-store'
 
 export const startWorkflowTool = buildAgentTool({
   name: 'start_workflow',
@@ -74,7 +76,7 @@ export const startWorkflowTool = buildAgentTool({
 
     try {
       assertAgentToolActive(context)
-      if (!context?.agentToolAction) throw new Error(text('缺少主进程签发的工具动作，工作流未启动。', 'The main-issued tool action is missing; the workflow was not started.'))
+      if (!context?.agentToolAction) throw authorError(currentInterfaceLocale(), { note: note('缺少主进程签发的工具动作，工作流未启动。', 'The main-issued tool action is missing; the workflow was not started.') })
       const receipt = await launchCreativeWorkflow({
         workflow,
         ...(chapterNumber === undefined ? {} : { chapterNumber }),

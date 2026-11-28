@@ -1,6 +1,10 @@
 import type { Locale } from '../../../i18n/types'
 import { localize } from '../../../i18n/core'
 import { assertMechanicallyCompleteVisibleText } from '../../../shared/visible-text-integrity'
+import { AuthorError, note } from '../../../shared/failure'
+
+/** 主进程也会走这里，取不到界面语言：消息按运行语言写给日志，作者看到的说明由显示处按 failure 重新渲染。 */
+const MATERIALLY_SHORT = note('修稿结果明显短于原稿，可能仍不完整，结果未被保存。请重试或缩短本次修稿范围。', 'The revision is materially shorter than the source and may be incomplete. Nothing was saved; retry or narrow the revision scope.')
 
 const MIN_REFINEMENT_COMPLETION_RATIO = 0.6
 const MIN_REFINEMENT_UNITS = 200
@@ -43,10 +47,6 @@ export function assertMateriallyCompleteRevision(
     Math.max(MIN_REFINEMENT_UNITS, Math.floor(boundedTarget * MIN_REFINEMENT_COMPLETION_RATIO)),
   )
   if (revisionUnits < minimumUnits) {
-    throw new Error(localize(
-      uiLocale,
-      '修稿结果明显短于原稿，可能仍不完整，结果未被保存。请重试或缩短本次修稿范围。',
-      'The revision is materially shorter than the source and may be incomplete. Nothing was saved; retry or narrow the revision scope.',
-    ))
+    throw new AuthorError({ note: MATERIALLY_SHORT }, localize(uiLocale, MATERIALLY_SHORT.copy!.zh, MATERIALLY_SHORT.copy!.en))
   }
 }

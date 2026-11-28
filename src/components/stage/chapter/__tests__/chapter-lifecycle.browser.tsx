@@ -1258,10 +1258,10 @@ describe('恢复前的审稿：主按钮直接是重新审稿（#702）', () => 
   describe('复验失败的提示不变', () => {
     const proxy = '连不上「网络代理」里设置的代理。请检查「主机地址」和「端口」，打开代理软件，或关掉「启用代理」。'
     it.each([
-      ['没有原因', { error: '' }, '复验任务未完成；可在修复模型或资源问题后再次重试。'],
-      ['已登记码', { error: 'PROJECT_NOT_OPEN', errorCode: 'PROJECT_NOT_OPEN', failure: { code: 'PROJECT_NOT_OPEN' } }, '请先打开项目。'],
-      ['未标记的句子', { error: '审稿模型返回了空内容。' }, '审稿模型返回了空内容。'],
-      ['码加说明', { error: proxy, errorCode: 'NETWORK_ERROR', failure: { code: 'NETWORK_ERROR', note: catalogNote('error.proxyUnreachable') } }, proxy],
+      // 运行只存 failure（#845 PR-H2）：认不出的失败不存说明，和没有原因一样给兜底说明。
+      ['没有原因', {}, '复验任务未完成；可在修复模型或资源问题后再次重试。'],
+      ['已登记码', { failure: { code: 'PROJECT_NOT_OPEN' } }, '请先打开项目。'],
+      ['码加说明', { failure: { code: 'NETWORK_ERROR', note: catalogNote('error.proxyUnreachable') } }, proxy],
     ] as const)('%s', async (_name, run, expected) => {
       const draft = backend.addDraft({ status: 'revised' })
       const review = backend.addReview(draft)

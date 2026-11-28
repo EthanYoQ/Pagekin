@@ -114,7 +114,7 @@ function tooLargeForRemainingTotal(error: unknown, remainingBytes: number): unkn
     : error
 }
 
-type SelectionCopy = { key: Exclude<MessageKey, 'error.unknown'>; params?: NoteParams }
+type SelectionCopy = { key: MessageKey; params?: NoteParams }
 
 const FIXED_SELECTION_COPY: Record<string, SelectionCopy['key']> = {
   EPUB_DRM_UNSUPPORTED: 'error.epubDrmUnsupported',

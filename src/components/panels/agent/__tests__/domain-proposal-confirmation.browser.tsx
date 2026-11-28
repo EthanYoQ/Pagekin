@@ -100,6 +100,18 @@ describe('Agent domain proposal confirmation', () => {
     expect(resolveToolConfirmation).toHaveBeenCalledWith('config-1', true)
   })
 
+  it('提案无效时说出应用自己写的原因，不换成通用说明', async () => {
+    useLocaleStore.setState({ locale: 'zh-CN', initialized: true })
+    await act(async () => root.render(<ConfirmCard toolCall={{
+      id: 'blueprint-invalid', toolName: 'propose_chapter_blueprint',
+      arguments: { chapter_number: 0, changes: { title: '新标题' } },
+      status: 'waiting_confirm', source: 'builtin', projectSession: session,
+    }} />))
+
+    await expect.element(page.getByText('提案无效：章节号无效')).toBeVisible()
+    expect(container.textContent).not.toContain('出了意外问题')
+  })
+
   it('loads a Chinese blueprint diff and rejects without invoking a write', async () => {
     useLocaleStore.setState({ locale: 'zh-CN', initialized: true })
     invoke.mockResolvedValue({

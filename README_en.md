@@ -235,6 +235,12 @@ ai-novel-writer-setup-<version>.exe
 2. After installation, check for updates under "Settings → About & updates". A new version is announced first. It downloads only after you choose "Download update", and when it finishes you choose to restart now or later.
 3. Older portable ZIP builds cannot get the updater automatically. Install an official installer manually once.
 
+You can also install with Windows Package Manager (WinGet), which downloads the official Windows x64 installer from Pagekin GitHub Releases.
+
+```powershell
+winget install --id EthanYoQ.Pagekin --exact --source winget
+```
+
 The installer is not code-signed at present. Windows may show an unknown-publisher warning. Continue only after confirming that the download page is this repository's official GitHub Release.
 
 ### macOS (Apple Silicon and Intel)

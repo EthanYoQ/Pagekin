@@ -1,7 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ChevronRight, CircleCheck, CircleDashed, CircleMinus, CircleX, Pause, Play } from 'lucide-react'
-import { displayedErrorMessage, failureText } from '../../../i18n/app-errors'
-import { errorLocaleForRun } from '../../../i18n/core'
+import { failureText } from '../../../i18n/app-errors'
+import { formatPromptBudgetFailure, PROMPT_BUDGET_FAILURE_CODE } from '../../../services/generation/prompt-budget-failure'
+import { copyLocale, errorLocaleForRun } from '../../../i18n/core'
 import { pluralEn } from '../../../shared/plural-en'
 import { useLLMStore } from '../../../stores/llm-store'
 import { activeInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
@@ -195,9 +196,9 @@ function RunStep({ step, runStatus, runLocale, live, reasoning, open, onToggle, 
   const output = useMemo(() => splitThinking(step.result), [step.result])
   const locale = errorLocaleForRun(runLocale, useLocaleStore(activeInterfaceLocale))
   const thinking = reasoning || output.thinking
-  const failed = step.failure || (step.status === 'failed' && !step.error)
-    ? failureText(locale, step.failure)
-    : step.error && displayedErrorMessage(locale, step.error)
+  const failed = step.failureCode === PROMPT_BUDGET_FAILURE_CODE && step.promptBudgetReport
+    ? formatPromptBudgetFailure(step.promptBudgetReport, copyLocale(locale))
+    : step.failure || step.status === 'failed' ? failureText(locale, step.failure) : undefined
   const hasDetail = Boolean(output.raw || thinking || failed)
   const expanded = hasDetail && open
   const reviewing = runStatus === 'running' && step.generationActivity?.operation === 'review-chapter'

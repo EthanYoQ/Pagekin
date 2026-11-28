@@ -70,7 +70,7 @@ export interface RestoreTrashedChapterRequest {
 
 export type RestoreTrashedChapterResult =
   | { success: true; outcome: 'restored'; chapterNumber: number; draftId: number; finalizationId: string
-      publicationStatus: 'pending' | 'published'; publicationError?: string }
+      publicationStatus: 'pending' | 'published'; publicationFailed?: true }
   | { success: true; outcome: 'restored-as-history'; chapterNumber: number; draftId: number }
   | { success: true; outcome: 'reopened-as-draft'; chapterNumber: number; draftId: number; created: boolean }
   | { success: true; outcome: 'already-restored'; chapterNumber: number; draftId: number }

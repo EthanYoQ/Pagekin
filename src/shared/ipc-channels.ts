@@ -688,6 +688,7 @@ export interface PromptLoadDiagnostic {
   writingLanguage?: WritingLanguage
   path: string
   error: string
+  failure?: Failure
 }
 
 export interface AppPromptLoadReceipt {

@@ -16,7 +16,7 @@ import { showFinalizationRepairNotice } from '../components/finalization-repair-
 import { showLedgerSealedNotice } from '../components/ledger-sealed-notice'
 import { confirm } from '../components/ui/Confirm'
 import { pushToast } from '../components/ui/ToastStack'
-import { appErrorMessage, displayedErrorMessage, englishWithReason, failureText, legacyImportFailureMessage, projectDeleteFailureMessage, projectOpenFailureMessage, resultFailure } from '../i18n/app-errors'
+import { appErrorMessage, displayedErrorMessage, failureText, legacyImportFailureMessage, projectDeleteFailureMessage, projectOpenFailureMessage, resultFailure, authorError } from '../i18n/app-errors'
 import { saveDirtyEditorChangesForExit, useEditorStore } from './editor-store'
 import { countUnsavedEditorItemsForProject } from './editor-unsaved'
 import { useLayoutStore } from './layout-store'
@@ -49,6 +49,7 @@ import {
   saveProjectTransitionDrafts,
   type ProjectTransitionDraftSnapshot,
 } from '../services/project-transition'
+import { note } from '../shared/failure'
 
 let openProjectRequestSequence = 0
 const recentProjectsReads = new LatestRequestGate()
@@ -209,7 +210,7 @@ async function prepareProjectTransition(project: ProjectData): Promise<PreparedP
   for (const content of Object.values(editor.draftLedgers)) {
     if (!content) continue
     try { JSON.parse(content) } catch {
-      throw new Error(projectText('存在无法识别的未保存编辑内容，请先恢复该编辑器', 'An unsaved editor draft could not be read. Restore that editor before continuing.'))
+      throw authorError(currentInterfaceLocale(), { note: note('存在无法识别的未保存编辑内容，请先恢复该编辑器', 'An unsaved editor draft could not be read. Restore that editor before continuing.') })
     }
   }
   const hasEditorDrafts = countUnsavedEditorItemsForProject(
@@ -533,7 +534,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         return false
       }
       const projectDir = result.projectPath
-      if (!projectDir) throw new Error(projectText('创建结果缺少项目路径', 'The created project did not report its folder.'))
+      if (!projectDir) throw authorError(currentInterfaceLocale(), { note: note('创建结果缺少项目路径', 'The created project did not report its folder.') })
       if (rendererProject && preparedTransition) {
         if (!isPreparedProjectTransitionCurrent(rendererProject, preparedTransition)) return false
         createOpenTransitionAuthorization = {
@@ -685,10 +686,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         mainOpenWasAccepted = true
         const openedProjectSession = projectSessionContextFromProject(result.project)
         if (!openedProjectSession) {
-          throw new Error(projectText(
-            '主进程未返回有效项目会话，已拒绝绑定项目数据。',
-            'The main process did not return a valid project session, so project data was not bound.',
-          ))
+          throw authorError(currentInterfaceLocale(), { note: note('主进程未返回有效项目会话，已拒绝绑定项目数据。', 'The main process did not return a valid project session, so project data was not bound.') })
         }
         const draftLedger = readConfigDraftLedger()
         const restored = rebaseProjectEditorDraft(
@@ -730,7 +728,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
           await get().loadRecentProjects()
         } catch (recentError) {
           set({ recentProjects: [] })
-          partialLoadWarnings.push(String(recentError))
+          partialLoadWarnings.push(projectError(recentError))
         }
         if (!isLatestRequest()) return false
         let layer2Warnings: string[] = []
@@ -739,18 +737,18 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
           layer2Warnings = layer2Result?.warnings ?? []
         } catch (layer2Error) {
           console.error('[Project] 项目资源初始化失败:', layer2Error)
-          layer2Warnings = [String(layer2Error)]
+          layer2Warnings = [projectError(layer2Error)]
         }
         if (!isLatestRequest()) return false
+        // 资源初始化交回的警告是写好的句子（project-service 按界面语言拼），原样显示。
         const warnings = [...partialLoadWarnings, ...layer2Warnings]
-          .map(warning => projectError(warning))
         const repair = result.finalizationRepair
         if (repair?.status === 'failed') {
           const failure = resultFailure({ error: repair.error })
           const reason = failure ? failureText(currentInterfaceLocale(), failure) : ''
           warnings.push(projectText(
             `重复的定稿没能修复，后面的章节可能写不了；下次打开项目会再试一次。${reason && `原因：${reason}`}`,
-            englishWithReason(currentInterfaceLocale(), 'Duplicate final versions could not be repaired, so later chapters may stay blocked. Opening the project again will retry.', reason),
+            `Duplicate final versions could not be repaired, so later chapters may stay blocked. Opening the project again will retry.${reason && ` ${reason}`}`,
           ))
         }
         const leftThisProject = new AbortController()
@@ -1192,10 +1190,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         if (!preparedTransition || !isPreparedProjectTransitionCurrent(project, preparedTransition)) return false
         if (!await confirmAndCancelProjectWorkflows(projectPath, 'close')) return false
         if (!isPreparedProjectTransitionCurrent(project, preparedTransition)) {
-          throw new Error(projectText(
-            '项目上下文已变化，关闭操作已取消。',
-            'The project context changed, so the close operation was cancelled.',
-          ))
+          throw authorError(currentInterfaceLocale(), { note: note('项目上下文已变化，关闭操作已取消。', 'The project context changed, so the close operation was cancelled.') })
         }
         const result = await ipc.invokeWithProjectSession(projectSession, 'db:close', projectPath)
         requireIpcSuccess(result, '关闭项目数据库')

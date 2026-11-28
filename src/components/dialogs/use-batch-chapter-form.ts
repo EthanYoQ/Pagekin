@@ -11,7 +11,6 @@ import {
 import { guardChapterWriting } from '../../services/workflow-guards'
 import { ipc } from '../../services/ipc-client'
 import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
-import { errorLocaleForRun } from '../../i18n/core'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { routeStageModel } from '../../shared/model-stage-routing'
 import {
@@ -197,10 +196,11 @@ export function useBatchChapterForm({ isOpen, startChapterNumber, onClose }: Bat
         return
       }
       if (!guard.ok) {
-        setError(displayedErrorMessage(errorLocaleForRun(frozenLocale, currentInterfaceLocale()), guard.message, text(
+        // i18n-exempt: 前置校验的 message 是 workflow-guards 按文案语言写好的句子（日文界面用英文），不是报错原文
+        setError(guard.message || text(
           '前置条件未满足。',
           'Writing prerequisites are not met. Complete the project setup and previous finalized chapter before starting.',
-        )))
+        ))
         return
       }
 

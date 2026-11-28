@@ -34,7 +34,7 @@ export function restoredMessage(result: Restored, text: Text): string {
         text(`已恢复第 ${n} 章的正文和全部版本。要重新收进知识库，请打开这一章，在「定稿后处理」点「重试」。`,
           `Chapter ${n} is restored with every version. To add it back to the knowledge base, open it and choose “Retry” under After finalization.`),
       ]
-      if (result.publicationError) {
+      if (result.publicationFailed) {
         lines.push(text('实体稿 txt 没写出来，在同一处点「重新写入正文」。',
           'Its manuscript file was not written. Choose “Write again” in the same place.'))
       }
@@ -100,7 +100,7 @@ export async function restoreTrashedChapter(entry: TrashedChapter): Promise<bool
   }
   if (result.outcome === 'restored') recordRestoredPublication(session, result.draftId, result.finalizationId, result.publicationStatus)
   const message = restoredMessage(result, text)
-  if (result.outcome === 'restored' && result.publicationError) toast.warning(message, 12000)
+  if (result.outcome === 'restored' && result.publicationFailed) toast.warning(message, 12000)
   else toast.success(message, result.outcome === 'already-restored' ? 4000 : 12000)
   return true
 }

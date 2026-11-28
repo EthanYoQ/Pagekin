@@ -5,7 +5,6 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 const SCRIPT = path.resolve('scripts/check-baseline-shrink.mjs')
-const CHANNELS = 'electron/ipc/direct-channels.json'
 const LISTING = 'test/directory-listing-baseline.json'
 const FAILURES = 'test/legacy-failure-baseline.json'
 let root: string
@@ -28,8 +27,7 @@ function check(base?: string) {
 beforeEach(() => {
   root = mkdtempSync(path.join(tmpdir(), 'baseline-shrink-'))
   git('init', '-q', '-b', 'master')
-  write(CHANNELS, ['a:one', 'a:two'])
-  write(LISTING, ['test/a.test.ts'])
+  write(LISTING, ['test/a.test.ts', 'test/b.test.ts'])
   write(FAILURES, { 'src/a.ts': { displayedErrorMessage: 2 } })
   git('add', '.')
   git('commit', '-q', '-m', 'base')
@@ -39,16 +37,15 @@ afterEach(() => rmSync(root, { recursive: true, force: true }))
 
 describe('名单只减不增（与基准提交上的同一文件比较）', () => {
   it('不变或删减时通过', () => {
-    write(CHANNELS, ['a:one'])
-    write(LISTING, [])
+    write(LISTING, ['test/a.test.ts'])
     expect(check('base')).toMatchObject({ status: 0 })
   })
 
-  it.each([CHANNELS, LISTING])('%s 新增一条就失败，并点名新增的条目', file => {
-    write(file, file === CHANNELS ? ['a:one', 'a:two', 'b:new'] : ['test/a.test.ts', 'test/new.test.ts'])
+  it('新增一条就失败，并点名新增的条目', () => {
+    write(LISTING, ['test/a.test.ts', 'test/b.test.ts', 'test/new.test.ts'])
     const result = check('base')
     expect(result.status).toBe(1)
-    expect(result.output).toContain(file === CHANNELS ? 'b:new' : 'test/new.test.ts')
+    expect(result.output).toContain('test/new.test.ts')
   })
 
   it('旧约定计数只减不增：某文件合计变大或新增文件就失败，减少和新约定 authorOwned 放行', () => {
@@ -68,30 +65,30 @@ describe('名单只减不增（与基准提交上的同一文件比较）', () =
   })
 
   it('删掉一条再换一条顶替，同样失败', () => {
-    write(CHANNELS, ['a:one', 'b:new'])
+    write(LISTING, ['test/a.test.ts', 'test/new.test.ts'])
     expect(check('base').status).toBe(1)
   })
 
   it('基准提交拿不到时失败，不放行', () => {
-    write(CHANNELS, ['a:one', 'a:two', 'b:new'])
+    write(LISTING, ['test/a.test.ts', 'test/b.test.ts', 'test/new.test.ts'])
     const result = check('origin/master')
     expect(result.status).toBe(2)
     expect(result.output).toContain('拿不到基准提交')
   })
 
   it('基准上还没有的名单当作新建，不比较', () => {
-    git('rm', '-q', CHANNELS)
-    git('commit', '-q', '-m', 'drop channel list')
+    git('rm', '-q', LISTING)
+    git('commit', '-q', '-m', 'drop listing')
     git('tag', '-f', 'base')
-    write(CHANNELS, ['a:one', 'b:new'])
+    write(LISTING, ['test/a.test.ts', 'test/new.test.ts'])
     expect(check('base')).toMatchObject({ status: 0 })
   })
 
   it('基准上有的名单被改名或删掉，同样失败', () => {
-    renameSync(path.join(root, CHANNELS), path.join(root, 'electron/ipc/direct-channels-v2.json'))
+    renameSync(path.join(root, LISTING), path.join(root, 'test/directory-listing-baseline-v2.json'))
     const result = check('base')
     expect(result.status).toBe(1)
-    expect(result.output).toContain(CHANNELS)
+    expect(result.output).toContain(LISTING)
   })
 })
 
@@ -125,16 +122,16 @@ describe('PR CI 的比较步骤用基准提交上的检查脚本', () => {
     git('add', '.')
     git('commit', '-q', '-m', 'base with checker')
     commitScript('process.exit(0)\n')
-    write(CHANNELS, ['a:one', 'a:two', 'b:new'])
+    write(LISTING, ['test/a.test.ts', 'test/b.test.ts', 'test/new.test.ts'])
     git('commit', '-q', '-am', 'pr')
     const result = runStep()
     expect(result.status).toBe(1)
-    expect(result.output).toContain('b:new')
+    expect(result.output).toContain('test/new.test.ts')
   })
 
   it('引入脚本的 PR（基准上还没有它）用自己的那份，名单加长照样失败', () => {
     commitScript()
-    write(CHANNELS, ['a:one', 'a:two', 'b:new'])
+    write(LISTING, ['test/a.test.ts', 'test/b.test.ts', 'test/new.test.ts'])
     git('add', '.')
     git('commit', '-q', '-m', 'pr adds checker')
     expect(runStep().status).toBe(1)
