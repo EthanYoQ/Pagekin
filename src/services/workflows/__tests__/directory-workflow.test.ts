@@ -288,22 +288,30 @@ describe('blueprint persistence helpers', () => {
   it('throws when saving one blueprint returns an IPC failure', async () => {
     stubIpcInvoke({ success: false, failure: { code: 'PROJECT_NOT_OPEN' } })
 
-    await expect(saveChapterBlueprint(blueprint, 'C:/NovelA', session, shown('zh-CN'))).rejects.toThrow('保存章节蓝图失败：请先打开项目。')
+    await expect(saveChapterBlueprint(blueprint, 'C:/NovelA', session, shown('zh-CN'))).rejects.toThrow(/^请先打开项目。$/u)
   })
 
   it('英文界面下主进程拒绝保存蓝图：报英文说明，不转出主进程的中文原文（#471）', async () => {
     stubIpcInvoke({ success: false, failure: { code: 'BLUEPRINT_WRITE_FAILED', note: { key: 'error.blueprintWriteFailed' } } })
 
-    await expect(saveChapterBlueprint(blueprint, 'C:/NovelA', session, shown('en-US')))
-      .rejects.toThrow(/^Could not save the chapter blueprint\.$/u)
-    await expect(saveAllBlueprints([blueprint], 'C:/NovelA', session, shown('en-US')))
-      .rejects.toThrow(/^Could not save the chapter blueprints\.$/u)
+    const english = /^Your existing chapter blueprints are all still there\. This change could not be saved to the project\. Try again\.$/u
+    await expect(saveChapterBlueprint(blueprint, 'C:/NovelA', session, shown('en-US'))).rejects.toThrow(english)
+    await expect(saveAllBlueprints([blueprint], 'C:/NovelA', session, shown('en-US'))).rejects.toThrow(english)
   })
 
   it('throws when saving many blueprints returns an IPC failure', async () => {
     stubIpcInvoke({ success: false, failure: { code: 'BLUEPRINT_WRITE_FAILED', note: { key: 'error.blueprintWriteFailed' } } })
 
-    await expect(saveAllBlueprints([blueprint], 'C:/NovelA', session, shown('zh-CN'))).rejects.toThrow(/^保存章节蓝图失败$/u)
+    await expect(saveAllBlueprints([blueprint], 'C:/NovelA', session, shown('zh-CN'))).rejects.toThrow(/^已有的章节蓝图都还在。这次修改没能写进作品，请再试一次。$/u)
+  })
+
+  it('日文界面下保存蓝图失败用目录里的日文说明；主进程回的原文不显示（#939）', async () => {
+    const japanese = /^既存の章のブループリントはすべて残っています。この変更はプロジェクトに保存できませんでした。もう一度お試しください。$/u
+    stubIpcInvoke({ success: false, failure: { code: 'BLUEPRINT_WRITE_FAILED', note: { key: 'error.blueprintWriteFailed' } } })
+    await expect(saveChapterBlueprint(blueprint, 'C:/NovelA', session, shown('ja-JP'))).rejects.toThrow(japanese)
+
+    stubIpcInvoke({ success: false, error: '数据库已锁定' })
+    await expect(saveAllBlueprints([blueprint], 'C:/NovelA', session, shown('ja-JP'))).rejects.toThrow(japanese)
   })
 
   it('resolves when the IPC save succeeds', async () => {
