@@ -70,7 +70,7 @@ describe('AI output failure presentation', () => {
   it.each([
     ['architecture', 'Shorten the related story-architecture content or reduce this generation scope, then try again.'],
     ['validated-prefix', 'Reduce this structured batch and try again; validated content will not be silently truncated.'],
-    ['repair-contract', 'The structured repair contract cannot be safely edited in the interface. Reduce this task scope; if the problem persists, report the result code.'],
+    ['repair-contract', 'Reduce this task scope and try again.'],
     ['repair-candidate', 'Shorten the structured content being repaired, or split this import or generation into smaller batches, then try again.'],
   ])('provides safe non-configuration guidance for %s without an unrelated action', (sectionName, guidance) => {
     const presentation = presentWorkflowFailure(
@@ -83,6 +83,13 @@ describe('AI output failure presentation', () => {
 
     expect(presentation.guidance).toBe(guidance)
     expect(presentation).not.toHaveProperty('action')
+  })
+
+  it.each(['repair-contract', 'unlisted-section'])('预算不足的建议不让作者去记结果码：%s', sectionName => {
+    const zh = presentWorkflowFailure('prompt_budget_exhausted', 'safe report summary', shown('zh-CN'), false, promptBudgetReport(sectionName))
+    const en = presentWorkflowFailure('prompt_budget_exhausted', 'safe report summary', shown('en-US'), false, promptBudgetReport(sectionName))
+    expect(zh.guidance).toBe(sectionName === 'repair-contract' ? '请缩小本次任务范围后重试。' : '请缩小本次生成范围后重试。')
+    expect(en.guidance).toBe(sectionName === 'repair-contract' ? 'Reduce this task scope and try again.' : 'Reduce this generation scope and try again.')
   })
 })
 

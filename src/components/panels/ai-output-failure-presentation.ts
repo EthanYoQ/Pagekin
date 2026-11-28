@@ -81,8 +81,8 @@ function promptBudgetAdjustment(
   if (sectionName === 'repair-contract') {
     return {
       guidance: locale === 'zh-CN'
-        ? '结构化修复合同不能在界面中安全编辑。请缩小本次任务范围；若问题持续，请记录结果码并反馈。'
-        : 'The structured repair contract cannot be safely edited in the interface. Reduce this task scope; if the problem persists, report the result code.',
+        ? '请缩小本次任务范围后重试。'
+        : 'Reduce this task scope and try again.',
     }
   }
   if (
@@ -100,8 +100,8 @@ function promptBudgetAdjustment(
   }
   return {
     guidance: locale === 'zh-CN'
-      ? '请缩小本次生成范围后重试；若问题持续，请记录结果码并反馈。'
-      : 'Reduce this generation scope and try again; if the problem persists, report the result code.',
+      ? '请缩小本次生成范围后重试。'
+      : 'Reduce this generation scope and try again.',
   }
 }
 
