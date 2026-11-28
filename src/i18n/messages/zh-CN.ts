@@ -306,6 +306,8 @@ export const zhCN = {
   'error.characterRosterWriteFailed': '角色卡没有改动。这次修改没能写进作品，请再试一次。',
   'error.draftWriteFailed': '已存的稿件都还在。这次改动没有保存成功，请再试一次。',
   'error.blueprintWriteFailed': '已有的章节蓝图都还在。这次修改没能写进作品，请再试一次。',
+  'error.blueprintGenerationFailedRecoveryKept': '原有蓝图未改动，已生成的内容存入了恢复稿。蓝图生成失败，可点「编辑恢复稿」或重新生成。',
+  'error.blueprintGenerationFailedNothingKept': '原有蓝图未改动。蓝图生成失败，请点「AI 生成蓝图」重试。',
   'error.projectCoreWriteFailed': '故事设定与架构没有改动。这次修改没能写进作品，请再试一次。',
   'error.projectClearFailed': '作品内容没有被清除。这次清除没能完成，请再试一次。',
   'error.projectClearRestoreFailed': '作品库里的内容没有被清除，但有章节正文文件没能挪回作品文件夹，暂存在作品数据的 trash 文件夹里。请把它们挪回作品文件夹后再试。',
