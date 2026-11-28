@@ -44,3 +44,8 @@ describe('知识库失败显示主进程给的具体说明（#899）', () => {
     expect(thrown).toMatchObject({ code: 'PROJECT_STORAGE_PATH_UNSUPPORTED' })
   })
 })
+
+it('只带 failure、不带旧 errorCode 的失败也抛出，不当成正常值返回', () => {
+  expect(() => unwrapKnowledgeValue(receivedIpcResult({ success: false, failure: { code: 'IPC_HANDLER_FAILED' } }) as never))
+    .toThrowError(KnowledgeBaseServiceError)
+})

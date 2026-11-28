@@ -34,7 +34,7 @@ export function unwrapKnowledgeValue<T>(result: T | AppFailure): T {
     result !== null &&
     'success' in result &&
     result.success === false &&
-    'errorCode' in result
+    ('errorCode' in result || 'failure' in result)
   ) {
     throw new KnowledgeBaseServiceError(resultFailure(result) ?? { code: result.errorCode })
   }

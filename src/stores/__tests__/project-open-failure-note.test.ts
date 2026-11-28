@@ -61,6 +61,7 @@ describe('故事设定生成结果没写进作品时说明白，不报「意外�
   it.each([
     ['主进程给了说明', { code: 'PROJECT_CORE_WRITE_FAILED', note: { key: 'error.projectCoreWriteFailed' } }],
     ['主进程只给了码', { code: 'PROJECT_CORE_WRITE_FAILED' }],
+    ['主进程说不出原因', { code: 'IPC_HANDLER_FAILED' }],
   ] as const)('%s', async (_name, failure) => {
     useLocaleStore.setState({ locale: 'en-US', interfaceLocale: 'en-US', initialized: true })
     useProjectStore.setState({ currentProject: { id: session.projectId, path: session.projectPath, sessionLease: session.leaseId, novelConfig } as never })
