@@ -292,3 +292,54 @@ describe('参考小说导入对话框新建的项目', () => {
     expect(ImportRunRepository.restart(RUN_ID, 'restarted-run')).toMatchObject({ coreWriteMode: 'fill-empty' })
   })
 })
+
+describe('对话框新建项目的导入失败后，作者改了设定再按当前项目导入同一本', () => {
+  const SOURCE_ID = '44444444-4444-4444-8444-444444444444'
+  const parsedChapters = CHAPTERS.map(item => {
+    const content = `参考正文${item.number}`
+    return { number: item.number, title: item.title, content,
+      contentFingerprint: createHash('sha256').update(content).digest('hex'), contentSize: Buffer.byteLength(content) }
+  })
+  function selectSource(runId: string, coreWriteMode: 'replace' | 'fill-empty') {
+    ImportRunRepository.beginParsing({
+      runId, purpose: 'reference', sourceFingerprint: 'f'.repeat(64), sourceIds: [SOURCE_ID],
+      sourceFingerprints: ['9'.repeat(64)], sourceDisplay: [{ displayName: '参考.txt', mediaType: 'text/plain', size: 256 }],
+      locale: 'zh-CN', coreWriteMode,
+    })
+  }
+
+  it('复用旧运行时只补空白，作者已填的设定和蓝图逐字不变', async () => {
+    selectSource(RUN_ID, 'replace')
+    ImportRunRepository.commitParsedSource(RUN_ID, SOURCE_ID, parsedChapters)
+    ImportRunRepository.finalizeParsing(RUN_ID)
+    const { execution } = ImportRunRepository.startOrResume(RUN_ID, 'first-try')
+    ImportRunRepository.fail(RUN_ID, 'knowledge', 'provider unavailable', execution)
+    ProjectCoreRepository.update(AUTHOR_FILLED)
+    BlueprintRepository.upsert(AUTHOR_BLUEPRINT)
+
+    selectSource('second-selection', 'fill-empty')
+    ImportRunRepository.commitParsedSource('second-selection', SOURCE_ID, parsedChapters)
+    expect(ImportRunRepository.finalizeParsing('second-selection')).toMatchObject({
+      classification: 'resumable', run: { id: RUN_ID, coreWriteMode: 'fill-empty' },
+    })
+    await runRemainingStages({ blueprintCalls: [] })
+
+    expect(ImportRunRepository.get(RUN_ID)).toMatchObject({ status: 'completed' })
+    expect(authorCore()).toEqual(AUTHOR_FILLED)
+    expect(BlueprintRepository.getByChapter(2)).toMatchObject({ title: '作者写的第2章蓝图', userGuidance: '作者的微操' })
+  })
+
+  it('解析到一半的旧运行被当前项目复用时也只补空白', () => {
+    selectSource(RUN_ID, 'replace')
+    selectSource('second-selection', 'fill-empty')
+
+    expect(ImportRunRepository.get(RUN_ID)).toMatchObject({ coreWriteMode: 'fill-empty' })
+  })
+
+  it('只补空白的运行被新项目请求复用时不改成整体写入', () => {
+    selectSource(RUN_ID, 'fill-empty')
+    selectSource('second-selection', 'replace')
+
+    expect(ImportRunRepository.get(RUN_ID)).toMatchObject({ coreWriteMode: 'fill-empty' })
+  })
+})
