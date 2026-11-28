@@ -140,6 +140,9 @@
   "src/services/project-clear-service.ts": {
     "authorOwned": 1
   },
+  "src/services/prompt-catalog.ts": {
+    "authorOwned": 1
+  },
   "src/services/workflows/chapter-workflow.ts": {
     "authorOwned": 1
   },

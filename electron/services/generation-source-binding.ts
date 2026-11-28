@@ -100,6 +100,9 @@ export interface GenerationSourceBindingResult {
     }[];
 }
 function fail(code: string): never { throw new Error(code); }
+function parsedPrompt(bytes: Buffer): { key?: unknown; writingLanguage?: unknown } | null {
+    try { return JSON.parse(bytes.toString('utf8')); } catch { return fail('GENERATION_PROMPT_INVALID'); }
+}
 const hash = (text: string | Buffer) => createHash('sha256').update(text).digest('hex');
 function stable(value: unknown): string {
     const sorted = (v: unknown): unknown => Array.isArray(v) ? v.map(sorted) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)).map(([k, item]) => [k, sorted(item)])) : v;
@@ -517,8 +520,8 @@ export function buildGenerationSourceBinding(deps: GenerationSourceBindingDepend
             for (const relative of [`prompts/${key}.${facts.language}.json`, ...(facts.language === 'zh-CN' ? [`prompts/${key}.json`] : [])]) {
                 const bytes = observe(root, relative, true);
                 if (!selected && bytes) {
-                    const parsed = JSON.parse(bytes.toString('utf8'));
-                    if (parsed.key !== key || (parsed.writingLanguage ?? 'zh-CN') !== facts.language)
+                    const parsed = parsedPrompt(bytes);
+                    if (!parsed || parsed.key !== key ||(parsed.writingLanguage ?? 'zh-CN') !== facts.language)
                         fail('GENERATION_PROMPT_INVALID');
                     selected = bytes;
                     scope = candidateScope + ':' + relative;

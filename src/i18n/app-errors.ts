@@ -295,6 +295,8 @@ const ERROR_KEYS = {
   GENERATION_REVIEW_REVISION_EMPTY: 'error.generationRevisionUnchanged',
   GENERATION_REVIEW_REVISION_NOOP: 'error.generationRevisionUnchanged',
   GENERATION_SKILL_MISSING: 'error.generationSkillUnavailable',
+  // 生成准入读到改坏的自定义提示词（外部改坏或键名与文件名对不上）；抛出过 IPC 只带码，说不出文件名。
+  GENERATION_PROMPT_INVALID: 'error.generationPromptInvalid',
   GENERATION_SKILL_INCOMPATIBLE: 'error.generationSkillUnavailable',
   GENERATION_SKILL_BUNDLE_DAMAGED: 'error.generationSkillBundleDamaged',
   // 途中保存了模型设置：续跑情节大纲时主进程抛前者，#453 的分派复核抛后者（#441）。

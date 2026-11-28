@@ -5,20 +5,17 @@ import { ipc } from './ipc-client'
 import { requireIpcSuccess } from './ipc-result'
 import { currentInterfaceLocale } from '../stores/locale-store'
 import { catalogNote, caughtFailure, failureText, authorError } from '../i18n/app-errors'
-import type { MessageKey } from '../i18n/core'
-import { codeOf, failureOf, note } from '../shared/failure'
+import { AuthorError, authorOwned, codeOf, failureCode, note, type Failure } from '../shared/failure'
 import type { PromptTemplate } from './prompt-templates'
 import { resolveWritingLanguage, type WritingLanguage } from '../shared/writing-language'
 
 const PROMPT_FILE_UNREADABLE = 'PROMPT_FILE_UNREADABLE'
-const DIAGNOSTIC_KEYS: Readonly<Record<string, MessageKey>> = {
-  PROMPT_TEMPLATE_INVALID: 'error.promptTemplateInvalid',
-  PROMPT_FILENAME_MISMATCH: 'error.promptFilenameMismatch',
-  [PROMPT_FILE_UNREADABLE]: 'error.promptFileUnreadable',
-}
-const diagnosticText = ({ error, failure }: PromptLoadDiagnostic) => {
-  const key = Object.hasOwn(DIAGNOSTIC_KEYS, error) ? DIAGNOSTIC_KEYS[error] : undefined
-  return failureText(currentInterfaceLocale(), failure ?? (key ? { note: catalogNote(key) } : failureOf(error)), { fallback: catalogNote('error.promptFileUnreadable') })
+/** 读取层自己拒绝的（会话已换、读不出）照它的说明；其余是文件内容坏了，说明写出文件名和处理办法。 */
+const diagnosticsFailure = (diagnostics: readonly PromptLoadDiagnostic[]): Failure => {
+  const rejected = diagnostics.find(item => item.failure)?.failure
+  if (rejected) return rejected
+  const file = authorOwned(diagnostics.map(item => item.path.split(/[\\/]/u).at(-1)!).join(', '))
+  return { code: failureCode(diagnostics[0]!.error) ?? PROMPT_FILE_UNREADABLE, note: catalogNote('error.promptFileDamaged', { file }) }
 }
 const diagnosticOf = (error: unknown): Pick<PromptLoadDiagnostic, 'error' | 'failure'> => {
   const failure = caughtFailure(error)
@@ -54,9 +51,10 @@ export interface PromptLoadReceipt {
   diagnostics: PromptLoadDiagnostic[]
 }
 
-export class PromptLoadDiagnosticsError extends Error {
+export class PromptLoadDiagnosticsError extends AuthorError {
   constructor(readonly diagnostics: readonly PromptLoadDiagnostic[]) {
-    super(diagnostics.map((item) => `${item.path}: ${diagnosticText(item)}`).join('\n'))
+    const failure = diagnosticsFailure(diagnostics)
+    super(failure, failureText(currentInterfaceLocale(), failure))
     this.name = 'PromptLoadDiagnosticsError'
   }
 }
