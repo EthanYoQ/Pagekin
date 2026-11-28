@@ -10,7 +10,9 @@ export function CrashPanel({ heading, diagnostics, onRetry }: { heading?: string
   const text = useLocaleStore(s => s.text)
   const [copy, setCopy] = useState<CopyState>('idle')
   const copyDiagnostics = () => {
-    navigator.clipboard.writeText(diagnostics()).then(() => setCopy('copied'), () => setCopy('failed'))
+    Promise.resolve()
+      .then(() => navigator.clipboard.writeText(diagnostics()))
+      .then(() => setCopy('copied'), () => setCopy('failed'))
   }
   const copyLabel = {
     idle: text('复制诊断信息', 'Copy diagnostics', '診断情報をコピー'),

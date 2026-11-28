@@ -36,7 +36,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   private diagnostics = () => {
     const { error, componentStack } = this.state
-    return [error?.stack || String(error), componentStack.trim()].filter(Boolean).join('\n\n')
+    return [error?.stack || error?.message || String(error), componentStack.trim()].filter(Boolean).join('\n\n')
   }
 
   render() {
