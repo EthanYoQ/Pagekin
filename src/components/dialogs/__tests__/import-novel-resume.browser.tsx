@@ -63,7 +63,7 @@ function importRun(overrides: Partial<ImportRunSnapshot> = {}): ImportRunSnapsho
     id: 'persisted-import', purpose: 'reference', rootRunId: 'persisted-import',
     effectNamespace: 'import:reference:persisted-import',
     sourceDisplay: [{ displayName: 'reference.txt', mediaType: 'text/plain', size: 20 }],
-    locale: 'zh-CN', stage: 'knowledge', status: 'ready', completedBatches: {}, lastError: '',
+    locale: 'zh-CN', stage: 'knowledge', status: 'ready', completedBatches: {},
     resumable: true, cancelRequested: false, totalChapters: 1, totalContentSize: 20,
     manifestChapterCount: 1, manifestContentSize: 20, manifestWordCount: 16,
     completedChapters: 0, createdAt: '2026-01-01', updatedAt: '2026-01-01',
@@ -340,7 +340,7 @@ describe('current-project reference import', () => {
       locale: 'en-US',
       stage: 'parsing',
       status: 'failed',
-      lastError: safeFailure,
+      lastFailure: safeFailure as never,
       unfinishedSourceDisplay: [{ displayName: 'secret-novel.txt', mediaType: 'text/plain', size: 20 }],
       completedSources: 0,
       totalSources: 1,
@@ -383,13 +383,39 @@ describe('current-project reference import', () => {
     }
 
     it.each([['旧', OLD_RECORD], ['新', NEW_RECORD]])('取消的%s记录不写上次失败', async (_kind, lastError) => {
-      const shown = await openWith(importRun({ stage: 'global', status: 'cancelled', lastError }))
+      const shown = await openWith(importRun({ stage: 'global', status: 'cancelled', lastFailure: lastError as never }))
       expect(shown).not.toContain('上次失败')
     })
 
     it.each([['旧', OLD_RECORD], ['新', NEW_RECORD]])('失败的%s记录只显示通用说明，不带存下的内容', async (_kind, lastError) => {
-      const shown = await openWith(importRun({ stage: 'global', status: 'failed', lastError }))
+      const shown = await openWith(importRun({ stage: 'global', status: 'failed', lastFailure: lastError as never }))
       expect(shown).toContain('上次失败：出了意外问题，暂时说不清原因。请再试一次。')
+      expect(shown).not.toContain('PRIVATE_DIAGNOSTIC_123')
+    })
+
+    it('失败记录存了码时显示这次失败的具体原因（#942）', async () => {
+      const shown = await openWith(importRun({ stage: 'global', status: 'failed', lastFailure: { code: 'IMPORT_INSPECTION_LIMIT' } as never }))
+      expect(shown).toContain('上次失败：等待确认的导入太多。请先完成或取消已打开的导入，再选择文件。')
+      expect(shown).not.toContain('IMPORT_INSPECTION_LIMIT')
+    })
+
+    it('失败记录存了目录键和参数时按参数显示（#942）', async () => {
+      const lastFailure = { code: 'IMPORT_SOURCE_SELECTION_FAILED', note: { key: 'error.authorManuscriptDuplicateChapter', params: { number: 3 } } } as never
+      const shown = await openWith(importRun({ stage: 'global', status: 'failed', lastFailure }))
+      expect(shown).toContain('上次失败：作者原稿包含重复的第 3 章；请修正章节号后重新选择。')
+    })
+
+    it('切换界面语言后，上次失败的原因跟着换语言（#942）', async () => {
+      await openWith(importRun({ stage: 'global', status: 'failed', lastFailure: { code: 'IMPORT_INSPECTION_LIMIT' } as never }))
+      await act(async () => useLocaleStore.setState({ locale: 'en-US' }))
+      const panel = page.getByTestId('import-resumable-run')
+      await expect.element(panel).toHaveTextContent('Too many imports are waiting to be confirmed. Finish or cancel the open imports, then choose files again.')
+      expect(panel.element().textContent).not.toContain('等待确认的导入太多')
+    })
+
+    it('存的码没登记时显示通用说明，不露码（#942）', async () => {
+      const shown = await openWith(importRun({ stage: 'global', status: 'failed', lastFailure: { code: 'PRIVATE_DIAGNOSTIC_123' } as never }))
+      expect(shown).toContain('上次失败：这次操作没有完成，出了意外问题。请再试一次；还不行，请把这条提示反馈给我们。')
       expect(shown).not.toContain('PRIVATE_DIAGNOSTIC_123')
     })
   })
@@ -417,7 +443,7 @@ describe('current-project reference import', () => {
     ['zh-CN', 'IMPORT_RUN_EXECUTION_STALE', '上次失败：出了意外问题，暂时说不清原因。请再试一次。'],
     ['en-US', '导入已取消，停在了已保存的进度处。', 'Stage: global; progress: 0/1'],
   ] as const)('shows the generic failure of a resumable run in the %s UI language, never its stored reason (#484)', async (locale, lastError, expected) => {
-    const failed = importRun({ id: 'failed-run', stage: 'global', status: 'failed', lastError })
+    const failed = importRun({ id: 'failed-run', stage: 'global', status: 'failed', lastFailure: lastError as never })
     invoke.mockImplementation(async (channel: string) => {
       if (channel === 'db:import-run-list-resumable') return [failed]
       if (channel === 'db:project-core-get') return null
@@ -734,7 +760,6 @@ describe('current-project reference import', () => {
       purpose: 'author-manuscript',
       stage: 'author-commit',
       status: 'failed',
-      lastError: 'pre-commit interruption',
       authorityFingerprint: 'a'.repeat(64),
       manifestFingerprint: 'f'.repeat(64),
       completedBatches: {},
@@ -886,7 +911,7 @@ describe('current-project reference import', () => {
   })
 
   it('discovers a failed run after reopen and continues the same persisted run id', async () => {
-    const resumable = importRun({ status: 'failed', stage: 'style', lastError: 'provider unavailable' })
+    const resumable = importRun({ status: 'failed', stage: 'style' })
     invoke.mockImplementation(async (channel: string) => {
       if (channel === 'db:import-run-list-resumable') return [resumable]
       if (channel === 'db:project-core-get') return null
@@ -951,7 +976,6 @@ describe('current-project reference import', () => {
       effectNamespace: 'import:author-manuscript:failed-author-postprocess',
       stage: 'author-postprocess',
       status: 'failed',
-      lastError: 'continuity unavailable',
       completedBatches: { 'author-commit': ['done'], 'author-publish': ['chapter:1'] },
     })
     durableAuthorChapters[resumable.id] = [1]
@@ -1242,7 +1266,6 @@ describe('current-project reference import', () => {
       sourceDisplay: [{ displayName: '雨城.txt', mediaType: 'text/plain', size: 40 }],
       status: 'failed',
       stage: 'parsing',
-      lastError: 'source read interrupted',
       completedChapters: 3,
       totalChapters: 8,
     })

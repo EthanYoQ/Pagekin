@@ -443,12 +443,9 @@ describe('ImportRunRepository', () => {
     it('marks a legacy run non-resumable when its frozen snapshots cannot reconstruct the manifest', () => {
       installLegacyRun(['only one frozen chapter'], 2)
 
-      expect(ImportRunRepository.get('legacy-run')).toMatchObject({
-        status: 'failed',
-        resumable: false,
-        lastError: expect.stringContaining('cannot be resumed'),
-        manifestWordCount: 0,
-      })
+      const legacy = ImportRunRepository.get('legacy-run')!
+      expect(legacy).toMatchObject({ status: 'failed', resumable: false, manifestWordCount: 0 })
+      expect(legacy).not.toHaveProperty('lastFailure')
       expect(() => ImportRunRepository.startOrResume('legacy-run', 'renderer-a'))
         .toThrow('IMPORT_RUN_NOT_STARTABLE')
     })
@@ -720,7 +717,7 @@ describe('ImportRunRepository', () => {
         `authority-fence-runner-${interruptedStatus}`,
       ).execution
       if (interruptedStatus === 'failed') {
-        ImportRunRepository.fail(oldRunId, 'author-commit', 'pre-commit interruption', oldExecution)
+        ImportRunRepository.fail(oldRunId, 'author-commit', { code: 'IMPORT_RUN_FAILED' }, oldExecution)
       } else {
         ImportRunRepository.requestCancel(oldRunId, oldExecution)
         ImportRunRepository.cancelAtBoundary(oldRunId, oldExecution)
@@ -827,7 +824,7 @@ describe('ImportRunRepository', () => {
     }, execution)
     ImportRunRepository.commitEffectReceipt(runId, 'author-commit', 'done', execution)
     ImportRunRepository.advanceStage(runId, 'author-commit', 'author-publish', execution)
-    ImportRunRepository.fail(runId, 'author-publish', 'publication unavailable', execution)
+    ImportRunRepository.fail(runId, 'author-publish', { code: 'IMPORT_RUN_FAILED' }, execution)
 
     const currentPreview = FinalizedDraftImportRepository.preview([{
       chapterNumber: imported.number,
@@ -937,7 +934,7 @@ describe('ImportRunRepository', () => {
 
     expect(ImportRunRepository.completeBatch('import-run-1', 'knowledge', checkpoint, execution)).toMatchObject({ newlyCompleted: true })
     expect(ImportRunRepository.completeBatch('import-run-1', 'knowledge', checkpoint, execution)).toMatchObject({ newlyCompleted: false })
-    ImportRunRepository.fail('import-run-1', 'knowledge', 'provider unavailable', execution)
+    ImportRunRepository.fail('import-run-1', 'knowledge', { code: 'IMPORT_RUN_FAILED' }, execution)
 
     expect(ImportRunRepository.listResumable()).toEqual([
       expect.objectContaining({
@@ -946,9 +943,30 @@ describe('ImportRunRepository', () => {
         status: 'failed',
         resumable: true,
         completedBatches: { knowledge: [checkpoint] },
-        lastError: 'provider unavailable',
+        lastFailure: { code: 'IMPORT_RUN_FAILED' },
       }),
     ])
+  })
+
+  it('存下失败的码与目录键，读回时原样交出（#942）', () => {
+    ImportRunRepository.prepare(request([chapter(1)]))
+    const execution = ImportRunRepository.startOrResume('import-run-1', 'test-runner').execution
+    const failure = { code: 'KNOWLEDGE_BASE_NATIVE_UNAVAILABLE', note: { key: 'error.importReferenceChapterNotWritten', params: { number: 2 } } }
+    ImportRunRepository.fail('import-run-1', 'knowledge', failure as never, execution)
+
+    expect(ImportRunRepository.get('import-run-1')).toMatchObject({ status: 'failed', lastFailure: failure })
+    expect(ImportRunRepository.listResumable()).toEqual([expect.objectContaining({ id: 'import-run-1', lastFailure: failure })])
+  })
+
+  it('旧记录存的是句子时不带失败原因，句子不出主进程（#942）', () => {
+    ImportRunRepository.prepare(request([chapter(1)]))
+    getProjectDb()!.prepare(`UPDATE import_runs SET status = 'failed', last_error = ? WHERE id = ?`)
+      .run("ENOENT: open 'C:\\Users\\Private\\secret.txt'", 'import-run-1')
+
+    const run = ImportRunRepository.get('import-run-1')!
+    expect(run).toMatchObject({ status: 'failed' })
+    expect(run.lastFailure).toBeUndefined()
+    expect(JSON.stringify(run)).not.toContain('secret.txt')
   })
 
   it('derives resumable knowledge progress from validated checkpoints across reopen and later stages', () => {
@@ -960,7 +978,7 @@ describe('ImportRunRepository', () => {
     expect(ImportRunRepository.get('import-run-1')).toMatchObject({
       completedChapters: 2, progressCompleted: 2, progressTotal: 3,
     })
-    ImportRunRepository.fail('import-run-1', 'knowledge', 'pause', execution)
+    ImportRunRepository.fail('import-run-1', 'knowledge', { code: 'IMPORT_RUN_FAILED' }, execution)
 
     closeProjectDatabase()
     initProjectDatabase(root)
@@ -1002,7 +1020,7 @@ describe('ImportRunRepository', () => {
     const checkpoint = commitKnowledge('import-run-1', execution, chapters)
     ImportRunRepository.completeBatch('import-run-1', 'knowledge', checkpoint, execution)
     ImportRunRepository.advanceStage('import-run-1', 'knowledge', 'global', execution)
-    ImportRunRepository.fail('import-run-1', 'global', 'restart fixture', execution)
+    ImportRunRepository.fail('import-run-1', 'global', { code: 'IMPORT_RUN_FAILED' }, execution)
 
     closeProjectDatabase()
     initProjectDatabase(root)
@@ -1018,7 +1036,7 @@ describe('ImportRunRepository', () => {
   it('classifies only completed observable effects as duplicate, new, or conflict', () => {
     ImportRunRepository.prepare(request([chapter(1)]))
     const execution = ImportRunRepository.startOrResume('import-run-1', 'test-runner').execution
-    ImportRunRepository.fail('import-run-1', 'knowledge', 'interrupted', execution)
+    ImportRunRepository.fail('import-run-1', 'knowledge', { code: 'IMPORT_RUN_FAILED' }, execution)
     expect(ImportRunRepository.prepare(request([chapter(1)], { runId: 'failed-reselection' })).classification)
       .toBe('resumable')
 
@@ -1234,7 +1252,7 @@ describe('ImportRunRepository', () => {
     ])
     expect(finalizeA()).toMatchObject({ classification: 'new' })
     const execution = ImportRunRepository.startOrResume('restart-source', 'restart-worker').execution
-    ImportRunRepository.fail('restart-source', 'knowledge', 'provider unavailable', execution)
+    ImportRunRepository.fail('restart-source', 'knowledge', { code: 'IMPORT_RUN_FAILED' }, execution)
 
     expect(ImportRunRepository.restart('restart-source', 'restarted-source')).toMatchObject({
       id: 'restarted-source',
