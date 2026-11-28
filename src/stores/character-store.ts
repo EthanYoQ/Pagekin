@@ -21,8 +21,8 @@ import { randomUUID } from '../utils/id'
 import { parseJsonOrUndefined } from '../shared/ignore-failure'
 import { useEditorStore } from './editor-store'
 import { useProjectStore } from './project-store'
-import { currentInterfaceLocale, useLocaleStore } from './locale-store'
-import { displayedErrorMessage, failureText, resultFailure } from '../i18n/app-errors'
+import { currentInterfaceLocale } from './locale-store'
+import { displayedErrorMessage, resultFailure, authorError, authorErrorOr } from '../i18n/app-errors'
 import { note } from '../shared/failure'
 import { workflowMainProcessError } from '../services/workflows/workflow-project-session'
 import {
@@ -270,13 +270,10 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
           ? await ipc.invokeWithProjectSession(session, 'character-avatar:commit', characterId, draft.base64)
           : await ipc.invokeWithProjectSession(session, 'character-avatar:remove', characterId)
       } catch (error) {
-        const text = useLocaleStore.getState().text
-        throw new Error(text('头像保存失败，档案其它内容已保存。', 'The avatar could not be saved. Other profile changes were saved.'), { cause: error })
+        throw authorError(currentInterfaceLocale(), { note: note('头像保存失败，档案其它内容已保存。', 'The avatar could not be saved. Other profile changes were saved.') }, { cause: error })
       }
       if (!response.success) {
-        throw new Error(failureText(currentInterfaceLocale(), resultFailure(response), {
-          fallback: note('头像保存失败，档案其它内容已保存。', 'The avatar could not be saved. Other profile changes were saved.'),
-        }))
+        throw authorErrorOr(currentInterfaceLocale(), resultFailure(response), note('头像保存失败，档案其它内容已保存。', 'The avatar could not be saved. Other profile changes were saved.'))
       }
       characterAvatarChanges.dispatchEvent(new CustomEvent('changed', { detail: { context: session, characterId } }))
       if (isCharacterProjectSessionCurrent(session) && get().avatarDrafts[characterId] === draft) get().stageAvatar(characterId, null, session)
@@ -665,14 +662,14 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
       || get().lastError !== null
       || get().rosterRevision === null
     ) {
-      return Promise.reject(new Error(useLocaleStore.getState().text('角色数据仍在切换项目，已拒绝跨项目保存', 'Character data is still switching books, so the save was refused.')))
+      return Promise.reject(authorError(currentInterfaceLocale(), { note: note('角色数据仍在切换项目，已拒绝跨项目保存', 'Character data is still switching books, so the save was refused.') }))
     }
     if (
       characterSaveInFlight
       && sameProjectSessionContext(characterSaveInFlight.projectSession, projectSession)
     ) {
       if (characterSaveInFlight.kind === 'delete') {
-        return Promise.reject(new Error(useLocaleStore.getState().text('角色身份操作正在进行（删除中），请等待完成后再保存', 'A character is being deleted. Wait for it to finish, then save.')))
+        return Promise.reject(authorError(currentInterfaceLocale(), { note: note('角色身份操作正在进行（删除中），请等待完成后再保存', 'A character is being deleted. Wait for it to finish, then save.') }))
       }
       return characterSaveInFlight.promise
     }
@@ -680,15 +677,15 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
       characterIdentityMutationInFlight
       && sameProjectSessionContext(characterIdentityMutationInFlight.projectSession, projectSession)
     ) {
-      return Promise.reject(new Error(useLocaleStore.getState().text('角色身份操作正在进行，请稍后再保存', 'Another character change is in progress. Save again in a moment.')))
+      return Promise.reject(authorError(currentInterfaceLocale(), { note: note('角色身份操作正在进行，请稍后再保存', 'Another character change is in progress. Save again in a moment.') }))
     }
     const { characters, stateEffectiveChapter } = get()
     const expectedRevision = get().rosterRevision
     const expectedIdentityRevision = get().identityRevision
     if (expectedRevision === null) {
-      return Promise.reject(new Error(useLocaleStore.getState().text('角色名单尚未完成安全读取，已拒绝保存', 'The cast has not finished loading, so the save was refused.')))
+      return Promise.reject(authorError(currentInterfaceLocale(), { note: note('角色名单尚未完成安全读取，已拒绝保存', 'The cast has not finished loading, so the save was refused.') }))
     }
-    if (characters.some(c => !c.characterId) || new Set(characters.map(c => c.characterId)).size !== characters.length) return Promise.reject(new Error(useLocaleStore.getState().text('角色身份尚未确认；旧草稿已保留，不按名字自动绑定。', 'Some character identities are not confirmed. The earlier draft is kept and is not matched by name.')))
+    if (characters.some(c => !c.characterId) || new Set(characters.map(c => c.characterId)).size !== characters.length) return Promise.reject(authorError(currentInterfaceLocale(), { note: note('角色身份尚未确认；旧草稿已保留，不按名字自动绑定。', 'Some character identities are not confirmed. The earlier draft is kept and is not matched by name.') }))
     set({ saving: true, identityBusy: true })
     const saveLedger = readCharacterDraftLedger(projectKey)
     const renames = getCharacterDraftRenames(saveLedger, projectKey)
@@ -715,7 +712,7 @@ export const useCharacterStore = create<CharacterState>()((set, get) => ({
       if (!isCharacterProjectSessionCurrent(projectSession)) return
       const result = await ipc.invokeWithProjectSession(projectSession, 'db:character-roster-commit', { ...payload, operationId }, projectKey)
       if (!result.success || !result.receipt) {
-        throw workflowMainProcessError(currentInterfaceLocale(), result.error, '角色卡保存失败', 'Could not save the character cards.')
+        throw workflowMainProcessError(currentInterfaceLocale(), resultFailure(result), '角色卡保存失败', 'Could not save the character cards.')
       }
       if (!isCharacterProjectSessionCurrent(projectSession)) return
       const savedRosterCards = result.receipt.snapshot.entries.map(characterCardFromRosterEntry)

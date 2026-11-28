@@ -120,7 +120,7 @@ describe('版本切换器', () => {
     const error = vi.spyOn(toast, 'error').mockImplementation(() => undefined)
     const answer = backend.invoke.getMockImplementation()!
     backend.invoke.mockImplementation(async (channel, ...args) => channel === 'db:draft-update-content'
-      ? { success: false, error: 'Error: DRAFT_FINALIZED_READ_ONLY' }
+      ? { success: false, failure: { code: 'DRAFT_FINALIZED_READ_ONLY' } }
       : answer(channel, ...args))
     await mount()
     await openDraft(v2.id)
@@ -205,7 +205,7 @@ describe('标签与外壳', () => {
       id: `review-${sourcePath}-1`, name: '审稿报告：第3章', type: 'review-report', content: AI_REVIEW, filePath: sourcePath,
       reviewReport: AI_REVIEW, chapterNumber: 3, chapterDir: 'ai-novel://draft/ch3', reviewId: review.id, projectKey: SESSION.projectPath,
     }))
-    await vi.waitFor(() => expect(error).toHaveBeenCalledWith('打开第 3 章失败：数据库忙'))
+    await vi.waitFor(() => expect(error).toHaveBeenCalledWith('打开第 3 章失败：出了意外问题，暂时说不清原因。请再试一次。'))
   })
 
   it.each([

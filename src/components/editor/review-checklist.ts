@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { captureProjectSession, isProjectSessionCurrent, isProjectSessionPath } from '../project-session-gate'
 import { useProjectStore } from '../../stores/project-store'
 import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
-import { authorError, displayedErrorMessage, resultFailure } from '../../i18n/app-errors'
+import { authorError, caughtFailure, displayedErrorMessage, failureText, resultFailure } from '../../i18n/app-errors'
 import { authorOwned, note } from '../../shared/failure'
 import { useLLMStore } from '../../stores/llm-store'
 import { ipc } from '../../services/ipc-client'
@@ -504,6 +504,7 @@ export function useReviewChecklist({
       const createResult = requireIpcSuccess(
         createResponse,
         text('保存确认审稿清单', 'Save confirmed review checklist'),
+        note('确认审稿清单时发生错误。', 'An error occurred while confirming the review checklist.'),
       )
       if (!isProjectSessionCurrent(projectSession)) return null
       if (!isReviewId(createResult.id)) {
@@ -517,11 +518,9 @@ export function useReviewChecklist({
       return saved
     } catch (error) {
       if (!isProjectSessionCurrent(projectSession)) return null
-      setChecklistError(displayedErrorMessage(
-        currentInterfaceLocale(),
-        error,
-        text('确认审稿清单时发生错误。', 'An error occurred while confirming the review checklist.'),
-      ))
+      setChecklistError(failureText(currentInterfaceLocale(), caughtFailure(error), {
+        fallback: note('确认审稿清单时发生错误。', 'An error occurred while confirming the review checklist.'),
+      }))
     } finally {
       if (isProjectSessionCurrent(projectSession)) setConfirming(false)
     }
@@ -643,8 +642,9 @@ export function useReviewChecklist({
       return null
     } catch (error) {
       if (!isProjectSessionCurrent(projectSession)) return null
-      return displayedErrorMessage(currentInterfaceLocale(), error,
-        text('启动审稿修稿时发生错误。', 'An error occurred while starting the review-driven revision.'))
+      return failureText(currentInterfaceLocale(), caughtFailure(error), {
+        fallback: note('启动审稿修稿时发生错误。', 'An error occurred while starting the review-driven revision.'),
+      })
     } finally {
       if (isProjectSessionCurrent(projectSession)) setProcessing(false)
     }
@@ -698,12 +698,10 @@ export function useReviewChecklist({
       if (!isProjectSessionCurrent(projectSession)) return
       const run = useWorkflowStore.getState().history.find(candidate => candidate.id === runId)
       if (!run || run.status !== 'completed') {
-        throw run?.failure || !run?.error
-          ? authorError(currentInterfaceLocale(), run?.failure ?? { note: note(
-            '复验任务未完成；可在修复模型或资源问题后再次重试。',
-            'The recheck did not complete. Fix the model or resource issue and retry.',
-          ) })
-          : new Error(run.error)
+        throw authorError(currentInterfaceLocale(), run?.failure ?? { note: note(
+          '复验任务未完成；可在修复模型或资源问题后再次重试。',
+          'The recheck did not complete. Fix the model or resource issue and retry.',
+        ) })
       }
       // 界面上的循环由复验完成的广播触发重读；这里只读一次决定提示。
       const refreshed = await ipc.invokeWithProjectSession(projectSession, 'db:review-cycle-get', sourceReviewId, projectSession.projectPath)

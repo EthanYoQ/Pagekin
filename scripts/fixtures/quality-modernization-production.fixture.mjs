@@ -650,7 +650,7 @@ test('isolated production commands persist the selected phase operations', async
                 physicalState: sourceCharacter.cs_physical_state, mentalState: sourceCharacter.cs_mental_state,
                 keyItems: sourceCharacter.cs_key_items, recentEvents: sourceCharacter.cs_recent_events,
                 updatedAtChapter: sourceCharacter.cs_updated_at_chapter, provenance: JSON.parse(sourceCharacter.cs_provenance) } }) }] }, project.rootPath, session)
-          assert.ok(result?.success, `PLANNING_SOURCE_CHARACTER_NOT_SAVED:${result?.error}`)
+          assert.ok(result?.success, `PLANNING_SOURCE_CHARACTER_NOT_SAVED:${result?.failure?.code}`)
           const receipt = result.receipt ?? result
           const created = receipt.created.filter(item => item.selectionKey === selectionKey)
           assert.equal(created.length, 1, 'PLANNING_SOURCE_ID_MAPPING_MISSING')
@@ -668,7 +668,7 @@ test('isolated production commands persist the selected phase operations', async
           intent: 'manual_edit', schemaVersion: 1, expectedRevision: roster.revision, expectedIdentityRevision: roster.identityRevision,
           entries: roster.entries.map(entry => ({ ...entry, relationships: relations.filter(item => targetId(item.source_character_id) === entry.characterId)
             .map(item => ({ targetCharacterId: targetId(item.target_character_id), relation: item.relation })) })) }, project.rootPath, session)
-        assert.ok(linked?.success, `PLANNING_SOURCE_RELATIONSHIPS_NOT_SAVED:${linked?.error}`)
+        assert.ok(linked?.success, `PLANNING_SOURCE_RELATIONSHIPS_NOT_SAVED:${linked?.failure?.code}`)
         roster = await invoke('db:character-roster-read', project.rootPath, session)
         for (const sourceCharacter of planningSource.rows.characters) {
           const actual = roster.entries.find(item => item.characterId === targetId(sourceCharacter.character_id))
@@ -721,7 +721,7 @@ test('isolated production commands persist the selected phase operations', async
           intent: 'manual_edit', schemaVersion: 1, expectedRevision: roster.revision, expectedIdentityRevision: roster.identityRevision,
           entries: scene.characters.map(name => ({ characterId: `draft:${randomUUID()}`, name, role: 'protagonist',
             gender: '', age: '', appearance: '', personality: '', background: '', abilities: '', motivation: '', arc: '', notes: '', relationships: [] })) }, project.rootPath, session)
-        assert.ok(saved?.success, `AUTHOR_ROSTER_NOT_SAVED:${saved?.error}`)
+        assert.ok(saved?.success, `AUTHOR_ROSTER_NOT_SAVED:${saved?.failure?.code}`)
       }
       for (const entry of fullRun ? [] : scene.chapters.slice(1)) db.prepare('INSERT INTO blueprints(chapter_number,title,role,purpose,key_events,characters,user_guidance) VALUES(?,?,?,?,?,?,?)')
         .run(entry.number, request.phase === 'early-context' ? scene.title : `作者预置第${entry.number}章`, '发展', entry.brief, entry.requiredEvents.join('；'), JSON.stringify(scene.characters),
@@ -799,7 +799,7 @@ test('isolated production commands persist the selected phase operations', async
           intent: 'manual_edit', schemaVersion: 1, expectedRevision: roster.revision, expectedIdentityRevision: roster.identityRevision,
           entries: roster.entries.map(entry => entry.currentState ? { ...entry,
             currentState: { ...entry.currentState, mentalState: continuityCase.authorMentalState } } : entry) }, project.rootPath, session)
-        assert.ok(edited?.success, `AUTHOR_STATE_NOT_SAVED:${edited?.error}`)
+        assert.ok(edited?.success, `AUTHOR_STATE_NOT_SAVED:${edited?.failure?.code}`)
       }
       const file = path.join(target.isolationRoot, 'predecessor.json'), previous = json(file)
       const record = previous.candidates.find(item => item.required)

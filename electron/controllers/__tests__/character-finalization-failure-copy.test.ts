@@ -39,7 +39,7 @@ vi.mock('../kb-controller', () => ({ getEmbeddingConfig: () => null, getRerankCo
 import { registerGenerationController } from '../generation-controller'
 import { registerFinalizationController } from '../finalization-controller'
 import { ModelExecutionLeaseRegistry } from '../../services/model-execution-lease'
-import { appErrorMessage, displayedErrorMessage, receivedIpcResult } from '../../../src/i18n/app-errors'
+import { appErrorMessage, displayedErrorMessage, receivedIpcResult, resultFailure } from '../../../src/i18n/app-errors'
 import { workflowMainProcessError } from '../../../src/services/workflows/workflow-project-session'
 import type { Failure } from '../../../src/shared/failure'
 import type { InterfaceLocale } from '../../../src/i18n/types'
@@ -65,7 +65,7 @@ async function finalizationText(pending: Promise<unknown>, locale: InterfaceLoca
   expect(result.success).toBe(false)
   const reason = 'failure' in result
     ? (await import('../../../src/services/finalization-client')).finalizationFailure(result as never)
-    : result.error
+    : resultFailure(result)
   return workflowMainProcessError(shown(locale), reason, summary[0] as '定稿事务未提交', summary[1] as 'The finalization transaction was not committed.').message
 }
 

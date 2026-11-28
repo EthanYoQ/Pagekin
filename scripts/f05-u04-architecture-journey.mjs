@@ -286,7 +286,7 @@ async function main() {
     assert.equal(opened.success, true, opened.error)
     context = { projectId: project.projectId, projectPath: project.projectPath, leaseId: opened.project.sessionLease }
     const seeded = await invoke(page, 'db:project-core-update', { premise }, project.projectPath, context)
-    assert.equal(seeded.success, true, seeded.error)
+    assert.equal(seeded.success, true, seeded.failure?.code)
     const seededCore = await invoke(page, 'db:project-core-get', project.projectPath, context)
     assert.equal(seededCore?.premise, premise, 'worldbuilding prerequisite premise was not persisted')
     const roster = await invoke(page, 'db:character-roster-read', project.projectPath, context)
@@ -296,7 +296,7 @@ async function main() {
       operationId: randomUUID(), expectedRevision: roster.revision, expectedIdentityRevision: roster.identityRevision,
       schemaVersion: 1, intent: 'manual_edit', entries: [character],
     }, project.projectPath, context)
-    assert.equal(rosterSeed.success, true, rosterSeed.error)
+    assert.equal(rosterSeed.success, true, rosterSeed.failure?.code)
     const outlinedCore = await invoke(page, 'db:project-core-get', project.projectPath, context)
     assert(outlinedCore?.charactersArch?.includes('林岚'), 'outline prerequisite roster projection was not persisted')
     assert.equal((await invoke(page, 'llm:save-model', model)).success, true)

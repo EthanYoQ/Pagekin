@@ -209,6 +209,55 @@ describe('project clear repositories', () => {
     }
   })
 
+  it('库清除失败且章节文件挪不回原处时报独立的码，不说「什么都没清」', () => {
+    const db = {
+      prepare: vi.fn((sql: string) => ({ sql, run: vi.fn() })),
+      transaction: vi.fn(() => () => { throw new Error('db failed') }),
+    }
+    const projectPath = fs.mkdtempSync(path.join(os.tmpdir(), 'writer-clear-restore-'))
+    prepareClearStorageFixture(projectPath)
+    const generatedFile = path.join(projectPath, '第3章 回滚.txt')
+    fs.writeFileSync(generatedFile, 'chapter three')
+    vi.mocked(getProjectDb).mockReturnValue(db as never)
+    vi.mocked(getCurrentProjectPath).mockReturnValue(projectPath)
+    const rename = fs.renameSync.bind(fs)
+    const renameSpy = vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+      if (String(to) === generatedFile) throw new Error('EBUSY: resource busy or locked')
+      return rename(from, to)
+    })
+
+    try {
+      expect(() => ProjectClearRepository.clearGeneratedData({ generatedText: true })).toThrow('PROJECT_CLEAR_RESTORE_FAILED')
+      expect(fs.existsSync(generatedFile)).toBe(false)
+    } finally {
+      renameSpy.mockRestore()
+      fs.rmSync(projectPath, { recursive: true, force: true })
+    }
+  })
+
+  it('库清除失败时原处已有同名文件、章节文件挪不回去，也报独立的码', () => {
+    const projectPath = fs.mkdtempSync(path.join(os.tmpdir(), 'writer-clear-occupied-'))
+    const generatedFile = path.join(projectPath, '第3章 回滚.txt')
+    const db = {
+      prepare: vi.fn((sql: string) => ({ sql, run: vi.fn() })),
+      transaction: vi.fn(() => () => {
+        fs.writeFileSync(generatedFile, 'written meanwhile')
+        throw new Error('db failed')
+      }),
+    }
+    prepareClearStorageFixture(projectPath)
+    fs.writeFileSync(generatedFile, 'chapter three')
+    vi.mocked(getProjectDb).mockReturnValue(db as never)
+    vi.mocked(getCurrentProjectPath).mockReturnValue(projectPath)
+
+    try {
+      expect(() => ProjectClearRepository.clearGeneratedData({ generatedText: true })).toThrow('PROJECT_CLEAR_RESTORE_FAILED')
+      expect(fs.readFileSync(generatedFile, 'utf8')).toBe('written meanwhile')
+    } finally {
+      fs.rmSync(projectPath, { recursive: true, force: true })
+    }
+  })
+
   it('does not restore chapter files after a committed clear when trash cleanup fails', () => {
     const projectPath = fs.mkdtempSync(path.join(os.tmpdir(), 'writer-clear-committed-'))
     prepareClearStorageFixture(projectPath)

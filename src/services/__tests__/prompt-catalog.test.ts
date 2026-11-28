@@ -172,7 +172,7 @@ describe('PromptCatalog lifecycle', () => {
       { ...builtin, key: 'next_chapter_draft', content: 'next builtin' },
     ], adapter, () => null)
 
-    await expect(catalog.resolve(builtin.key)).rejects.toThrow('内容结构无效')
+    await expect(catalog.resolve(builtin.key)).rejects.toThrow('first_chapter_draft.json')
     await expect(catalog.resolve('next_chapter_draft')).resolves.toMatchObject({
       template: { content: 'next builtin' },
       source: 'builtin',
@@ -195,9 +195,9 @@ describe('PromptCatalog lifecycle', () => {
     const catalog = new PromptCatalog([builtin], adapter, () => null)
 
     await expect(catalog.resolve(builtin.key, undefined, 'zh-CN')).resolves.toMatchObject({ source: 'builtin' })
-    await expect(catalog.resolve(builtin.key, undefined, 'en-US')).rejects.toThrow('invalid JSON')
+    await expect(catalog.resolve(builtin.key, undefined, 'en-US')).rejects.toThrow('first_chapter_draft.en-US.json')
     await expect(catalog.list(undefined, 'zh-CN')).resolves.toHaveLength(1)
-    await expect(catalog.list(undefined, 'en-US')).rejects.toThrow('invalid JSON')
+    await expect(catalog.list(undefined, 'en-US')).rejects.toThrow('first_chapter_draft.en-US.json')
   })
 
   it.each(['save', 'delete'] as const)('keeps an English diagnostic after a Chinese %s', async (action) => {
@@ -218,7 +218,7 @@ describe('PromptCatalog lifecycle', () => {
       : { action, scope: 'global' as const, key: builtin.key, writingLanguage: 'zh-CN' as const }
 
     await expect(catalog.commit(change)).resolves.toBe(true)
-    await expect(catalog.resolve(builtin.key, undefined, 'en-US')).rejects.toThrow('English override is damaged')
+    await expect(catalog.resolve(builtin.key, undefined, 'en-US')).rejects.toThrow('first_chapter_draft.en-US.json')
   })
 
   it('preloads project diagnostics only for the requested writing language', async () => {
@@ -236,7 +236,7 @@ describe('PromptCatalog lifecycle', () => {
     const catalog = new PromptCatalog([builtin], adapter, () => session)
 
     await expect(catalog.loadProject(session, 'zh-CN')).resolves.toBe(true)
-    await expect(catalog.loadProject(session, 'en-US')).rejects.toThrow('English project override is damaged')
+    await expect(catalog.loadProject(session, 'en-US')).rejects.toThrow('project/first_chapter_draft.en-US.json')
   })
 
   it('does not leak project diagnostics into a global-only list', async () => {
@@ -248,7 +248,7 @@ describe('PromptCatalog lifecycle', () => {
     })
     const catalog = new PromptCatalog([builtin], adapter, () => session)
 
-    await expect(catalog.resolve(builtin.key, session)).rejects.toThrow('project damaged')
+    await expect(catalog.resolve(builtin.key, session)).rejects.toThrow('project/first_chapter_draft.json')
     await expect(catalog.list()).resolves.toEqual([{
       template: builtin,
       source: 'builtin',
@@ -291,6 +291,53 @@ it('explains a cached damaged project prompt in the interface language current a
     await expect(catalog.resolve(builtin.key, session)).rejects.toThrow('提示词内容结构无效')
     useLocaleStore.setState({ locale: 'en-US' })
     await expect(catalog.resolve(builtin.key, session)).rejects.toThrow('The prompt file has an invalid structure.')
+  } finally {
+    spy.mockRestore()
+    useLocaleStore.setState(original, true)
+  }
+})
+
+it('项目提示词读不出时显示目录说明，不显示解析器原文', async () => {
+  const { useLocaleStore } = await import('../../stores/locale-store')
+  const original = useLocaleStore.getState()
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const spy = vi.spyOn(ipc, 'invokeWithProjectSession').mockImplementation((async (_session: unknown, channel: string) => {
+    if (channel === 'fs:check-exists') return true
+    if (channel === 'fs:list-dir') return [{ name: `${builtin.key}.json`, path: `${builtin.key}.json`, isDir: false }]
+    if (channel === 'fs:read-file') return { success: true, content: '{"key": "first_chapter_draft",' }
+    throw new Error(`unexpected ${channel}`)
+  }) as never)
+  try {
+    const catalog = new PromptCatalog([builtin], persistence({ loadProject: ipcPromptPersistence.loadProject }), () => session)
+    const shownFor = async (locale: 'zh-CN' | 'en-US' | 'ja-JP') => {
+      useLocaleStore.setState({ interfaceLocale: locale, locale: locale === 'zh-CN' ? 'zh-CN' : 'en-US' })
+      return catalog.resolve(builtin.key, session).then(() => '', (error: Error) => error.message)
+    }
+    expect(await shownFor('en-US')).toBe(`${builtin.key}.json: The prompt file cannot be read, or its content is malformed.`)
+    expect(await shownFor('zh-CN')).toBe(`${builtin.key}.json: 提示词文件读不出来，或者内容格式不对`)
+    expect(await shownFor('ja-JP')).toBe(`${builtin.key}.json: プロンプトファイルを読み込めないか、内容の形式が正しくありません。`)
+  } finally {
+    spy.mockRestore()
+    warn.mockRestore()
+    useLocaleStore.setState(original, true)
+  }
+})
+
+it('原来能看到的具体说明逐字保留：项目提示词读取被拒时说明租约过期', async () => {
+  const { useLocaleStore } = await import('../../stores/locale-store')
+  const { catalogNote } = await import('../../i18n/app-errors')
+  const original = useLocaleStore.getState()
+  const spy = vi.spyOn(ipc, 'invokeWithProjectSession').mockImplementation((async (_session: unknown, channel: string) => {
+    if (channel === 'fs:check-exists') return true
+    if (channel === 'fs:list-dir') return [{ name: `${builtin.key}.json`, path: `${builtin.key}.json`, isDir: false }]
+    if (channel === 'fs:read-file') return { success: false, failure: { code: 'PROJECT_SESSION_STALE', note: catalogNote('error.projectLeaseExpired') } }
+    throw new Error(`unexpected ${channel}`)
+  }) as never)
+  try {
+    useLocaleStore.setState({ interfaceLocale: 'en-US', locale: 'en-US' })
+    const catalog = new PromptCatalog([builtin], persistence({ loadProject: ipcPromptPersistence.loadProject }), () => session)
+    const shown = await catalog.resolve(builtin.key, session).then(() => '', (error: Error) => error.message)
+    expect(shown).toBe(`${builtin.key}.json: The project lease has expired; the operation was rejected.`)
   } finally {
     spy.mockRestore()
     useLocaleStore.setState(original, true)

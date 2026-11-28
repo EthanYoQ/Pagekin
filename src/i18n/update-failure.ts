@@ -4,7 +4,7 @@ import { catalogNote, wireNote } from './app-errors'
 import type { MessageKey } from './messages/en-US'
 
 /** 这些原因有自己的说明，盖过码的说明；其余原因按码说明。 */
-const REASON_KEYS: Partial<Record<UpdateErrorReason, Exclude<MessageKey, 'error.unknown'>>> = {
+const REASON_KEYS: Partial<Record<UpdateErrorReason, MessageKey>> = {
   'configuration-missing': 'error.updateConfigurationMissing',
   network: 'error.updateNetwork',
   proxy: 'error.updateProxy',

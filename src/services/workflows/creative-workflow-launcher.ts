@@ -1,11 +1,11 @@
-import { displayedErrorMessage } from '../../i18n/app-errors'
+import { displayedErrorMessage, authorError } from '../../i18n/app-errors'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { projectSessionContextFromProject, sameProjectSessionContext } from '../../shared/project-session-context'
 import { randomUUID } from '../../utils/id'
 import { useProjectStore } from '../../stores/project-store'
 import {
   useWorkflowStore,
-  workflowResourceConflictMessage,
+  workflowResourceConflict,
   type WorkflowDefinition,
   type WorkflowStatus,
 } from '../../stores/workflow-store'
@@ -15,6 +15,7 @@ import {
   guardArchitectureGeneration,
   guardChapterWriting,
   guardDirectoryGeneration,
+  guardStop,
   type GuardResult,
 } from '../workflow-guards'
 import { createArchitectureWorkflow, type ArchitectureWorkflowParams } from './architecture-workflow'
@@ -22,8 +23,9 @@ import { createChapterWorkflow } from './chapter-workflow'
 import { createDirectoryWorkflow, type DirectoryWorkflowParams } from './directory-workflow'
 import { normalizeChapterWordsTarget } from './chapter-creation-parameters'
 import type { Locale } from '../../i18n/types'
-import { errorLocaleForRun, localize } from '../../i18n/core'
+import { errorLocaleForRun } from '../../i18n/core'
 import type { AgentToolActionRef } from '../../shared/agent-generation'
+import { authorOwned, note } from '../../shared/failure'
 
 export type CreativeWorkflowName =
   | 'generate_draft'
@@ -76,7 +78,7 @@ export interface CreativeWorkflowLaunchOptions {
 
 function requireGuardAccepted(result: GuardResult, uiLocale: Locale): void {
   if (!result.ok) {
-    throw new Error(result.message ?? localize(uiLocale, '创作工作流前置条件未满足', 'Creative workflow prerequisites are not satisfied'))
+    throw guardStop(errorLocaleForRun(uiLocale, currentInterfaceLocale()), result, note('创作工作流前置条件未满足', 'Creative workflow prerequisites are not satisfied'))
   }
 }
 
@@ -110,7 +112,7 @@ async function guardIntent(
 function currentProjectFor(projectSession: ProjectSessionContext, uiLocale: Locale) {
   const project = useProjectStore.getState().currentProject
   if (!project || !sameProjectSessionContext(projectSession, projectSessionContextFromProject(project))) {
-    throw new Error(localize(uiLocale, '当前项目会话已切换，工作流未启动', 'The project session changed, so the workflow did not start.'))
+    throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('当前项目会话已切换，工作流未启动', 'The project session changed, so the workflow did not start.') })
   }
   return project
 }
@@ -141,7 +143,7 @@ async function definitionFor(
   }
   if (intent.workflow === 'generate_draft') {
     if (!Number.isInteger(intent.chapterNumber) || intent.chapterNumber < 1) {
-      throw new Error(localize(uiLocale, '写稿需要有效的 chapter_number（从 1 开始）', 'Drafting needs a valid chapter_number (starting from 1).'))
+      throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('写稿需要有效的 chapter_number（从 1 开始）', 'Drafting needs a valid chapter_number (starting from 1).') })
     }
     const blueprint = await ipc.invokeWithProjectSession(
       projectSession,
@@ -151,11 +153,7 @@ async function definitionFor(
     )
     currentProjectFor(projectSession, uiLocale)
     if (!blueprint) {
-      throw new Error(localize(
-        uiLocale,
-        `第 ${intent.chapterNumber} 章蓝图不存在；请先运行 generate_blueprint 工作流`,
-        `Chapter ${intent.chapterNumber} has no blueprint. Run the generate_blueprint workflow first.`,
-      ))
+      throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note(`第 {chapterNumber} 章蓝图不存在；请先运行 generate_blueprint 工作流`, `Chapter {chapterNumber} has no blueprint. Run the generate_blueprint workflow first.`, { chapterNumber: intent.chapterNumber }) })
     }
     return createChapterWorkflow({
       projectPath: project.path,
@@ -171,11 +169,7 @@ async function definitionFor(
     }, projectSession, { generationModelId, uiLocale })
   }
 
-  throw new Error(localize(
-    uiLocale,
-    `${intent.workflow} 需要明确的草稿 ID 和不可变正文快照；请先打开目标草稿后从编辑器启动`,
-    `${intent.workflow} needs an explicit draft ID and a fixed snapshot of its text. Open the target draft and start it from the editor.`,
-  ))
+  throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note(`{workflow} 需要明确的草稿 ID 和不可变正文快照；请先打开目标草稿后从编辑器启动`, `{workflow} needs an explicit draft ID and a fixed snapshot of its text. Open the target draft and start it from the editor.`, { workflow: authorOwned(intent.workflow) }) })
 }
 
 /** The sole seam for turning a creative intent into an observable workflow run. */
@@ -229,7 +223,7 @@ export async function launchCreativeWorkflow(
   }
   const conflict = useWorkflowStore.getState().getResourceConflict(definition)
   if (conflict) {
-    throw new Error(workflowResourceConflictMessage(uiLocale, conflict.title))
+    throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), workflowResourceConflict(conflict.title))
   }
 
   const runId = registration?.registrationId ?? randomUUID()
@@ -250,11 +244,10 @@ export async function launchCreativeWorkflow(
   const registered = state.activeRuns.find(run => run.id === runId)
     ?? state.history.find(run => run.id === runId)
   if (!registered || registered.status === 'failed') {
-    throw new Error(registered?.error ?? localize(
-      uiLocale,
+    throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), registered?.failure ?? { note: note(
       '工作流未能注册到任务中心，已拒绝报告启动成功',
       'The workflow was not registered in the task center, so its launch was not reported as successful.',
-    ))
+    ) })
   }
   options.onRegistered?.()
 

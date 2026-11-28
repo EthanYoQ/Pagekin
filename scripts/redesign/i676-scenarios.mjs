@@ -8,7 +8,7 @@ const secondDraft = `${STAGE_SAMPLE.drafts[4].text}\n\n这是改写的第二稿�
 
 const seedTwoDrafts = context => seedStageSample(context, { beforeReload: async ({ page, invoke, path, session }) => {
   const created = await invoke(page, 'db:draft-create', { chapterNumber: 4, version: 2, source: 'rewrite', content: secondDraft, wordCount: countUnits(secondDraft) }, path, session)
-  assert.equal(created.success, true, created.error)
+  assert.equal(created.success, true, created.failure?.code)
 } })
 
 const openVersionMenu = async (page, { hoverSecond }) => {

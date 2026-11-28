@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { displayedErrorMessage, errorCodeOf } from '../../../i18n/app-errors'
+import { displayedErrorMessage, errorCodeOf, IPC_HANDLER_FAILED } from '../../../i18n/app-errors'
 import {
   decideLaterBlueprintSuggestion, pendingLaterBlueprintCheck, readLaterBlueprintSuggestions, releaseLaterBlueprintCheck, runLaterBlueprintCheck,
   type LaterBlueprintCheckOutcome,
@@ -48,9 +48,11 @@ export function useLaterBlueprintCheck(projectKey: string, finalizationId: strin
     }, (error: unknown) => {
       if (!shown()) return
       const { text } = useLocaleStore.getState()
-      setStatus({ kind: 'failed', message: errorCodeOf(error) === 'GENERATION_GRAPH_BLUEPRINT_REQUIRED'
+      const code = errorCodeOf(error)
+      const fallback = text('蓝图没有改动。这次没查成，再点“检查后续蓝图”。', 'Your blueprints are unchanged. The check did not finish. Choose Check later blueprints again.')
+      setStatus({ kind: 'failed', message: code === 'GENERATION_GRAPH_BLUEPRINT_REQUIRED'
         ? text('后面的章都已定稿，没有要检查的蓝图。', 'Every later chapter is finalized, so there is no blueprint to check.')
-        : displayedErrorMessage(currentInterfaceLocale(), error, text('蓝图没有改动。这次没查成，再点“检查后续蓝图”。', 'Your blueprints are unchanged. The check did not finish. Choose Check later blueprints again.')) })
+        : code === IPC_HANDLER_FAILED ? fallback : displayedErrorMessage(currentInterfaceLocale(), error, fallback) })
     })
   }, [finalizationId])
 

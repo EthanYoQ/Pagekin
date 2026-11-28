@@ -33,7 +33,7 @@ const setup = context => seedStageSample(context, { landOnChapter3: false, befor
   }
   const core = await invoke(page, 'db:project-core-update', { ...STAGE_SAMPLE.core, worldbuilding: longWorldbuilding(),
     totalChapters: STAGE_SAMPLE.totalChapters, wordsPerChapter: STAGE_SAMPLE.wordsPerChapter }, path, session)
-  assert.equal(core.success, true, core.error)
+  assert.equal(core.success, true, core.failure?.code)
   assert.equal((await invoke(page, 'llm:save-model', AUTHOR_64K)).success, true)
   assert.equal((await invoke(page, 'llm:set-default-model', AUTHOR_64K.id)).success, true)
 } })

@@ -312,7 +312,7 @@ describe('设定页', () => {
     project({ coreOutline: '雾钟提前一刻响起。' })
     await mount()
     await click(byName('AI 生成「核心大纲」'))
-    await expect.poll(alertText).toBe('「核心大纲」没有生成：桌面接口 aiNovelAPI 未就绪，请重新启动应用。原来的内容没有改动。')
+    await expect.poll(alertText).toBe('「核心大纲」没有生成：出了意外问题，暂时说不清原因。请再试一次。原来的内容没有改动。')
     expect(host!.querySelector('.stage-setup-outline [role="alert"]')).not.toBeNull()
     expect((field(/^核心大纲/) as HTMLTextAreaElement).value).toBe('雾钟提前一刻响起。')
 

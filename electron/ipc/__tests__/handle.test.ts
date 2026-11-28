@@ -74,6 +74,16 @@ describe('handle() 抛错', () => {
     await expect(invoke('demo:unregistered')).rejects.toThrow(/^IPC_HANDLER_FAILED$/u)
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('demo:unregistered'), expect.objectContaining({ message: 'EMBEDDING_SPACE_VERIFY_FAILED' }))
   })
+
+  it('拆批数量随码过 IPC，作者看到目录说明；别的码带后缀照旧换成通用码', async () => {
+    handle('demo:split', () => { throw new Error('TASK_BUDGET_SCOPE_SPLIT_REQUIRED:7') })
+    handle('demo:suffixed', () => { throw new Error('GENERATION_REQUEST_FAILED:7') })
+
+    const split = await rejectedAfterIpc('demo:split', invoke('demo:split'))
+    expect(split.message).toBe("Error invoking remote method 'demo:split': Error: TASK_BUDGET_SCOPE_SPLIT_REQUIRED:7")
+    expect(appErrorMessage(shownLocale('en-US'), split)).toBe('The settings, earlier text, or prose for this request are too large to give to the model, so nothing was generated. Shorten them, then try again.')
+    await expect(invoke('demo:suffixed')).rejects.toThrow(/^IPC_HANDLER_FAILED$/u)
+  })
 })
 
 describe('handle() 返回的失败结果', () => {

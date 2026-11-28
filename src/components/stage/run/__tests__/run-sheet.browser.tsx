@@ -20,7 +20,8 @@ import { useWorkflowStore, type WorkflowRun } from '../../../../stores/workflow-
 import RunSheet from '../RunSheet'
 import { createProjectArchTabId } from '../../../editor/arch-file-refresh-policy'
 import { globalEventBus } from '../../../../shared/event-bus'
-import { note, type Failure } from '../../../../shared/failure'
+import { failureOf, note, type Failure } from '../../../../shared/failure'
+import { catalogNote } from '../../../../i18n/app-errors'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -142,10 +143,9 @@ describe('运行侧页', () => {
 
   it('大纲保存被来源检查拒绝：失败卡说明原因并只给「打开架构页」，不露错误码', async () => {
     const reason = '本批第 6 章大纲已生成完，但保存前模型设置、作品设定、提示词模板或写作 Skill 改过，正式保存被拒绝。请到「架构」页重新生成情节大纲，从第 6 章开始。'
-    const errorCode = 'GENERATION_SOURCE_CHANGED'
-    const failure: Failure = { code: errorCode, note: note(reason, 'The source changed before saving.'), recovery: 'restart-plot-outline' }
-    useWorkflowStore.setState({ activeRuns: [run('大纲', 'failed', { type: 'architecture_generation', title: '生成故事架构', error: reason, errorCode, failure,
-      steps: [{ id: 'synopsis', name: '情节大纲', description: '', status: 'failed', progress: 0, logs: [], error: reason, errorCode, failure }] })] })
+    const failure: Failure = { code: 'GENERATION_SOURCE_CHANGED', note: note(reason, 'The source changed before saving.'), recovery: 'restart-plot-outline' }
+    useWorkflowStore.setState({ activeRuns: [run('大纲', 'failed', { type: 'architecture_generation', title: '生成故事架构', failure,
+      steps: [{ id: 'synopsis', name: '情节大纲', description: '', status: 'failed', progress: 0, logs: [], failure }] })] })
     await render()
     const card = host!.querySelector('article')!
     expect(button('打开架构页')).toBeTruthy()
@@ -154,9 +154,9 @@ describe('运行侧页', () => {
   })
 
   it.each<[Locale]>([['zh-CN'], ['en-US']])('步骤失败带着主进程的通用码：展开后按运行的语言显示说明，不露码（界面 %s）', async locale => {
-    const error = "Error invoking remote method 'kb:backfill-vectors': Error: IPC_HANDLER_FAILED"
-    useWorkflowStore.setState({ activeRuns: [run('检索', 'failed', { title: '重建检索', error,
-      steps: [{ id: 'backfill', name: '重建检索', description: '', status: 'failed', progress: 0, logs: [], error }] })] })
+    const failure = failureOf("Error invoking remote method 'kb:backfill-vectors': Error: IPC_HANDLER_FAILED")
+    useWorkflowStore.setState({ activeRuns: [run('检索', 'failed', { title: '重建检索', failure,
+      steps: [{ id: 'backfill', name: '重建检索', description: '', status: 'failed', progress: 0, logs: [], failure }] })] })
     useLocaleStore.setState({ locale })
     await render()
     const row = host!.querySelector<HTMLButtonElement>('.run-step-row')!
@@ -166,10 +166,10 @@ describe('运行侧页', () => {
   })
 
   it('写正文时代理连不上：失败带 NETWORK_ERROR 码，步骤报错和失败提示都保留代理说明', async () => {
-    const error = '连不上代理 127.0.0.1:7890。请检查设置里的代理主机和端口，或先启动代理程序，再点「重试」。'
-    const errorCode = 'NETWORK_ERROR'
-    useWorkflowStore.setState({ activeRuns: [run('5', 'failed', { error, errorCode,
-      steps: [{ id: '5-write', name: '写稿', description: '', status: 'failed', progress: 0, logs: [], error, errorCode }] })] })
+    const failure: Failure = { code: 'NETWORK_ERROR', note: catalogNote('error.proxyUnreachable') }
+    const error = '连不上「网络代理」里设置的代理。请检查「主机地址」和「端口」，打开代理软件，或关掉「启用代理」。'
+    useWorkflowStore.setState({ activeRuns: [run('5', 'failed', { failure,
+      steps: [{ id: '5-write', name: '写稿', description: '', status: 'failed', progress: 0, logs: [], failure }] })] })
     await render()
     const row = host!.querySelector<HTMLButtonElement>('.run-step-row')!
     if (row.getAttribute('aria-expanded') !== 'true') await act(async () => row.click())
@@ -202,7 +202,7 @@ describe('运行侧页', () => {
   ] as const)('作者取消的运行标为已取消，不显示成失败（%s）', async (locale, label, failure) => {
     useLocaleStore.setState({ locale })
     const cancelled = run('4', 'cancelled', {
-      type: 'batch_generate', title: '批量草稿待审 · 第 3 至 4 章', uiLocale: locale, error: locale === 'en-US' ? 'Workflow was cancelled.' : '工作流已取消',
+      type: 'batch_generate', title: '批量草稿待审 · 第 3 至 4 章', uiLocale: locale, failure: { note: note('工作流已取消', 'Workflow was cancelled.') },
       completedAt: '2026-10-12T08:20:00.000Z',
       steps: [
         { id: 'c3', name: '第 3 章 · 生成草稿待审', description: '', status: 'completed', logs: [], startedAt: '2026-10-12T08:10:00.000Z', completedAt: '2026-10-12T08:15:00.000Z' },
@@ -229,7 +229,7 @@ describe('运行侧页', () => {
     useLocaleStore.setState({ locale })
     const cancelled = run('4', 'cancelled', {
       type: 'batch_generate', title: '批量草稿待审 · 第 3 至 4 章', uiLocale: locale, currentStepIndex: 1,
-      error: locale === 'en-US' ? 'Workflow was cancelled.' : '工作流已取消', completedAt: '2026-10-12T08:20:00.000Z',
+      failure: { note: note('工作流已取消', 'Workflow was cancelled.') }, completedAt: '2026-10-12T08:20:00.000Z',
       steps: [
         { id: 'c3', name: '第 3 章 · 生成草稿待审', description: '', status: 'completed', logs: [], startedAt: '2026-10-12T08:10:00.000Z', completedAt: '2026-10-12T08:15:00.000Z' },
         { id: 'c4', name: '第 4 章 · 生成草稿待审', description: '', status: 'cancelled', logs: [], startedAt: '2026-10-12T08:15:00.000Z',
@@ -641,7 +641,7 @@ describe('运行侧页', () => {
     })
   })
 
-  it('恢复候选：继续编辑或放弃的调用失败时显示错误', async () => {
+  it('恢复候选：继续编辑或放弃的调用失败时显示这一处的说明，主进程原文不进提示', async () => {
     candidates = [candidate()]
     const fallback = invoke.getMockImplementation()!
     invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
@@ -652,10 +652,10 @@ describe('运行侧页', () => {
     await render()
     await vi.waitFor(() => expect(host!.textContent).toContain('原始候选 · 第3章 雾钟'))
     await click('继续编辑')
-    await vi.waitFor(() => expect(host!.querySelector('[role="alert"]')?.textContent).toBe('候选写入失败'))
+    await vi.waitFor(() => expect(host!.querySelector('[role="alert"]')?.textContent).toBe('恢复候选操作失败'))
     await click('放弃…')
     await click('放弃')
-    await vi.waitFor(() => expect(host!.querySelector('[role="alert"]')?.textContent).toBe('候选放弃失败'))
+    await vi.waitFor(() => expect(host!.querySelector('[role="alert"]')?.textContent).toBe('恢复候选操作失败'))
     expect(host!.textContent).toContain('原始候选 · 第3章 雾钟')
   })
 

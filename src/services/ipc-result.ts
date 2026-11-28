@@ -1,6 +1,6 @@
-import { authorError, isRegisteredErrorCode, resultFailure } from '../i18n/app-errors'
-import { codeOf, type Failure } from '../shared/failure'
-import { currentInterfaceLocale, useLocaleStore } from '../stores/locale-store'
+import { authorError, catalogNote, IPC_HANDLER_FAILED, isRegisteredErrorCode, resultFailure, writtenNote } from '../i18n/app-errors'
+import { authorOwned, type AuthorNote, codeOf, type Failure } from '../shared/failure'
+import { currentInterfaceLocale } from '../stores/locale-store'
 
 export interface IpcMutationResult {
   success: boolean
@@ -14,18 +14,18 @@ export interface IpcMutationResult {
  * persistence operation failed.
  *
  * 抛出的错误带着这次失败，冻结了界面语言的调用方（导出、工作流）凭它按自己的语言重新说明。
- * action 多是只有中文的动作名，英文界面改用通用说明。
+ * 说不出原因的失败（没有码、原文、IPC_HANDLER_FAILED）显示调用点的兜底说明，码照样留着；原文只进日志。
  */
 export function requireIpcSuccess<T extends IpcMutationResult>(
   result: T,
   action: string,
-  fallbackMessage?: string,
+  fallback?: string | AuthorNote,
 ): T {
-  if (!result.success) {
-    const failure = resultFailure(result)
-    if (failure && (failure.note || isRegisteredErrorCode(codeOf(failure)))) throw authorError(currentInterfaceLocale(), failure)
-    const { text } = useLocaleStore.getState()
-    throw new Error(result.error || fallbackMessage || text(`${action}失败`, 'The operation failed.'))
-  }
-  return result
+  if (result.success) return result
+  const failure = resultFailure(result)
+  const code = failure && codeOf(failure)
+  if (failure && (failure.note || code !== IPC_HANDLER_FAILED && isRegisteredErrorCode(code))) throw authorError(currentInterfaceLocale(), failure)
+  const note = typeof fallback === 'string' ? writtenNote(fallback)
+    : fallback ?? catalogNote('error.actionFailed', { action: authorOwned(action) })
+  throw authorError(currentInterfaceLocale(), code ? { code, note } : { note })
 }

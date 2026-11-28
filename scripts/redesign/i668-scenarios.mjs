@@ -16,7 +16,7 @@ const seed = context => seedStageSample(context, {
       }
       const content = longText(STAGE_SAMPLE.drafts[chapterNumber].text)
       const created = await invoke(page, 'db:draft-create', { chapterNumber, version: 1, source: 'write', content, wordCount: countUnits(content) }, path, session)
-      assert.equal(created.success, true, created.error)
+      assert.equal(created.success, true, created.failure?.code)
       if (chapterNumber === 3) {
         const expectedSource = { id: created.id, chapterNumber, version: 1, status: 'draft', content }
         const review = await invoke(page, 'db:review-create', { baseDraftId: created.id, content: STAGE_SAMPLE.drafts[3].review, expectedSource }, path, session)
@@ -36,7 +36,7 @@ const seedMerge = context => seedStageSample(context, {
     }
     const content = longText(STAGE_SAMPLE.drafts[3].text)
     const created = await invoke(page, 'db:draft-create', { chapterNumber: 3, version: 1, source: 'write', content, wordCount: countUnits(content) }, path, session)
-    assert.equal(created.success, true, created.error)
+    assert.equal(created.success, true, created.failure?.code)
     const expectedSource = { id: created.id, chapterNumber: 3, version: 1, status: 'draft', content }
     const review = await invoke(page, 'db:review-create', { baseDraftId: created.id, content: STAGE_SAMPLE.drafts[3].review, expectedSource }, path, session)
     assert.equal(review.success, true, review.failure?.code)

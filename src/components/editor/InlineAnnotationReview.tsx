@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { diff_match_patch, DIFF_DELETE, DIFF_INSERT } from 'diff-match-patch'
 import { Check } from 'lucide-react'
-import { errorCodeOf, knownAppErrorMessage } from '../../i18n/app-errors'
+import { errorCodeOf, IPC_HANDLER_FAILED, knownAppErrorMessage } from '../../i18n/app-errors'
 import { createEditorInlineGeneration } from '../../services/editor-inline-generation'
 import { routeModelId } from '../../services/model-routing'
 import { getActiveProjectSessionContext } from '../../shared/project-session-context'
@@ -135,7 +135,7 @@ export default function InlineAnnotationReview({ before, after, annotations, onC
       update(piece.index, { value: candidate, busy: false, editing: false,
         error: overlap ? text('结果可能与相邻正文重复，请检查或编辑。', 'The result may repeat adjacent text; inspect or edit it.') : '' })
     } catch (cause) {
-      update(piece.index, { busy: false, error: knownAppErrorMessage(currentInterfaceLocale(), cause) ?? text('重新生成失败，请重试', 'Regeneration failed; try again') })
+      update(piece.index, { busy: false, error: errorCodeOf(cause) !== IPC_HANDLER_FAILED && knownAppErrorMessage(currentInterfaceLocale(), cause) || text('重新生成失败，请重试', 'Regeneration failed; try again') })
     }
     finally { rerollClients.current.delete(client) }
   }

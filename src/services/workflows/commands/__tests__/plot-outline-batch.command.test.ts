@@ -14,6 +14,7 @@ import { composeVisibleContinuation } from '../../../../shared/visible-continuat
 import type { GenerationRecoveryContext, VisibleCompositionReceipt } from '../../../../shared/generation-owner-contract'
 import { PLOT_OUTLINE_CONTENT, PLOT_OUTLINE_PROTOCOL, type PlotOutlineProgress } from '../../../../shared/plot-outline-contract'
 import { shown } from '../../../../i18n/__tests__/shown-locale'
+import { displayedErrorMessage } from '../../../../i18n/app-errors'
 import { runFailure } from '../../../../components/run/run-failure'
 import { useWorkflowStore } from '../../../../stores/workflow-store'
 
@@ -166,7 +167,7 @@ interface IpcHarness {
 }
 
 interface HarnessOptions {
-  commitResult?: { success: boolean; error?: string }
+  commitResult?: { success: boolean; failure?: { code: string } }
   concurrentPartialUpdate?: Record<string, unknown>
   afterPartialWrite?: (
     checkpoint: CheckpointSnapshot,
@@ -451,8 +452,8 @@ ${'宗门封锁前夜，林舟发现了旧铁锤里的秘密，并沿着灵脉�
     const shownFailure = runFailure(run, shown(locale))
     expect([shownFailure.canResumeOutline, shownFailure.canRestartOutline]).toEqual([true, false])
     expect(shownFailure.presentation.reason).toBe((thrown as Error).message)
-    if (locale === 'zh-CN') expect((thrown as Error).message).toMatch(/中断原因：模型请求失败。$/u)
-    else expect((thrown as Error).message).toMatch(/“Generate story architecture”\.$/u)
+    if (locale === 'zh-CN') expect((thrown as Error).message).toMatch(/中断原因：模型服务没有返回完整结果。请检查网络和模型设置后重试。$/u)
+    else expect((thrown as Error).message).toMatch(/“Generate story architecture”\.\nReason: The model service did not return a complete result\. Check your network and model settings, then try again\.$/u)
   })
 
   it('uses writing language, not UI locale, for the visible incomplete note', async () => {
@@ -970,7 +971,7 @@ ${'宗门封锁前夜，林舟发现了旧铁锤里的秘密，并沿着灵脉�
       synopsis_facts_fingerprint: 'old-fingerprint',
       world_building_result: 'old world phase',
     }, '', {
-      commitResult: { success: false, error: 'PROJECT_CORE_SYNOPSIS_CHANGED' },
+      commitResult: { success: false, failure: { code: 'PROJECT_CORE_SYNOPSIS_CHANGED' } },
       concurrentPartialUpdate: { world_building_result: 'concurrent world phase' },
     })
     const body = `第1–100章：完整终局\n${'主角遵循明确条件行动，结果逐章承接至终局。'.repeat(5)}`
@@ -999,7 +1000,7 @@ ${'宗门封锁前夜，林舟发现了旧铁锤里的秘密，并沿着灵脉�
       synopsis_range: { from: 1, to: 100 },
       synopsis_facts_fingerprint: 'old-fingerprint',
     }, '', {
-      commitResult: { success: false, error: 'PROJECT_CORE_SYNOPSIS_CHANGED' },
+      commitResult: { success: false, failure: { code: 'PROJECT_CORE_SYNOPSIS_CHANGED' } },
     })
     const body = `第1–100章：完整终局\n${'主角遵循明确条件行动，结果逐章承接至终局。'.repeat(5)}`
     useLLMStore.setState({ defaultModelId: 'model-1' })
@@ -1008,6 +1009,7 @@ ${'宗门封锁前夜，林舟发现了旧铁锤里的秘密，并沿着灵脉�
     const failure = makeCommand().execute({ step: {}, context, callbacks })
     await expect(failure).rejects.toThrow('项目数据已变化，已拒绝覆盖情节大纲。')
     await expect(failure).rejects.not.toThrow('PROJECT_CORE_SYNOPSIS_CHANGED')
+    expect(displayedErrorMessage(shown('zh-CN'), await failure.catch((caught: unknown) => caught))).toBe('项目数据已变化，已拒绝覆盖情节大纲。')
   })
 
   it.each([

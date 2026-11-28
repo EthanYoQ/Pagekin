@@ -29,7 +29,7 @@ const partialOutline = () => renderPlotOutlineSynopsis(
 const updateSynopsis = synopsis => async ({ page, invoke, path: projectPath, session }) => {
   const updated = await invoke(page, 'db:project-core-update', { ...STAGE_SAMPLE.core, synopsis, totalChapters: STAGE_SAMPLE.totalChapters,
     wordsPerChapter: STAGE_SAMPLE.wordsPerChapter }, projectPath, session)
-  assert.equal(updated.success, true, updated.error)
+  assert.equal(updated.success, true, updated.failure?.code)
 }
 
 async function seedOutlineBook(context, name, { blueprints = false, finalized = false, emptyDraft = false }) {
@@ -46,11 +46,11 @@ async function seedOutlineBook(context, name, { blueprints = false, finalized = 
     const content = STAGE_SAMPLE.finalized[1]
     const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(),
       chapters: [{ chapterNumber: 1, title: stageChapterTitle(1), content, wordCount: countUnits(content) }] }, created.projectPath, session)
-    assert.equal(imported.success, true, imported.error)
+    assert.equal(imported.success, true, imported.failure?.code)
   }
   if (emptyDraft) {
     const draft = await invoke(page, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write', content: '', wordCount: 0 }, created.projectPath, session)
-    assert.equal(draft.success, true, draft.error)
+    assert.equal(draft.success, true, draft.failure?.code)
   }
   if (!blueprints) return
   for (const number of [1, 2, 3]) {

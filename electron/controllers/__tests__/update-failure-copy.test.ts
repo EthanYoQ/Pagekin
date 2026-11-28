@@ -64,7 +64,13 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('更新卡片按原因的说明与 master 逐字相同', () => {
+/** master 的日文目录照搬了英文，PR-H2 补了日文：日文说明要是日文，标题和中英文仍与 master 相同。 */
+function withJapaneseDescription(expected: typeof MASTER[number]['card'], actual: ReturnType<typeof card>) {
+  expect(actual['ja-JP'].description).toMatch(/[぀-ヿ]/u)
+  return { ...expected, 'ja-JP': { ...expected['ja-JP'], description: actual['ja-JP'].description } }
+}
+
+describe('更新卡片按原因的说明与 master 逐字相同（日文说明除外）', () => {
   it.each(MASTER.map(row => [`${row.code}/${row.reason}`, row] as const))('%s', async (_name, row) => {
     const error = { code: row.code, phase: 'check', reason: row.reason, retryable: row.retryable, safeTechnicalDetails: 'UPDATE_OPERATION_FAILED' } as UpdateError
     const respond = vi.fn(async () => ({ success: false, checked: true, updateAvailable: false, state: STATE, error }))
@@ -74,7 +80,8 @@ describe('更新卡片按原因的说明与 master 逐字相同', () => {
     const problem = responseProblem(result)
 
     expect(result).not.toHaveProperty('error')
-    expect(card(problem)).toEqual(row.card)
+    const shownCard = card(problem)
+    expect(shownCard).toEqual(withJapaneseDescription(row.card, shownCard))
     expect(problem?.retryable ? getUpdateRetryAction(problem.failure.code) : null).toBe(row.retry)
   })
 })

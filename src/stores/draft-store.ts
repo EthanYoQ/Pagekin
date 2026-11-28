@@ -18,8 +18,9 @@ import { useProjectStore } from './project-store'
 import { requireIpcSuccess } from '../services/ipc-result'
 import { countDraftUnits } from '../shared/draft-units'
 import { useEditorStore } from './editor-store'
-import { currentInterfaceLocale, useLocaleStore } from './locale-store'
-import { authorError } from '../i18n/app-errors'
+import { currentInterfaceLocale } from './locale-store'
+import { authorError, catalogNote, caughtFailure } from '../i18n/app-errors'
+import { note, type Failure } from '../shared/failure'
 
 let loadAllDraftsRequestSequence = 0
 
@@ -102,7 +103,7 @@ interface DraftState {
     expectedProjectPath: string,
     expectedProjectSession?: ProjectSessionContext,
   ) => Promise<{ success: boolean; receipt?: Awaited<ReturnType<typeof ipc.invoke<'db:revision-merge'>>>['receipt'];
-    error?: string; postCommitError?: string }>
+    failure?: Failure; postCommitError?: string }>
 }
 
 export const useDraftStore = create<DraftState>()((set, get) => ({
@@ -279,7 +280,7 @@ export const useDraftStore = create<DraftState>()((set, get) => ({
     try {
       const projectSession = currentDraftProjectSession(expectedProjectPath, expectedProjectSession)
       if (!projectSession) {
-        return { success: false, error: '项目已切换，已拒绝跨项目合并' }
+        return { success: false, failure: { note: catalogNote('error.mergeProjectSwitched') } }
       }
       const editorState = useEditorStore.getState()
       const targetTab = editorState.tabs.find(t =>
@@ -296,7 +297,7 @@ export const useDraftStore = create<DraftState>()((set, get) => ({
       const revisionResource = parseResourceUri(revPath)
       if (!resourceWriteAllowed(filePath) || draftResource?.kind !== 'draft'
         || revisionResource?.kind !== 'revision' || revisionResource.legacy) {
-        return { success: false, error: '资源只读或无法确定草稿与修订身份' }
+        return { success: false, failure: { note: catalogNote('error.mergeTargetUnresolved') } }
       }
       const targetDraftId = draftResource.id
       const revisionId = revisionResource.id
@@ -355,14 +356,14 @@ export const useDraftStore = create<DraftState>()((set, get) => ({
         definition.onStarted = started
         await Promise.race([admission, useWorkflowStore.getState().startWorkflow(definition, false).then(runId => {
           const run = useWorkflowStore.getState().history.find(item => item.id === runId)
-          if (run?.status === 'failed') throw run.failure ? authorError(currentInterfaceLocale(), run.failure) : new Error(run.error)
+          if (run?.status === 'failed') throw authorError(currentInterfaceLocale(), run.failure ?? { note: note('合并后复验没有启动。', 'The post-merge recheck did not start.') })
         })])
       }
 
       return { success: true, receipt: committedReceipt }
     } catch (e) {
       if (committedReceipt) return { success: true, receipt: committedReceipt, postCommitError: String(e) }
-      return { success: false, error: e instanceof Error ? e.message : String(e) }
+      return { success: false, failure: caughtFailure(e) }
     }
   },
 }))
@@ -373,7 +374,7 @@ export async function readDraftBody(
   expectedProjectSession?: ProjectSessionContext,
 ): Promise<string> {
   const projectSession = currentDraftProjectSession(expectedProjectPath, expectedProjectSession)
-  if (!projectSession) throw new Error(useLocaleStore.getState().text('读取草稿时缺少匹配的冻结项目会话', 'The draft was not read because the book session changed.'))
+  if (!projectSession) throw authorError(currentInterfaceLocale(), { note: note('读取草稿时缺少匹配的冻结项目会话', 'The draft was not read because the book session changed.') })
 
   const content = await readResourceContent(filePath, projectSession)
   return isDraftProjectSessionCurrent(projectSession) ? content : ''

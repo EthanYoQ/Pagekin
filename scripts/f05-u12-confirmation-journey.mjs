@@ -332,10 +332,10 @@ async function main() {
     const session = { projectId: project.projectId, projectPath, leaseId: opened.project.sessionLease }
     const seededBlueprint = await invoke(page, 'db:blueprint-upsert', { chapterNumber: 1, title: '港口灯塔',
       role: '发展', purpose: '核对审稿决定', keyEvents: '林岚离开港口', characters: [] }, projectPath, session)
-    assert.equal(seededBlueprint.success, true, seededBlueprint.error)
+    assert.equal(seededBlueprint.success, true, seededBlueprint.failure?.code)
     const draft = await invoke(page, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
       content: body, wordCount: body.length }, projectPath, session)
-    assert.equal(draft.success, true, draft.error)
+    assert.equal(draft.success, true, draft.failure?.code)
     draftId = draft.id
     const full = await invoke(page, 'db:draft-get-full', draftId, projectPath, session)
     const sourceDraft = { id: full.id, chapterNumber: full.chapterNumber, version: full.version,
@@ -434,10 +434,10 @@ async function main() {
       leaseId: openedLive.project.sessionLease }
     const liveBlueprint = await invoke(page, 'db:blueprint-upsert', { chapterNumber: 1, title: '港口灯塔',
       role: '发展', purpose: '核对审稿决定', keyEvents: '林岚离开港口', characters: [] }, liveProjectPath, liveSession)
-    assert.equal(liveBlueprint.success, true, liveBlueprint.error)
+    assert.equal(liveBlueprint.success, true, liveBlueprint.failure?.code)
     const liveDraft = await invoke(page, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
       content: body, wordCount: body.length }, liveProjectPath, liveSession)
-    assert.equal(liveDraft.success, true, liveDraft.error)
+    assert.equal(liveDraft.success, true, liveDraft.failure?.code)
     const liveSourceDraft = draftRow(liveProjectPath, liveDraft.id)
     assert.equal(liveSourceDraft.content, body)
     fixture.externalModelRequests += await app.evaluate(() => globalThis.__f05U12ExternalRequests ?? 0)
@@ -837,7 +837,7 @@ async function main() {
     candidateProjectPath, candidateSession)).success, true)
     const candidateDraft = await invoke(page, 'db:draft-create', { chapterNumber: 1, version: 1,
       source: 'write', content: body, wordCount: body.length }, candidateProjectPath, candidateSession)
-    assert.equal(candidateDraft.success, true, candidateDraft.error)
+    assert.equal(candidateDraft.success, true, candidateDraft.failure?.code)
     await app.close(); app = null
     ;({ app, page } = await launch(fixturePort))
     await openChapter(page, candidateProjectName)
@@ -866,7 +866,7 @@ async function main() {
     const concurrentBody = `${body} 作者另存了新句。`
     const concurrentSave = await invoke(page, 'db:draft-update-content', candidateDraft.id, concurrentBody,
       concurrentBody.length, candidateProjectPath, renewedSession)
-    assert.equal(concurrentSave.success, true, concurrentSave.error)
+    assert.equal(concurrentSave.success, true, concurrentSave.failure?.code)
     const beforeRejectedMerge = formalRows(candidateProjectPath)
     const beforeRejectedGeneration = generationRows(candidateProjectPath)
     await mergeView(page).getByRole('button', { name: '完成合并', exact: true }).click()

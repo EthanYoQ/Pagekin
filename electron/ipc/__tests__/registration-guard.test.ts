@@ -2,7 +2,6 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import DIRECT_CHANNELS from '../direct-channels.json'
 
 type Listener = (event: unknown, ...args: unknown[]) => unknown
 
@@ -52,7 +51,7 @@ afterAll(() => rmSync(fake.dataRoot, { recursive: true, force: true }))
 beforeEach(() => { vi.spyOn(console, 'error').mockImplementation(() => {}) })
 
 describe('应用启动时的整套 IPC 注册经过守卫', () => {
-  it('全部注册成功；不经 handle() 直接注册的通道正好是 direct-channels.json', async () => {
+  it('主进程只能经 handle() 注册 IPC：启动时的整套注册全部经过 handle()', async () => {
     const { registerIPCHandlers } = await import('../../ipc-handlers')
     const { registerMCPHandlers } = await import('../../mcp/mcp-ipc-bridge')
     const { registerStartupController } = await import('../../controllers/startup-controller')
@@ -65,12 +64,12 @@ describe('应用启动时的整套 IPC 注册经过守卫', () => {
     registerMCPHandlers()
     registerUpdateController({ subscribe: () => () => undefined } as never, { ipc: { handle }, publish: () => undefined })
 
-    expect(fake.registrations.filter(channel => !fake.throughHandle.has(channel)).sort()).toEqual(DIRECT_CHANNELS)
+    expect(fake.registrations.filter(channel => !fake.throughHandle.has(channel))).toEqual([])
     expect(fake.throughHandle.size).toBeGreaterThan(0)
   }, 60_000)
 })
 
-describe('名单外的通道不经 handle() 注册就抛错', () => {
+describe('不经 handle() 注册就抛错', () => {
   it.each(Object.keys(directRegistrations))('%s', name => {
     const channel = `demo:${name}`
     expect(() => directRegistrations[name]!(channel)).toThrow(/没有经 electron\/ipc\/handle\.ts 的 handle\(\) 注册/u)
@@ -83,7 +82,7 @@ describe('名单外的通道不经 handle() 注册就抛错', () => {
   })
 })
 
-describe('打包后名单外的直接注册', () => {
+describe('打包后不经 handle() 的直接注册', () => {
   const packagedIpc = () => {
     const registered = new Map<string, { once: boolean; listener: Listener }>()
     const ipc = {

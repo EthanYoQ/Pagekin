@@ -155,7 +155,7 @@ export async function seedHarbor(context) {
     return { chapterNumber: number, title: stageChapterTitle(number), content, wordCount: countUnits(content) }
   })
   const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(), chapters }, harbor, session)
-  assert.equal(imported.success, true, imported.error)
+  assert.equal(imported.success, true, imported.failure?.code)
   const [finalized] = (await invoke(page, 'db:draft-list', 3, harbor, session)).filter(draft => draft.status === 'finalized')
   const full = await invoke(page, 'db:draft-get-full', finalized.id, harbor, session)
   const review = await invoke(page, 'db:review-create', { baseDraftId: full.id, content: STAGE_SAMPLE.drafts[3].review,

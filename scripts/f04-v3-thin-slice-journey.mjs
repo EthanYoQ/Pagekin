@@ -82,10 +82,10 @@ async function main() {
     const context = { projectId: project.projectId, projectPath, leaseId: opened.project.sessionLease }
     const blueprint = await invoke(page, 'db:blueprint-upsert', { chapterNumber: 1, title: '初始蓝图', role: '发展',
       purpose: '前往车站', keyEvents: '发现线索', characters: [] }, projectPath, context)
-    assert.equal(blueprint.success, true, blueprint.error)
+    assert.equal(blueprint.success, true, blueprint.failure?.code)
     const draft = await invoke(page, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
       content: fixtureBody, wordCount: 8 }, projectPath, context)
-    assert.equal(draft.success, true, draft.error)
+    assert.equal(draft.success, true, draft.failure?.code)
     draftId = draft.id ?? draft.draft?.id
     assert(Number.isInteger(draftId), 'fixture draft id missing')
     await app.close()

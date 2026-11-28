@@ -14,8 +14,7 @@ import { sameProjectPathKey } from '../../../shared/project-session-context'
 import type { GeneratableField } from '../../../services/workflows/commands/generate-field.command'
 import { useEditorStore } from '../../../stores/editor-store'
 import { useLayoutStore } from '../../../stores/layout-store'
-import { currentInterfaceLocale, useLocaleStore } from '../../../stores/locale-store'
-import { displayedErrorMessage } from '../../../i18n/app-errors'
+import { useLocaleStore } from '../../../stores/locale-store'
 import { navigate } from '../../../stores/navigation/navigation-intents'
 import { missingSetup, type SetupField } from '../../../stores/navigation/stage-progress'
 import { useProjectStore } from '../../../stores/project-store'
@@ -112,10 +111,12 @@ function AiButton({ field, label, form, disabledReason }: { field: GeneratableFi
 function GenerateError({ field, label, form }: { field: GeneratableField; label: string; form: Form }) {
   const text = useLocaleStore(s => s.text)
   if (form.generateError?.field !== field) return null
-  const reason = displayedErrorMessage(currentInterfaceLocale(), form.generateError.message)
+  const reason = form.generateError.message
+  // i18n-exempt: generateError.message 是 use-novel-config-form 已经说明好、去掉句末句号的句子
+  const message = text(`「${label}」没有生成：${reason}。原来的内容没有改动。`, `“${label}” was not generated: ${reason}. Nothing was changed.`)
   return (
     <p className="stage-setup-error" role="alert">
-      {text(`「${label}」没有生成：${reason}。原来的内容没有改动。`, `“${label}” was not generated: ${reason}. Nothing was changed.`)}
+      {message}
     </p>
   )
 }

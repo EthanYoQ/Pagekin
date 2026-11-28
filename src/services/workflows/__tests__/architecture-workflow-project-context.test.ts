@@ -368,7 +368,7 @@ describe('config generation full journey completion contract', () => {
     const journey = arrangeConfigGenerationJourney([{ content: JSON.stringify(validGeneratedConfig), finishReason: 'stop' }])
     const original = journey.invoke.getMockImplementation()!
     journey.invoke.mockImplementation(async (channel, ...args) => {
-      if (channel === 'db:project-core-commit-generated') return { success: false, error: 'GENERATION_SOURCE_CHANGED' }
+      if (channel === 'db:project-core-commit-generated') return { success: false, failure: { code: 'GENERATION_SOURCE_CHANGED' } }
       return original(channel, ...args)
     })
     await expect(execute(journey.workflow)).rejects.toThrow('GENERATION_SOURCE_CHANGED')

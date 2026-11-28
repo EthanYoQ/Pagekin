@@ -370,7 +370,7 @@ describe('character store project context', () => {
       characters: [],
       dataProjectKey: PROJECT_A,
       loaded: false,
-      lastError: '项目上下文已切换，已拒绝跨项目读写',
+      lastError: '出了意外问题，暂时说不清原因。请再试一次。',
     })
   })
 
@@ -396,7 +396,7 @@ describe('character store project context', () => {
       dataProjectKey: PROJECT_A,
       loaded: false,
       loadingProjectKey: null,
-      lastError: 'database busy',
+      lastError: '出了意外问题，暂时说不清原因。请再试一次。',
     })
     expect(useEditorStore.getState().draftLedgers[CHARACTER_DRAFT_TAB.id])
       .toBe(ledgerBeforeFailure)

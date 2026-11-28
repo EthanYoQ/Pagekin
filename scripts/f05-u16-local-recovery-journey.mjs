@@ -254,7 +254,7 @@ async function main() {
     const draftContent = `隔离原稿 ${runId}`
     const draft = await invoke(page, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
       content: draftContent, wordCount: 4 }, created.projectPath, context)
-    assert.equal(draft.success, true, draft.error)
+    assert.equal(draft.success, true, draft.failure?.code)
     await page.reload()
     await stage.waitForStage(page)
     currentStep = 'stage-backup-entry'

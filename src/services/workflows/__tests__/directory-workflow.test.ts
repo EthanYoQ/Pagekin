@@ -22,6 +22,7 @@ import { globalEventBus } from '../../../shared/event-bus'
 import { TerminalProviderFailureError } from '../../generation/generation-harness'
 import { isWorkflowCancellation } from '../workflow-cancellation'
 import { shown } from '../../../i18n/__tests__/shown-locale'
+import { expectEndedWith, shownFailure } from '../../../stores/__tests__/run-failure-expect'
 
 const blueprint: ChapterBlueprint = {
   chapterNumber: 1,
@@ -285,13 +286,13 @@ describe('blueprint persistence helpers', () => {
   const session = { projectId: 'NovelA', leaseId: 'lease-NovelA', projectPath: 'C:/NovelA' }
 
   it('throws when saving one blueprint returns an IPC failure', async () => {
-    stubIpcInvoke({ success: false, error: 'DB 未打开' })
+    stubIpcInvoke({ success: false, failure: { code: 'PROJECT_NOT_OPEN' } })
 
-    await expect(saveChapterBlueprint(blueprint, 'C:/NovelA', session, shown('zh-CN'))).rejects.toThrow('保存章节蓝图失败：DB 未打开')
+    await expect(saveChapterBlueprint(blueprint, 'C:/NovelA', session, shown('zh-CN'))).rejects.toThrow('保存章节蓝图失败：请先打开项目。')
   })
 
   it('英文界面下主进程拒绝保存蓝图：报英文说明，不转出主进程的中文原文（#471）', async () => {
-    stubIpcInvoke({ success: false, error: 'Error: 项目数据库未打开' })
+    stubIpcInvoke({ success: false, failure: { code: 'BLUEPRINT_WRITE_FAILED', note: { key: 'error.blueprintWriteFailed' } } })
 
     await expect(saveChapterBlueprint(blueprint, 'C:/NovelA', session, shown('en-US')))
       .rejects.toThrow(/^Could not save the chapter blueprint\.$/u)
@@ -300,9 +301,9 @@ describe('blueprint persistence helpers', () => {
   })
 
   it('throws when saving many blueprints returns an IPC failure', async () => {
-    stubIpcInvoke({ success: false, error: '写入失败' })
+    stubIpcInvoke({ success: false, failure: { code: 'BLUEPRINT_WRITE_FAILED', note: { key: 'error.blueprintWriteFailed' } } })
 
-    await expect(saveAllBlueprints([blueprint], 'C:/NovelA', session, shown('zh-CN'))).rejects.toThrow('写入失败')
+    await expect(saveAllBlueprints([blueprint], 'C:/NovelA', session, shown('zh-CN'))).rejects.toThrow(/^保存章节蓝图失败$/u)
   })
 
   it('resolves when the IPC save succeeds', async () => {
@@ -357,7 +358,7 @@ describe('blueprint persistence helpers', () => {
   })
 
   it.each([
-    [{ success: false, error: '写入失败' }],
+    [{ success: false, failure: { code: 'BLUEPRINT_WRITE_FAILED', note: { key: 'error.blueprintWriteFailed' } } }],
     [{ success: true }],
   ])('does not announce blueprint refresh without a committed receipt', async (result) => {
     stubIpcInvoke(result)
@@ -378,7 +379,7 @@ describe('blueprint persistence helpers', () => {
   })
 
   it('英文界面下提交蓝图被主进程拒绝：报英文说明（#471）', async () => {
-    stubIpcInvoke({ success: false, error: '写入失败' })
+    stubIpcInvoke({ success: false, failure: { code: 'BLUEPRINT_WRITE_FAILED', note: { key: 'error.blueprintWriteFailed' } } })
 
     await expect(commitDirectoryBlueprintRange(
       [blueprint],
@@ -567,8 +568,9 @@ describe('directory workflow project context', () => {
     await useWorkflowStore.getState().startWorkflow({ ...workflow, runId: 'cancel-window-coded-failure-run', steps: [workflow.steps[1]] })
 
     const finished = useWorkflowStore.getState().history[0]
-    expect(finished).toMatchObject({ status: 'failed', errorCode: code, error: '章节蓝图生成失败，请重试。' })
-    expect(finished.steps[0]).toMatchObject({ status: 'failed', errorCode: code })
+    expectEndedWith(finished, 'failed', code)
+    expect(shownFailure(finished)).toBe('章节蓝图生成失败，请重试。')
+    expectEndedWith(finished.steps[0], 'failed', code)
   })
 
   it('蓝图已提交后作者取消：运行记已取消，已取消的那一步写明蓝图已保存、角色同步可能未完成', async () => {
@@ -588,7 +590,8 @@ describe('directory workflow project context', () => {
 
     const finished = useWorkflowStore.getState().history[0]
     expect(finished).toMatchObject({ id: 'post-commit-cancel-run', status: 'cancelled' })
-    expect(finished.steps[0]).toMatchObject({ status: 'cancelled', error: '章节蓝图已保存，但任务取消后角色同步可能未完成。' })
+    expect(finished.steps[0]).toMatchObject({ status: 'cancelled' })
+    expect(shownFailure(finished.steps[0])).toBe('章节蓝图已保存，但任务取消后角色同步可能未完成。')
   })
 
   it('freezes English workflow labels and user-visible logs at launch', async () => {

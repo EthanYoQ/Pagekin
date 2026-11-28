@@ -4,6 +4,7 @@ import type { WorkflowContext } from '../../../stores/workflow-store'
 import { runPostProcessPipeline } from '../workflow-utils'
 import { POST_PROCESS_INTERRUPTED } from '../../../shared/finalization-step-error'
 import { shown } from '../../../i18n/__tests__/shown-locale'
+import { authorError, failureText } from '../../../i18n/app-errors'
 
 const projectSession = {
   projectId: 'project-1',
@@ -58,6 +59,30 @@ afterEach(() => {
 })
 
 describe('runPostProcessPipeline stopOnFailure', () => {
+  const stopReason = async (thrown: unknown) => {
+    stubIpcInvoke()
+    const stopped = await runPostProcessPipeline('C:/novel', 'chapter_2_finalize', 'Chapter 2 finalization', [
+      { key: 'first', label: 'First step', critical: true, executor: async () => { throw thrown } },
+    ], { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() },
+    { retryCount: 0, stopOnFailure: true, cancellation: englishContext(), projectSession }).then(() => undefined, (error: unknown) => error)
+    return stopped instanceof Error ? stopped.message : String(stopped)
+  }
+
+  it('渲染端余下的显示点不把原文交给作者：后处理步骤停下的原因', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const raw = "Unexpected token 'x', \"xx\" is not valid JSON"
+    const message = await stopReason(new SyntaxError(raw))
+    expect(message).toBe('Post-processing step failed: First step — Something unexpected went wrong. Try again.')
+    expect(message).not.toContain(raw)
+  })
+
+  it('原来能看到的具体说明逐字保留：后处理步骤停下的原因', async () => {
+    expect(await stopReason(authorError(shown('en-US'), { code: 'PROJECT_NOT_OPEN' })))
+      .toBe('Post-processing step failed: First step — ' + failureText(shown('en-US'), { code: 'PROJECT_NOT_OPEN' }))
+    expect(await stopReason(new Error('FINALIZATION_GENERATION_INCOMPLETE')))
+      .toBe('Post-processing step failed: First step — The model did not return a complete result (the connection dropped or the output was cut off). Select Retry to generate this step again.')
+  })
+
   it('persists the failed step and stops before any later post-processing step runs', async () => {
     const invoke = stubIpcInvoke()
     const secondStep = vi.fn(async () => undefined)
@@ -73,7 +98,7 @@ describe('runPostProcessPipeline stopOnFailure', () => {
       ],
       callbacks,
       { retryCount: 1, stopOnFailure: true, cancellation: englishContext(), projectSession },
-    )).rejects.toThrow('Post-processing step failed: First step — provider timeout')
+    )).rejects.toThrow('Post-processing step failed: First step — Something unexpected went wrong. Try again.')
 
     const logs = vi.mocked(callbacks.log).mock.calls.flat().join('\n')
     expect(logs).toContain('First step failed on attempt 1; retrying')
@@ -83,7 +108,7 @@ describe('runPostProcessPipeline stopOnFailure', () => {
       'db:post-process-mark-step-failed',
       'run-1',
       'first',
-      'provider timeout',
+      'POST_PROCESS_STEP_FAILED',
       'C:/novel',
       projectSession,
     )

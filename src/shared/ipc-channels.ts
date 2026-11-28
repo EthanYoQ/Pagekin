@@ -553,7 +553,7 @@ export type ModelDiscoveryErrorCode =
 
 export type ModelDiscoveryResult =
   | { success: true; models: DiscoveredModel[] }
-  | { success: false; errorCode: ModelDiscoveryErrorCode }
+  | { success: false; reason: ModelDiscoveryErrorCode }
 
 export type ModelDiscoveryRequest = Pick<
   ModelProfile,
@@ -580,13 +580,13 @@ export interface LLMChannels {
   }
   'llm:save-model': {
     args: [model: ModelProfile]
-    return: { success: boolean }
+    return: { success: boolean; failure?: Failure }
   }
   'llm:delete-model': {
     args: [modelId: string]
     return: {
       success: boolean
-      error?: string
+      failure?: Failure
       defaultModelId?: string | null
       defaultEmbeddingModelId?: string | null
       defaultRerankModelId?: string | null
@@ -599,11 +599,11 @@ export interface LLMChannels {
   }
   'llm:set-stage-model': {
     args: [request: { stage: ModelStage; modelId: string | null }]
-    return: { success: true; stageModelIds: StageModelIds } | { success: false; error: string }
+    return: { success: true; stageModelIds: StageModelIds } | { success: false; failure: Failure }
   }
   'llm:set-default-model': {
     args: [modelId: string | null]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'llm:get-default-model': {
     args: []
@@ -611,7 +611,7 @@ export interface LLMChannels {
   }
   'llm:set-default-embedding-model': {
     args: [modelId: string | null]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'llm:get-default-embedding-model': {
     args: []
@@ -619,7 +619,7 @@ export interface LLMChannels {
   }
   'llm:set-default-rerank-model': {
     args: [modelId: string | null]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'llm:get-default-rerank-model': {
     args: []
@@ -627,7 +627,7 @@ export interface LLMChannels {
   }
   'llm:test-connection': {
     args: [model: ModelProfile, creativeStrategy?: CreativeStrategy]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
 }
 
@@ -688,6 +688,7 @@ export interface PromptLoadDiagnostic {
   writingLanguage?: WritingLanguage
   path: string
   error: string
+  failure?: Failure
 }
 
 export interface AppPromptLoadReceipt {
@@ -697,31 +698,31 @@ export interface AppPromptLoadReceipt {
 
 export interface AppDataChannels {
   'prompt:load-global': { args: []; return: AppPromptLoadReceipt }
-  'prompt:save-global': { args: [template: AppPromptTemplate]; return: { success: boolean; error?: string } }
-  'prompt:delete-global': { args: [key: string, writingLanguage: WritingLanguage]; return: { success: boolean; error?: string } }
+  'prompt:save-global': { args: [template: AppPromptTemplate]; return: { success: boolean; failure?: Failure } }
+  'prompt:delete-global': { args: [key: string, writingLanguage: WritingLanguage]; return: { success: boolean; failure?: Failure } }
   'skills:list-user': {
     args: []
     return: Array<{ name: string; content: string; baseDir: string; filePath: string; bundle: import('./writing-skills').InstalledWritingSkillBundle }>
   }
   'skills:inspect-github': {
     args: [sourceUrl: string]
-    return: { success: boolean; inspection?: import('./writing-skills').RemoteWritingSkillInspection; error?: string }
+    return: { success: boolean; inspection?: import('./writing-skills').RemoteWritingSkillInspection; failure?: Failure }
   }
   'skills:install-github': {
     args: [sourceUrl: string]
-    return: { success: boolean; skill?: import('./writing-skills').InstalledWritingSkill; error?: string }
+    return: { success: boolean; skill?: import('./writing-skills').InstalledWritingSkill; failure?: Failure }
   }
   'skills:pick-local': {
     args: [kind: import('./writing-skills').LocalWritingSkillSourceKind]
-    return: { success: boolean; cancelled?: boolean; inspection?: import('./writing-skills').LocalWritingSkillInspection; error?: string }
+    return: { success: boolean; cancelled?: boolean; inspection?: import('./writing-skills').LocalWritingSkillInspection; failure?: Failure }
   }
   'skills:install-local': {
     args: [candidateId: string]
-    return: { success: boolean; skill?: import('./writing-skills').InstalledWritingSkill; error?: string }
+    return: { success: boolean; skill?: import('./writing-skills').InstalledWritingSkill; failure?: Failure }
   }
   'skills:uninstall-user': {
     args: [name: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
 }
 
@@ -864,7 +865,7 @@ import type {
 } from './import-global-facts'
 
 export interface DatabaseChannels {
-  'db:close': { args: [expectedProjectPath: string]; return: { success: boolean } }
+  'db:close': { args: [expectedProjectPath: string]; return: { success: boolean; failure?: Failure } }
 
   'db:project-core-get': {
     args: [expectedProjectPath: string]
@@ -872,21 +873,21 @@ export interface DatabaseChannels {
   }
   'db:project-core-update': {
     args: [data: Partial<ProjectCoreData>, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'db:project-core-commit-generated': {
     args: [request: { data: Partial<ProjectCoreData>; aiSources?: AiSources; generationRunHandle: import('../services/generation/generation-runtime').MainGenerationRunHandle }, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'db:project-core-synopsis-commit': {
     args: [request: ProjectCoreSynopsisCommitRequest, expectedProjectPath: string]
-    return: { success: boolean; receipt?: import('./plot-outline-contract').PlotOutlineAuthorEditReceipt; error?: string }
+    return: { success: boolean; receipt?: import('./plot-outline-contract').PlotOutlineAuthorEditReceipt; failure?: Failure }
   }
   'db:import-global-facts-commit': {
     args: [request: ImportGlobalFactsRequest, expectedProjectPath: string]
     return: { success: boolean; receipt?: ImportGlobalFactsReceipt; failure?: Failure }
   }
-  'db:project-clear-generated-data': { args: [options: ProjectClearOptions, expectedProjectPath: string]; return: { success: boolean; cleared?: ProjectClearScope[]; physicalFilesDeleted?: number; error?: string } }
+  'db:project-clear-generated-data': { args: [options: ProjectClearOptions, expectedProjectPath: string]; return: { success: boolean; cleared?: ProjectClearScope[]; physicalFilesDeleted?: number; failure?: Failure } }
   'db:import-run-prepare-inspection': {
     args: [request: ImportRunPrepareFromInspectionRequest, expectedProjectPath: string]
     return: ImportRunPrepareFromInspectionResult
@@ -938,11 +939,11 @@ export interface DatabaseChannels {
 
   'db:blueprint-get-all': { args: [expectedProjectPath: string]; return: BlueprintData[] }
   'db:blueprint-get': { args: [chapterNumber: number, expectedProjectPath: string]; return: BlueprintData | null }
-  'db:blueprint-upsert': { args: [data: BlueprintData, expectedProjectPath: string]; return: { success: boolean; error?: string } }
-  'db:blueprint-upsert-many': { args: [items: BlueprintData[], expectedProjectPath: string]; return: { success: boolean; error?: string } }
+  'db:blueprint-upsert': { args: [data: BlueprintData, expectedProjectPath: string]; return: { success: boolean; failure?: Failure } }
+  'db:blueprint-upsert-many': { args: [items: BlueprintData[], expectedProjectPath: string]; return: { success: boolean; failure?: Failure } }
   'db:blueprint-commit-range': {
     args: [request: BlueprintRangeCommitRequest, expectedProjectPath: string]
-    return: { success: boolean; receipt?: BlueprintRangeCommitReceipt; error?: string }
+    return: { success: boolean; receipt?: BlueprintRangeCommitReceipt; failure?: Failure }
   }
   'db:blueprint-character-sync-list-pending': {
     args: [expectedProjectPath: string]
@@ -957,11 +958,11 @@ export interface DatabaseChannels {
       operationId: string,
       expectedProjectPath: string,
     ]
-    return: { success: boolean; operation?: BlueprintCharacterSyncOperation; error?: string }
+    return: { success: boolean; operation?: BlueprintCharacterSyncOperation; failure?: Failure }
   }
-  'db:blueprint-update-notes': { args: [chapterNumber: number, notes: string, expectedProjectPath: string]; return: { success: boolean; updated?: boolean; error?: string } }
-  'db:blueprint-delete': { args: [chapterNumber: number, expectedProjectPath: string]; return: { success: boolean; error?: string } }
-  'db:blueprint-clear-all': { args: [expectedProjectPath: string]; return: { success: boolean; error?: string } }
+  'db:blueprint-update-notes': { args: [chapterNumber: number, notes: string, expectedProjectPath: string]; return: { success: boolean; updated?: boolean; failure?: Failure } }
+  'db:blueprint-delete': { args: [chapterNumber: number, expectedProjectPath: string]; return: { success: boolean; failure?: Failure } }
+  'db:blueprint-clear-all': { args: [expectedProjectPath: string]; return: { success: boolean; failure?: Failure } }
 
   'db:character-get-all': { args: [expectedProjectPath: string]; return: CharacterData[] }
   'db:character-roster-read': {
@@ -972,14 +973,14 @@ export interface DatabaseChannels {
   'db:character-continuity-timeline': { args: [characterId: string, expectedProjectPath: string]; return: CharacterContinuityTimeline }
   'db:character-roster-commit': {
     args: [request: CharacterRosterCommitRequest, expectedProjectPath: string]
-    return: { success: boolean; receipt?: CharacterRosterCommitReceipt; error?: string }
+    return: { success: boolean; receipt?: CharacterRosterCommitReceipt; failure?: Failure }
   }
 
   'db:draft-import-finalized-batch': {
     args: [request: FinalizedDraftImportRequest, expectedProjectPath: string]
-    return: { success: boolean; receipt?: FinalizedDraftImportReceipt; error?: string }
+    return: { success: boolean; receipt?: FinalizedDraftImportReceipt; failure?: Failure }
   }
-  'db:draft-create': { args: [params: { chapterNumber: number; version: number; source: 'write' | 'rewrite'; content: string; wordCount: number; sourceDependencies?: DraftSourceDependency[] }, expectedProjectPath: string]; return: { success: boolean; id?: number; error?: string } }
+  'db:draft-create': { args: [params: { chapterNumber: number; version: number; source: 'write' | 'rewrite'; content: string; wordCount: number; sourceDependencies?: DraftSourceDependency[] }, expectedProjectPath: string]; return: { success: boolean; id?: number; failure?: Failure } }
   'db:draft-list': { args: [chapterNumber: number, expectedProjectPath: string]; return: DraftMeta[] }
   'db:draft-list-all': { args: [expectedProjectPath: string]; return: DraftMeta[] }
   'db:draft-get-meta': { args: [id: number, expectedProjectPath: string]; return: DraftMeta | null }
@@ -995,11 +996,11 @@ export interface DatabaseChannels {
   }
   'db:continuity-save-finalized': {
     args: [request: SaveFinalizedContinuityRequest, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'db:continuity-save-character-state-candidates': {
     args: [request: SaveFinalizedCharacterStateCandidatesRequest, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'db:continuity-list-before': {
     args: [chapterNumber: number, expectedProjectPath: string]
@@ -1014,11 +1015,11 @@ export interface DatabaseChannels {
   'db:character-continuity-preflight-nodes': { args: [expectedProjectPath: string]; return: ContinuityNode[] }
   'db:consistency-exemption-save': {
     args: [stableFactKey: string, reason: string, chapterNumber: number | null, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'db:consistency-exemption-revoke': {
     args: [stableFactKey: string, chapterNumber: number | null, expectedProjectPath: string]
-    return: { success: boolean; error?: string }
+    return: { success: boolean; failure?: Failure }
   }
   'db:narrative-thread-list': {
     args: [expectedProjectPath: string]
@@ -1065,17 +1066,13 @@ export interface DatabaseChannels {
     return: { success: boolean; failure?: Failure }
   }
   'db:draft-next-version': { args: [chapterNumber: number, expectedProjectPath: string]; return: number }
-  'db:draft-update-status': { args: [id: number, status: string, wordCount: number | undefined, expectedProjectPath: string]; return: { success: boolean; error?: string } }
+  'db:draft-update-status': { args: [id: number, status: string, wordCount: number | undefined, expectedProjectPath: string]; return: { success: boolean; failure?: Failure } }
   'db:annotation-history-list': { args: [draftId: number, expectedProjectPath: string]; return: { id: number; version: number; before: string; after: string; annotations: import('./editor-inline-generation').EditorInlineAnnotation[]; createdAt: string }[] }
   'db:annotation-commit': { args: [input: { draftId: number; expectedSaved: string; before: string; after: string; annotations: import('./editor-inline-generation').EditorInlineAnnotation[] }, expectedProjectPath: string]; return: { success: boolean; failure?: Failure } }
-  'db:draft-update-content': { args: [id: number, content: string, wordCount: number, expectedProjectPath: string]; return: { success: boolean; error?: string } }
+  'db:draft-update-content': { args: [id: number, content: string, wordCount: number, expectedProjectPath: string]; return: { success: boolean; failure?: Failure } }
   'db:draft-delete': {
     args: [id: number, expectedProjectPath: string]
-    return: {
-      success: boolean
-      errorCode?: 'FINALIZED_DRAFT_DELETE_REQUIRED'
-      error?: string
-    }
+    return: { success: boolean; failure?: Failure }
   }
   'db:recovery-candidate-record': {
     args: [request: RecoveryCandidateRecordInput, expectedProjectPath: string]
@@ -1311,16 +1308,16 @@ export type MCPConfigLoadResult =
 export type MCPConfigLoadResponse =
   | ({ status: 'missing'; servers: [] } & { success: true })
   | ({ status: 'loaded'; servers: MCPServerSummary[] } & { success: true })
-  | ({ status: 'error'; servers: []; error: string } & { success: false })
+  | ({ status: 'error'; servers: []; failure: Failure } & { success: false })
 
 export interface MCPChannels {
   'mcp:load-config': { args: []; return: MCPConfigLoadResponse }
-  'mcp:connect': { args: [serverId: string]; return: { success: boolean; error?: string } }
-  'mcp:disconnect': { args: [serverId: string]; return: { success: boolean; error?: string } }
-  'mcp:disconnect-all': { args: []; return: { success: boolean; error?: string } }
+  'mcp:connect': { args: [serverId: string]; return: { success: boolean; failure?: Failure } }
+  'mcp:disconnect': { args: [serverId: string]; return: { success: boolean; failure?: Failure } }
+  'mcp:disconnect-all': { args: []; return: { success: boolean; failure?: Failure } }
   'mcp:list-tools': { args: []; return: MCPToolDescription[] }
   'mcp:list-resources': { args: []; return: MCPResourceDescription[] }
-  'mcp:call-tool': { args: [serverId: string, toolName: string, args: Record<string, unknown>]; return: { success: boolean; content: string; error?: string } }
+  'mcp:call-tool': { args: [serverId: string, toolName: string, args: Record<string, unknown>]; return: { success: boolean; content: string; failure?: Failure } }
   'mcp:get-servers-status': { args: []; return: MCPServerStatus[] }
   'mcp:get-config-path': { args: []; return: string }
 }

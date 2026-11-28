@@ -20,15 +20,17 @@ import {
   type BoundedCompletionMode,
 } from '../bounded-completion'
 import { workflowUiText, workflowWritingLanguage } from '../workflow-project-session'
-import { localize } from '../../../i18n/core'
+import { errorLocaleForRun } from '../../../i18n/core'
 import type { Locale } from '../../../i18n/types'
 import type { WritingSkillStage } from '../../../shared/writing-skills'
 import { ipc } from '../../ipc-client'
-import { displayedErrorMessage } from '../../../i18n/app-errors'
+import { displayedErrorMessage, authorError } from '../../../i18n/app-errors'
 import type { VisibleCompositionReceipt } from '../../../shared/generation-owner-contract'
 import { composeVisibleContinuation } from '../../../shared/visible-continuation'
 import { createWorkflowMainGenerationRuntime, type WorkflowMainGenerationSelection, type WorkflowMainGenerationRequest, type WorkflowMainGenerationRuntime } from '../workflow-main-generation'
 import { isWorkflowCancellation, WorkflowCancelledError } from '../workflow-cancellation'
+import { authorOwned, note } from '../../../shared/failure'
+import { currentInterfaceLocale } from '../../../stores/locale-store'
 export type { WorkflowMainGenerationSelection } from '../workflow-main-generation'
 
 export interface CommandExecuteParams {
@@ -213,11 +215,7 @@ export abstract class BaseWorkflowCommand<TResult = string> {
     selection?: WorkflowMainGenerationSelection,
   ): Promise<T> {
     if (this.activeGenerationExecution) {
-      throw new Error(workflowUiText(
-        params.context,
-        '同一个工作流命令不能并发或嵌套启动生成运行时。',
-        'One workflow command cannot start a generation runtime concurrently or inside another one.',
-      ))
+      throw authorError(params.context.interfaceLocale, { note: note('同一个工作流命令不能并发或嵌套启动生成运行时。', 'One workflow command cannot start a generation runtime concurrently or inside another one.') })
     }
     this.assertNotCancelled(params.context)
     const cancellation = observeWorkflowCancellation(params.context)
@@ -473,11 +471,7 @@ export abstract class BaseWorkflowCommand<TResult = string> {
     this.assertNotCancelled(context)
     const execution = this.requireGenerationExecution()
     if (context && execution.context !== context) {
-      throw new Error(workflowUiText(
-        execution.context,
-        '生成调用上下文与当前命令执行期不一致。',
-        'The generation call context does not match the current command execution.',
-      ))
+      throw authorError(execution.context.interfaceLocale, { note: note('生成调用上下文与当前命令执行期不一致。', 'The generation call context does not match the current command execution.') })
     }
     if (options?.writingSkillStage !== 'review') callbacks.setProgress(10)
     try {
@@ -601,11 +595,7 @@ export abstract class BaseWorkflowCommand<TResult = string> {
       
       return JSON.parse(cleanText) as T
     } catch {
-      throw new Error(localize(
-        uiLocale,
-        `AI 返回的数据格式乱码，无法解析为有效层级结构。尝试解析内容末端: ${text.slice(-100)}`,
-        `The AI returned malformed data that could not be parsed into a valid structure. End of the attempted content: ${text.slice(-100)}`,
-      ))
+      throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note(`AI 返回的数据格式乱码，无法解析为有效层级结构。尝试解析内容末端: {tail}`, `The AI returned malformed data that could not be parsed into a valid structure. End of the attempted content: {tail}`, { tail: authorOwned(text.slice(-100)) }) })
     }
   }
 

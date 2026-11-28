@@ -274,7 +274,8 @@ describe('设置页', () => {
 
     const alert = document.querySelector('[role="alertdialog"]')
     expect(alert?.textContent).toContain('模型设置保存失败')
-    expect(alert?.textContent).toContain('llm:save-model 不可用')
+    expect(alert?.textContent).toContain('出了意外问题，暂时说不清原因。请再试一次。')
+    expect(alert?.textContent).not.toContain('llm:save-model 不可用')
     expect(byName('保存配置')?.disabled).toBe(false)
     await click([...alert!.querySelectorAll('button')].find(button => button.textContent === '确定'))
     await expect.poll(() => document.querySelector('[role="alertdialog"]')).toBeNull()

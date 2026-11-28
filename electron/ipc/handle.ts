@@ -1,6 +1,5 @@
 import { ipcMain, type IpcMain, type IpcMainInvokeEvent } from 'electron'
-import { IPC_HANDLER_FAILED, publicWireFailure, registeredErrorCode } from '../../src/i18n/app-errors'
-import DIRECT_CHANNELS from './direct-channels.json'
+import { IPC_HANDLER_FAILED, publicWireFailure, registeredErrorCode, registeredErrorMessage } from '../../src/i18n/app-errors'
 
 export type IpcHandler<Args extends unknown[] = unknown[]> = (event: IpcMainInvokeEvent, ...args: Args) => unknown
 
@@ -9,9 +8,9 @@ export type IpcHandler<Args extends unknown[] = unknown[]> = (event: IpcMainInvo
  * Electron 只把 message 带过 IPC，所以 code 属性上的码要放进 message。
  */
 export function publicIpcError(error: unknown): Error {
-  const code = registeredErrorCode(error)
-  if (!code) return new Error(IPC_HANDLER_FAILED)
-  return error instanceof Error && error.message === code ? error : new Error(code)
+  const message = registeredErrorMessage(error)
+  if (!message) return new Error(IPC_HANDLER_FAILED)
+  return error instanceof Error && error.message === message ? error : new Error(message)
 }
 
 type FailureFields = { error?: unknown; errorCode?: unknown; failure?: unknown }
@@ -71,19 +70,17 @@ function sanitized<Args extends unknown[]>(channel: string, handler: IpcHandler<
 type Register = (channel: string, handler: IpcHandler) => void
 
 /**
- * 之后经 ipc 注册的处理器，不是 handle() 发起、通道又不在 direct-channels.json 里的，交给 onUnlisted，
- * 连同这次用的原注册方法（handle 或 handleOnce）。
+ * 之后经 ipc 注册的处理器，不是 handle() 发起的，交给 onUnlisted，连同这次用的原注册方法（handle 或 handleOnce）。
  * 拦的是 ipc 对象本身，经 electron['ipcMain'] 或注入的 ipc 注册的同样被拦。
  */
 export function guardIpcRegistration(
   ipc: Pick<IpcMain, 'handle' | 'handleOnce'>,
   onUnlisted: (channel: string, handler: IpcHandler, register: Register) => void,
 ): void {
-  const direct = new Set<string>(DIRECT_CHANNELS)
   for (const method of ['handle', 'handleOnce'] as const) {
     const register: Register = ipc[method].bind(ipc)
     ipc[method] = (channel: string, handler: IpcHandler) => {
-      if (registeringThroughHandle || direct.has(channel)) register(channel, handler)
+      if (registeringThroughHandle) register(channel, handler)
       else onUnlisted(channel, handler, register)
     }
   }
@@ -92,7 +89,7 @@ export function guardIpcRegistration(
 /** 打包版降级为套上 handle() 的失败处理再注册，避免已发布应用因漏登记而打不开。 */
 export function rejectUnlistedIpc(packaged: boolean): (channel: string, handler: IpcHandler, register: Register) => void {
   return (channel, handler, register) => {
-    const message = `IPC 通道 ${channel} 没有经 electron/ipc/handle.ts 的 handle() 注册：新通道改用 handle()，不要加进 direct-channels.json。`
+    const message = `IPC 通道 ${channel} 没有经 electron/ipc/handle.ts 的 handle() 注册：新通道改用 handle()。`
     console.error(`[AI Novel IPC] ${message}`)
     if (!packaged) throw new Error(message)
     register(channel, sanitized(channel, handler))

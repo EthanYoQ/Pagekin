@@ -171,7 +171,7 @@ if (process.argv.includes('--help')) {
       const draft = await call(session.page, 'db:draft-create', {
         chapterNumber: 1, version: 1, source: 'write', content: authorBody, wordCount: authorBody.length,
       }, sourceProjectPath, sourceSession)
-      assert.equal(draft.success, true, draft.error)
+      assert.equal(draft.success, true, draft.failure?.code)
       assert.equal((await call(session.page, 'db:draft-get-full', draft.id, sourceProjectPath, sourceSession)).content, authorBody)
 
       sourceInventory = inventory(sourceProjectPath)

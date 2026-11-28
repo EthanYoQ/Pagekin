@@ -65,9 +65,9 @@ export async function seedLargeBook(context, finalized, { blueprints: withBluepr
     entries: CHARACTERS.map((name, index) => ({ characterId: `draft:${randomUUID()}`, name, role: index === 0 ? 'protagonist' : 'supporting',
       gender: '', age: '', appearance: '', personality: '', background: `${name}在旧港长大。`, abilities: '', motivation: '查明沉船的来历。',
       relationships: [], arc: '', notes: '' })) }, projectPath, session)
-  assert.equal(committed.success, true, committed.error)
+  assert.equal(committed.success, true, committed.failure?.code)
   const updated = await invoke(page, 'db:project-core-update', { ...core, totalChapters: BLUEPRINTS, wordsPerChapter: CHAPTER_UNITS }, projectPath, session)
-  assert.equal(updated.success, true, updated.error)
+  assert.equal(updated.success, true, updated.failure?.code)
   const blueprints = Array.from({ length: BLUEPRINTS }, (_, index) => ({ chapterNumber: index + 1, title: chapterTitle(index + 1), role: '发展',
     purpose: '推进灯塔与沉船的线索', keyEvents: '林岚在灯塔里找到新的线索', characters: CHARACTERS.slice(0, 3), suspenseHook: '', userGuidance: '', notes: '' }))
   if (withBlueprints) assert.equal((await invoke(page, 'db:blueprint-upsert-many', blueprints, projectPath, session)).success, true)
@@ -77,7 +77,7 @@ export async function seedLargeBook(context, finalized, { blueprints: withBluepr
       return { chapterNumber: start + index, title: chapterTitle(start + index), content, wordCount: countUnits(content) }
     })
     const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(), chapters }, projectPath, session)
-    assert.equal(imported.success, true, imported.error)
+    assert.equal(imported.success, true, imported.failure?.code)
   }
   await reload()
   return { projectPath, session }
@@ -721,7 +721,7 @@ async function timeExport(context, finalized, { rounds = Number(process.env.PERF
   assert.ok(session?.leaseId, '记下了界面打开作品的会话')
   const draft = writes ? await invoke(page, 'db:draft-create', { chapterNumber: finalized + 1, version: 1, source: 'write',
     content: chapterMarker(finalized + 1), wordCount: 10 }, session.projectPath, session) : null
-  if (writes) assert.equal(draft.success, true, draft.error)
+  if (writes) assert.equal(draft.success, true, draft.failure?.code)
   const runs = []
   for (let round = 1; round <= rounds; round++) {
     const archive = path.join(roots.projects, `export-${round}-${randomUUID()}.ainovel`)

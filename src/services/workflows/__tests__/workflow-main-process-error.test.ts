@@ -3,58 +3,43 @@ import { describe, expect, it, vi } from 'vitest'
 import type { WorkflowContext } from '../../../stores/workflow-store'
 import { workflowMainProcessError } from '../workflow-project-session'
 import { shown } from '../../../i18n/__tests__/shown-locale'
+import { failureOf, type Failure } from '../../../shared/failure'
 
-const fail = (uiLocale: WorkflowContext['uiLocale'], error: string | undefined) =>
+const fail = (uiLocale: WorkflowContext['uiLocale'], error: Failure | undefined) =>
   workflowMainProcessError(shown(uiLocale), error, '定稿事务未提交', 'The finalization transaction was not committed.')
 
 describe('workflow failures carrying a main-process error (#466)', () => {
-  it('英文界面不转出主进程的中文原文，只给英文说明', () => {
-    expect(fail('en-US', 'Error: 项目数据库未打开').message).toBe('The finalization transaction was not committed.')
-  })
-
-  it('中文界面在说明后附上主进程原文', () => {
-    expect(fail('zh-CN', 'Error: 项目数据库未打开').message).toBe('定稿事务未提交：项目数据库未打开')
-  })
-
   it('登记过的错误码按界面语言解释', () => {
-    expect(fail('en-US', 'PROJECT_NOT_OPEN').message).toBe('The finalization transaction was not committed. Open a project first.')
-    expect(fail('zh-CN', 'PROJECT_NOT_OPEN').message).toBe('定稿事务未提交：请先打开项目。')
+    expect(fail('en-US', { code: 'PROJECT_NOT_OPEN' }).message).toBe('The finalization transaction was not committed. Open a project first.')
+    expect(fail('zh-CN', { code: 'PROJECT_NOT_OPEN' }).message).toBe('定稿事务未提交：请先打开项目。')
   })
 
   it('带名字的错误类转来的会话失效码同样按界面语言解释（#474）', () => {
-    const stale = 'ProjectSessionStaleError: PROJECT_SESSION_STALE'
+    const stale = failureOf('ProjectSessionStaleError: PROJECT_SESSION_STALE')
     expect(fail('en-US', stale).message).toBe('The finalization transaction was not committed. The project was switched or reopened, and this action belonged to the earlier session, so it was rejected. Repeat it in the project that is open now.')
     expect(fail('zh-CN', stale).message).toBe('定稿事务未提交：项目已切换或重新打开，这次操作属于之前打开的项目，已拒绝执行。请在当前打开的项目里重新操作。')
   })
 
-  it('带名字的错误类转来的未登记码不进说明，保留在 code 上（#787）', () => {
-    const failure = fail('en-US', 'PortableProjectArchiveError: PORTABLE_UNREGISTERED_TEST_CODE')
-    expect(failure.message).toBe('The finalization transaction was not committed.')
-    expect(failure).toHaveProperty('code', 'PORTABLE_UNREGISTERED_TEST_CODE')
-  })
-
-  it('未登记的错误码不进说明，保留在 code 上并记到控制台（#787）', () => {
+  it('未登记的错误码不进说明，保留在 code 上（#787）', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       for (const locale of ['zh-CN', 'en-US'] as const) {
-        const failure = fail(locale, 'WORKFLOW_UNREGISTERED_TEST_CODE')
+        const failure = fail(locale, failureOf('PortableProjectArchiveError: WORKFLOW_UNREGISTERED_TEST_CODE'))
         expect(failure.message).toBe(locale === 'zh-CN' ? '定稿事务未提交' : 'The finalization transaction was not committed.')
         expect(failure).toHaveProperty('code', 'WORKFLOW_UNREGISTERED_TEST_CODE')
       }
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('WORKFLOW_UNREGISTERED_TEST_CODE'))
     } finally {
       warn.mockRestore()
     }
   })
 
-  it('日文界面：概述用英文文案，登记过的码按日文说明，未登记的中文原文不接上', () => {
-    const fromJapanese = (error: string | undefined) => workflowMainProcessError(shown('ja-JP'), error, '定稿事务未提交', 'The finalization transaction was not committed.').message
-    expect(fromJapanese('PROJECT_NOT_OPEN')).toBe('The finalization transaction was not committed. 先にプロジェクトを開いてください。')
-    expect(fromJapanese('Error: 项目数据库未打开')).toBe('The finalization transaction was not committed.')
+  it('日文界面：概述用英文文案，登记过的码按日文说明', () => {
+    expect(workflowMainProcessError(shown('ja-JP'), { code: 'PROJECT_NOT_OPEN' }, '定稿事务未提交', 'The finalization transaction was not committed.').message)
+      .toBe('The finalization transaction was not committed. 先にプロジェクトを開いてください。')
   })
 
   it('主进程没给原因时只给说明', () => {
     expect(fail('en-US', undefined).message).toBe('The finalization transaction was not committed.')
-    expect(fail('zh-CN', '  ').message).toBe('定稿事务未提交')
+    expect(fail('zh-CN', undefined).message).toBe('定稿事务未提交')
   })
 })

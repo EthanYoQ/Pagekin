@@ -2,8 +2,8 @@ import { create } from 'zustand'
 import { ipc } from '../services/ipc-client'
 import { requireIpcSuccess } from '../services/ipc-result'
 import { alertError } from '../components/ui/AlertDialog'
-import { caughtFailure, failureText, resultFailure } from '../i18n/app-errors'
-import { note } from '../shared/failure'
+import { authorError, caughtFailure, failureText, IPC_HANDLER_FAILED, resultFailure } from '../i18n/app-errors'
+import { note, type AuthorNote, type Failure } from '../shared/failure'
 import { currentInterfaceLocale, useLocaleStore } from './locale-store'
 import type {
   LocalContextWindowRequest,
@@ -30,12 +30,17 @@ interface LLMState {
   setDefaultEmbeddingModel: (modelId: string) => Promise<boolean>
   setDefaultRerankModel: (modelId: string) => Promise<boolean>
   setStageModel: (stage: ModelStage, modelId: string | null) => Promise<boolean>
-  testConnection: (model: ModelProfile) => Promise<{ success: boolean; error?: string }>
+  testConnection: (model: ModelProfile) => Promise<{ success: boolean; failure?: Failure }>
   discoverModels: (request: ModelDiscoveryRequest) => Promise<ModelDiscoveryResult>
   discoverLocalContextWindow: (request: LocalContextWindowRequest) => Promise<number | null>
 }
 
 let initializationFlight: Promise<void> | null = null
+
+/** IPC_HANDLER_FAILED 只是笼统的写失败，让给调用点自己的兜底句或通用说明。 */
+function settingsFailureText(failure: Failure | undefined, fallback?: AuthorNote): string {
+  return failureText(currentInterfaceLocale(), failure?.code === IPC_HANDLER_FAILED ? undefined : failure, { fallback })
+}
 
 export const useLLMStore = create<LLMState>()((set, get) => ({
   models: [],
@@ -88,7 +93,7 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
       await get().loadModels()
     } else {
       const { text } = useLocaleStore.getState()
-      alertError(text('保存模型失败', 'Could not save the model.'), {
+      alertError(settingsFailureText(resultFailure(result), note('保存模型失败', 'Could not save the model.')), {
         title: text('模型设置保存失败', 'Model settings could not be saved'),
       })
     }
@@ -99,7 +104,7 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
     const result = await ipc.invoke('llm:delete-model', modelId)
     if (!result.success) {
       const { text } = useLocaleStore.getState()
-      alertError(failureText(currentInterfaceLocale(), resultFailure(result), { fallback: note('删除模型失败', 'Could not delete the model.') }), {
+      alertError(settingsFailureText(resultFailure(result), note('删除模型失败', 'Could not delete the model.')), {
         title: text('模型删除失败', 'Could not delete the model'),
       })
       return false
@@ -121,7 +126,7 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
       return true
     } catch (error) {
       const { text } = useLocaleStore.getState()
-      alertError(failureText(currentInterfaceLocale(), caughtFailure(error)), { title: text('模型设置保存失败', 'Model settings could not be saved') })
+      alertError(settingsFailureText(caughtFailure(error)), { title: text('模型设置保存失败', 'Model settings could not be saved') })
       return false
     }
   },
@@ -136,7 +141,7 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
       return true
     } catch (error) {
       const { text } = useLocaleStore.getState()
-      alertError(failureText(currentInterfaceLocale(), caughtFailure(error)), { title: text('模型设置保存失败', 'Model settings could not be saved') })
+      alertError(settingsFailureText(caughtFailure(error)), { title: text('模型设置保存失败', 'Model settings could not be saved') })
       return false
     }
   },
@@ -148,7 +153,7 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
       return true
     } catch (error) {
       const { text } = useLocaleStore.getState()
-      alertError(failureText(currentInterfaceLocale(), caughtFailure(error)), { title: text('模型设置保存失败', 'Model settings could not be saved') })
+      alertError(settingsFailureText(caughtFailure(error)), { title: text('模型设置保存失败', 'Model settings could not be saved') })
       return false
     }
   },
@@ -156,12 +161,12 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
   setStageModel: async (stage, modelId) => {
     try {
       const result = await ipc.invoke('llm:set-stage-model', { stage, modelId })
-      if (!result.success) throw new Error(result.error)
+      if (!result.success) throw authorError(currentInterfaceLocale(), result.failure)
       set({ stageModelIds: result.stageModelIds })
       return true
     } catch (error) {
       const { text } = useLocaleStore.getState()
-      alertError(failureText(currentInterfaceLocale(), caughtFailure(error)), { title: text('分工设置没有保存', 'The stage setting was not saved') })
+      alertError(settingsFailureText(caughtFailure(error)), { title: text('分工设置没有保存', 'The stage setting was not saved') })
       return false
     }
   },

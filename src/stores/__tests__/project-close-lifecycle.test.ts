@@ -161,6 +161,9 @@ beforeEach(() => {
   })
 })
 
+/** 没标记的失败显示的通用说明；原文只进日志。 */
+const GENERIC = '出了意外问题，暂时说不清原因。请再试一次。'
+
 describe('project close lifecycle', () => {
   it('imports a recognized shelf project through its source grant and opens only the new copy', async () => {
     mocks.confirm.mockResolvedValueOnce(true)
@@ -562,13 +565,13 @@ describe('project close lifecycle', () => {
 
     expect(useProjectStore.getState().currentProject).toBeNull()
     expect(mocks.alertError).toHaveBeenCalledWith(
-      expect.stringContaining('renderer cleanup failed'),
+      expect.stringContaining(GENERIC),
       expect.objectContaining({ title: '项目已关闭，界面清理未完成' }),
     )
   })
 
   it('keeps project state and tabs when database close reports a business failure', async () => {
-    mocks.invoke.mockResolvedValue({ success: false, error: 'database busy' })
+    mocks.invoke.mockResolvedValue({ success: false, failure: { code: 'IPC_HANDLER_FAILED' } })
 
     await expect(useProjectStore.getState().closeProject()).resolves.toBe(false)
 
@@ -576,7 +579,7 @@ describe('project close lifecycle', () => {
     expect(useEditorStore.getState().tabs).toHaveLength(1)
     expect(mocks.onProjectClosed).not.toHaveBeenCalled()
     expect(mocks.alertError).toHaveBeenCalledWith(
-      expect.stringContaining('database busy'),
+      '关闭项目数据库失败，请再试一次。',
       expect.objectContaining({ title: '关闭项目失败' }),
     )
   })
@@ -586,7 +589,7 @@ describe('project close lifecycle', () => {
       tabs: state.tabs.map(tab => ({ ...tab, content: '仍需保留', dirty: true })),
     }))
     mocks.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(true)
-    mocks.invoke.mockResolvedValue({ success: false, error: 'database busy' })
+    mocks.invoke.mockResolvedValue({ success: false, failure: { code: 'IPC_HANDLER_FAILED' } })
 
     await expect(useProjectStore.getState().closeProject()).resolves.toBe(false)
 
@@ -1258,7 +1261,7 @@ describe('project close lifecycle', () => {
       expect(mocks.disableProjectBindingsPreservingDrafts).toHaveBeenCalledWith(project('A').path)
       expect(mocks.onProjectClosed).not.toHaveBeenCalled()
       expect(mocks.alertError).toHaveBeenCalledWith(
-        expect.stringContaining('runtime context unavailable'),
+        expect.stringContaining(GENERIC),
         expect.objectContaining({ title: '无法确认项目数据库状态，已停用项目' }),
       )
     } finally {
@@ -1568,7 +1571,7 @@ describe('project close lifecycle', () => {
 
     expect(useProjectStore.getState().currentProject?.path).toBe(project('B').path)
     expect(mocks.alertError).toHaveBeenCalledWith(
-      expect.stringContaining('draft index unavailable'),
+      expect.stringContaining(GENERIC),
       expect.objectContaining({ title: '项目已打开，部分数据加载失败' }),
     )
   })
@@ -1664,7 +1667,7 @@ describe('project close lifecycle', () => {
     await expect(useProjectStore.getState().openProject(project('B').path)).resolves.toBe(true)
 
     expect(mocks.alertError).toHaveBeenCalledWith(
-      expect.stringContaining('recent list unavailable'),
+      expect.stringContaining(GENERIC),
       expect.objectContaining({ title: '项目已打开，部分数据加载失败' }),
     )
     await new Promise(resolve => setTimeout(resolve, 0))
@@ -1852,7 +1855,7 @@ describe('project close lifecycle', () => {
       expect.stringMatching(/重复的定稿没能修复，后面的章节可能写不了；下次打开项目会再试一次。$/u),
       expect.objectContaining({ title: '项目已打开，部分数据加载失败' }),
     )
-    expect(mocks.alertError.mock.calls[0]![0]).not.toMatch(/SQLITE_BUSY|database is locked|原因/u)
+    expect(mocks.alertError.mock.calls[0]![0]).not.toMatch(/SQLITE_BUSY|database is locked|原因：/u)
   })
 
   it('keeps the committed project open and continues Layer 2 when the recent-project list fails', async () => {
@@ -1875,7 +1878,7 @@ describe('project close lifecycle', () => {
     expect(useProjectStore.getState().currentProject?.path).toBe(project('B').path)
     expect(mocks.onProjectOpened).toHaveBeenCalledOnce()
     expect(mocks.alertError).toHaveBeenCalledWith(
-      expect.stringMatching(/recent list unavailable[\s\S]*角色卡加载失败/),
+      expect.stringMatching(/出了意外问题[\s\S]*角色卡加载失败/),
       expect.objectContaining({ title: '项目已打开，部分数据加载失败' }),
     )
   })
@@ -1925,7 +1928,7 @@ describe('project character-state persistence boundary', () => {
 
     expect(useProjectStore.getState().currentProject?.characterStates).toBe('')
     expect(mocks.alertError).toHaveBeenCalledWith(
-      expect.stringContaining('disk full'),
+      '保存角色状态失败，请再试一次。',
       expect.objectContaining({ title: '保存角色状态失败' }),
     )
   })

@@ -60,7 +60,7 @@ const seedRefs = context => seedStageSample(context, { beforeReload: async ({ pa
   assert.equal(plan.success, true, JSON.stringify(plan.failure))
   const draft = await invoke(page, 'db:draft-create', { chapterNumber: 3, version: 2, source: 'write', content: SECOND_DRAFT,
     wordCount: countUnits(SECOND_DRAFT) }, projectPath, session)
-  assert.equal(draft.success, true, draft.error)
+  assert.equal(draft.success, true, draft.failure?.code)
 } })
 
 async function stubOpenFiles(app, files) {
@@ -134,7 +134,7 @@ const seedHundredChapters = context => seedStageSample(context, { totalChapters:
   for (let chapterNumber = STAGE_SAMPLE.titles.length + 1; chapterNumber <= 100; chapterNumber++) {
     const upserted = await invoke(page, 'db:blueprint-upsert', { chapterNumber, title: `潮汐第${chapterNumber}夜`, role: '发展', purpose: '推进灯塔与沉船的线索',
       keyEvents: '林岚在灯塔里找到新的线索', characters: [] }, projectPath, session)
-    assert.equal(upserted.success, true, upserted.error)
+    assert.equal(upserted.success, true, upserted.failure?.code)
   }
   for (let chapterNumber = 1; chapterNumber <= 100; chapterNumber++) {
     const drafts = await invoke(page, 'db:draft-list', chapterNumber, projectPath, session)
@@ -143,7 +143,7 @@ const seedHundredChapters = context => seedStageSample(context, { totalChapters:
     const content = STAGE_SAMPLE.drafts[chapterNumber]?.text ?? STAGE_SAMPLE.drafts[4].text
     for (let version = existing + 1; version <= 5; version++) {
       const created = await invoke(page, 'db:draft-create', { chapterNumber, version, source: 'write', content, wordCount: countUnits(content) }, projectPath, session)
-      assert.equal(created.success, true, created.error)
+      assert.equal(created.success, true, created.failure?.code)
     }
   }
 } })
@@ -272,7 +272,7 @@ export const REFS_SCENARIOS = {
     const first = (await invoke(page, 'db:draft-list', 3, session.projectPath, session)).find(draft => draft.version === 1)
     assert.ok(first, '第 3 章预置了 v1 稿')
     const deleted = await invoke(page, 'db:draft-delete', first.id, session.projectPath, session)
-    assert.equal(deleted.success, true, deleted.error)
+    assert.equal(deleted.success, true, deleted.failure?.code)
     await refs.versionButton(page, '草稿 v1').click()
     await refs.comparison(page).getByText('这一稿已不存在，可能已被删除，请另选一稿。').waitFor({ state: 'visible' })
     await refs.versionButton(page, '草稿 v1').waitFor({ state: 'detached' })

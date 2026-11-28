@@ -295,7 +295,7 @@ async function main() {
         content: authorBody,
         wordCount: authorBody.length,
       }, sourceProjectPath, sourceSession)
-      assert.equal(draft.success, true, draft.error)
+      assert.equal(draft.success, true, draft.failure?.code)
 
       const connected = await call(session.page, 'cloud-backup:connect', { endpoint: dav.endpoint, username, secret })
       assert.equal(connected.success, true, connected.errorCode)

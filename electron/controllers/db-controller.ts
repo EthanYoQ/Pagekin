@@ -1,4 +1,4 @@
-import { ipcMain, type IpcMainInvokeEvent } from 'electron'
+import type { IpcMainInvokeEvent } from 'electron'
 import { IPC_HANDLER_FAILED, registeredErrorCode, wireNote } from '../../src/i18n/app-errors'
 import { failureCode, type WireFailure } from '../../src/shared/failure'
 import { isProjectSessionContext } from '../../src/shared/project-session-context'
@@ -119,6 +119,8 @@ const MUTATING_DATABASE_CHANNELS = new Set([
   'db:review-create',
   'db:consistency-exemption-save',
   'db:consistency-exemption-revoke',
+  'db:continuity-save-finalized',
+  'db:continuity-save-character-state-candidates',
   'db:post-process-create-run',
   'db:post-process-mark-step-ok',
   'db:post-process-mark-step-failed',
@@ -142,18 +144,6 @@ async function inProjectSession(handler: ProjectDatabaseHandler, event: unknown,
   return await (handler as (event: unknown, ...handlerArgs: unknown[]) => unknown)(event, ...args)
 }
 
-function registerProjectDatabaseHandler(channel: string, handler: ProjectDatabaseHandler): void {
-  ipcMain.handle(channel, async (event, ...received: unknown[]) => {
-    const [context, args] = withoutSessionContext(received)
-    try {
-      return await inProjectSession(handler, event, context, args)
-    } catch (error) {
-      if (MUTATING_DATABASE_CHANNELS.has(channel)) return { success: false, error: String(error) }
-      throw error
-    }
-  })
-}
-
 function registerMigratedDatabaseHandler(channel: string, handler: ProjectDatabaseHandler, writeFailed: WireFailure): void {
   handle(channel, async (event, ...received: unknown[]) => {
     try {
@@ -168,9 +158,18 @@ function registerMigratedDatabaseHandler(channel: string, handler: ProjectDataba
 }
 
 export function registerDatabaseController() {
-  // 所有 db:* 都通过同一会话门禁；下面现有 handler 保留业务参数与错误语义。
-  const ipcMain = { handle: registerProjectDatabaseHandler }
-  ipcMain.handle('db:close', async (_event, expectedProjectPath: string) => {
+  const unexplained = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, { code: IPC_HANDLER_FAILED }),
+  }
+  // 失败时故事设定没有改动：update、大纲提交各是一条语句，生成提交与作者恢复各在一个事务里。
+  const projectCore = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
+      code: 'PROJECT_CORE_WRITE_FAILED',
+      note: wireNote('error.projectCoreWriteFailed'),
+    }),
+  }
+
+  unexplained.handle('db:close', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     // 导出 worker 还在读这本书时不能关库；等它停完后作品可能已换或被重新打开，路径和会话都再核对一次。
     // 导出登记用的是会话作品根；传入路径的大小写可能与它不同。
@@ -186,43 +185,36 @@ export function registerDatabaseController() {
   // ============================================================
   // 1. project_core — 项目主台账
   // ============================================================
-  ipcMain.handle('db:project-core-get', async (_event, expectedProjectPath: string) => {
+  projectCore.handle('db:project-core-get', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return ProjectCoreRepository.get()
   })
 
-  ipcMain.handle('db:project-core-update', async (
+  projectCore.handle('db:project-core-update', async (
     _event,
     data: Partial<ProjectCoreData>,
     expectedProjectPath: string,
   ) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      ProjectCoreRepository.update(data)
-      return { success: true }
-    } catch (err) {
-      console.error('[db:project-core-update] 失败:', err)
-      return { success: false, error: String(err) }
-    }
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    ProjectCoreRepository.update(data)
+    return { success: true }
   })
 
-  ipcMain.handle('db:project-core-commit-generated', async (
+  projectCore.handle('db:project-core-commit-generated', async (
     _event, request: { data: Partial<ProjectCoreData>; aiSources?: AiSources; generationRunHandle: MainGenerationRunHandle }, expectedProjectPath: string,
   ) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      const database = getProjectDb()
-      if (!database || !request.generationRunHandle) throw new Error('GENERATION_OWNER_REQUIRED')
-      database.transaction(() => withGenerationAgentChildEffect(request.generationRunHandle, () => {
-        assertGenerationSourcesCurrent(request.generationRunHandle)
-        ProjectCoreRepository.update(request.data)
-        if (request.aiSources) ProjectCoreRepository.setAiSources(request.aiSources)
-      })).immediate()
-      return { success: true }
-    } catch (error) { return { success: false, error: String(error) } }
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    const database = getProjectDb()
+    if (!database || !request.generationRunHandle) throw new Error('GENERATION_OWNER_REQUIRED')
+    database.transaction(() => withGenerationAgentChildEffect(request.generationRunHandle, () => {
+      assertGenerationSourcesCurrent(request.generationRunHandle)
+      ProjectCoreRepository.update(request.data)
+      if (request.aiSources) ProjectCoreRepository.setAiSources(request.aiSources)
+    })).immediate()
+    return { success: true }
   })
 
-  ipcMain.handle('db:project-core-synopsis-commit', async (
+  projectCore.handle('db:project-core-synopsis-commit', async (
     _event,
     request: ProjectCoreSynopsisCommitRequest,
     expectedProjectPath: string,
@@ -243,7 +235,7 @@ export function registerDatabaseController() {
     const database = getProjectDb()
     if (request.generationRunHandle && !database) throw new Error('GENERATION_DATABASE_NOT_READY')
     if (!(request.generationRunHandle ? database!.transaction(() => withGenerationAgentChildEffect(request.generationRunHandle!, commit)).immediate() : commit())) {
-      return { success: false, error: 'PROJECT_CORE_SYNOPSIS_CHANGED' }
+      return { success: false, failure: { code: 'PROJECT_CORE_SYNOPSIS_CHANGED' } }
     }
     return { success: true }
   })
@@ -264,22 +256,18 @@ export function registerDatabaseController() {
     return { success: true, receipt: ImportGlobalFactsRepository.commit(request) }
   })
 
-  ipcMain.handle('db:project-clear-generated-data', async (
+  // 失败时什么都没清：库内清除在一个事务里，挪进废纸篓的文件在事务失败时挪回原处。
+  registerMigratedDatabaseHandler('db:project-clear-generated-data', async (
     _event,
     options: ProjectClearOptions,
     expectedProjectPath: string,
   ) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      const session = projectAccess.captureCurrentSession()
-      const result = ProjectClearRepository.clearGeneratedData(options,
-        session ? { projectId: session.projectId, epoch: session.leaseId } : undefined)
-      return { success: true, ...result }
-    } catch (err) {
-      console.error('[db:project-clear-generated-data] 失败:', err)
-      return { success: false, error: String(err) }
-    }
-  })
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    const session = projectAccess.captureCurrentSession()
+    const result = ProjectClearRepository.clearGeneratedData(options,
+      session ? { projectId: session.projectId, epoch: session.leaseId } : undefined)
+    return { success: true, ...result }
+  }, { code: 'PROJECT_CLEAR_FAILED', note: wireNote('error.projectClearFailed') })
 
   importRuns.handle('db:import-run-prepare-inspection', async (
     event,
@@ -555,67 +543,70 @@ export function registerDatabaseController() {
   // ============================================================
   // 2. blueprints — 章节蓝图
   // ============================================================
-  ipcMain.handle('db:blueprint-get-all', async (_event, expectedProjectPath: string) => {
+  // 失败时已有的蓝图都还在：upsert、delete 各是一条语句，批量写、按范围提交、清空各在一个事务里。
+  const blueprints = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
+      code: 'BLUEPRINT_WRITE_FAILED',
+      note: wireNote('error.blueprintWriteFailed'),
+    }),
+  }
+
+  blueprints.handle('db:blueprint-get-all', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return BlueprintRepository.getAll()
   })
 
-  ipcMain.handle('db:blueprint-get', async (_event, chapterNumber: number, expectedProjectPath: string) => {
+  blueprints.handle('db:blueprint-get', async (_event, chapterNumber: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return BlueprintRepository.getByChapter(chapterNumber)
   })
 
-  ipcMain.handle('db:blueprint-upsert', async (_event, data: BlueprintData, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      BlueprintRepository.upsert(data)
-      return { success: true }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  blueprints.handle('db:blueprint-upsert', async (_event, data: BlueprintData, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    BlueprintRepository.upsert(data)
+    return { success: true }
   })
 
-  ipcMain.handle('db:blueprint-upsert-many', async (_event, items: BlueprintData[], expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      BlueprintRepository.upsertMany(items)
-      return { success: true }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  blueprints.handle('db:blueprint-upsert-many', async (_event, items: BlueprintData[], expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    BlueprintRepository.upsertMany(items)
+    return { success: true }
   })
 
-  ipcMain.handle('db:blueprint-commit-range', async (
+  blueprints.handle('db:blueprint-commit-range', async (
     _event,
     request: BlueprintRangeCommitRequest,
     expectedProjectPath: string,
   ) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      if (request.authorRecovery) {
-        const database = getProjectDb()
-        if (!database) throw new Error('GENERATION_DATABASE_NOT_READY')
-        return { success: true, receipt: database.transaction(() => commitGenerationBlueprintAuthorEdit(request)).immediate() }
-      }
-      if (!request.generationRunHandle) return { success: true, receipt: BlueprintRepository.commitRange(request) }
-      const database = getProjectDb(), requested = request.generationRequestedRange ?? { startChapter: request.startChapter, endChapter: request.endChapter }
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    if (request.authorRecovery) {
+      const database = getProjectDb()
       if (!database) throw new Error('GENERATION_DATABASE_NOT_READY')
-      if (!Number.isSafeInteger(requested.startChapter) || !Number.isSafeInteger(requested.endChapter)
-        || requested.startChapter !== request.startChapter || requested.endChapter < request.endChapter || requested.endChapter - requested.startChapter >= 10000)
-        throw new Error('GENERATION_DIRECTORY_RANGE_INVALID')
-      const commit = () => {
-        const committed = BlueprintRepository.commitRange(request, () => assertGenerationSourcesCurrent(request.generationRunHandle!, requested))
-        return { ...committed, generationProgress: recordGenerationDirectoryCommit(request.generationRunHandle!, requested, committed) }
-      }
-      const receipt = database.transaction(() => BlueprintRepository.getCommittedRangeOperation(request.operationId)
-        ? commit() : withGenerationAgentChildEffect(request.generationRunHandle!, commit)).immediate()
-      return { success: true, receipt }
-    } catch (err) {
-      return { success: false, error: String(err) }
+      return { success: true, receipt: database.transaction(() => commitGenerationBlueprintAuthorEdit(request)).immediate() }
     }
+    if (!request.generationRunHandle) return { success: true, receipt: BlueprintRepository.commitRange(request) }
+    const database = getProjectDb(), requested = request.generationRequestedRange ?? { startChapter: request.startChapter, endChapter: request.endChapter }
+    if (!database) throw new Error('GENERATION_DATABASE_NOT_READY')
+    if (!Number.isSafeInteger(requested.startChapter) || !Number.isSafeInteger(requested.endChapter)
+      || requested.startChapter !== request.startChapter || requested.endChapter < request.endChapter || requested.endChapter - requested.startChapter >= 10000)
+      throw new Error('GENERATION_DIRECTORY_RANGE_INVALID')
+    const commit = () => {
+      const committed = BlueprintRepository.commitRange(request, () => assertGenerationSourcesCurrent(request.generationRunHandle!, requested))
+      return { ...committed, generationProgress: recordGenerationDirectoryCommit(request.generationRunHandle!, requested, committed) }
+    }
+    const receipt = database.transaction(() => BlueprintRepository.getCommittedRangeOperation(request.operationId)
+      ? commit() : withGenerationAgentChildEffect(request.generationRunHandle!, commit)).immediate()
+    return { success: true, receipt }
   })
 
-  ipcMain.handle('db:blueprint-character-sync-list-pending', async (
+  const roster = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
+      code: 'CHARACTER_ROSTER_WRITE_FAILED',
+      note: wireNote('error.characterRosterWriteFailed'),
+    }),
+  }
+
+  roster.handle('db:blueprint-character-sync-list-pending', async (
     _event,
     expectedProjectPath: string,
   ) => {
@@ -623,7 +614,7 @@ export function registerDatabaseController() {
     return BlueprintRepository.listPendingCharacterSyncOperations()
   })
 
-  ipcMain.handle('db:blueprint-character-sync-get', async (
+  roster.handle('db:blueprint-character-sync-get', async (
     _event,
     operationId: string,
     expectedProjectPath: string,
@@ -632,68 +623,59 @@ export function registerDatabaseController() {
     return BlueprintRepository.getCharacterSyncOperation(operationId)
   })
 
-  ipcMain.handle('db:blueprint-character-sync-complete', async (
+  roster.handle('db:blueprint-character-sync-complete', async (
     _event,
     operationId: string,
     expectedProjectPath: string,
   ) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      return {
-        success: true,
-        operation: BlueprintRepository.completeCharacterSyncOperation(operationId),
-      }
-    } catch (err) {
-      return { success: false, error: String(err) }
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    return {
+      success: true,
+      operation: BlueprintRepository.completeCharacterSyncOperation(operationId),
     }
   })
 
-  ipcMain.handle('db:blueprint-update-notes', async (_event, _chapterNumber: number, _notes: string, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      // Derived finalization notes are committed with their artifact and ACK in one main transaction.
-      throw new Error('GENERATION_FINALIZATION_ADMISSION_REQUIRED')
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  unexplained.handle('db:blueprint-update-notes', async (_event, _chapterNumber: number, _notes: string, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    // Derived finalization notes are committed with their artifact and ACK in one main transaction.
+    throw new Error('GENERATION_FINALIZATION_ADMISSION_REQUIRED')
   })
 
-  ipcMain.handle('db:blueprint-delete', async (_event, chapterNumber: number, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      BlueprintRepository.delete(chapterNumber)
-      return { success: true }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  blueprints.handle('db:blueprint-delete', async (_event, chapterNumber: number, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    BlueprintRepository.delete(chapterNumber)
+    return { success: true }
   })
 
-  ipcMain.handle('db:blueprint-clear-all', async (_event, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      BlueprintRepository.clearAll()
-      return { success: true }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  blueprints.handle('db:blueprint-clear-all', async (_event, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    BlueprintRepository.clearAll()
+    return { success: true }
   })
 
   // ============================================================
   // 3. characters — 角色卡
   // ============================================================
-  ipcMain.handle('db:character-get-all', async (_event, expectedProjectPath: string) => {
+  roster.handle('db:character-get-all', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return CharacterRepository.getAll()
   })
 
-  ipcMain.handle('db:character-continuity-nodes', async (_event, characterIds: string[], expectedProjectPath: string) => {
+  const continuity = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
+      code: 'CONSISTENCY_EXEMPTION_WRITE_FAILED',
+      note: wireNote('error.consistencyExemptionWriteFailed'),
+    }),
+  }
+
+  continuity.handle('db:character-continuity-nodes', async (_event, characterIds: string[], expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     const database = getProjectDb()
     if (!database) throw new Error('DB_NOT_OPEN')
     return SummaryRepository.readContinuityNodesForWriting(characterIds, database)
   })
 
-  ipcMain.handle('db:character-roster-read', async (_event, expectedProjectPath: string) => {
+  roster.handle('db:character-roster-read', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     const roster = CharacterRosterRepository.read()
     const database = getProjectDb()
@@ -708,50 +690,57 @@ export function registerDatabaseController() {
     return { ...roster, currentDerivedFields }
   })
 
-  ipcMain.handle('db:character-continuity-timeline', async (_event, characterId: string, expectedProjectPath: string) => {
+  continuity.handle('db:character-continuity-timeline', async (_event, characterId: string, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     const database = getProjectDb()
     if (!database) throw new Error('DB_NOT_OPEN')
     return readCharacterContinuityTimeline(database, characterId)
   })
 
-  ipcMain.handle('db:blueprint-relationship-hints', async (_event, blueprints: BlueprintForPreflight[], expectedProjectPath: string) => {
+  continuity.handle('db:blueprint-relationship-hints', async (_event, blueprints: BlueprintForPreflight[], expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return BlueprintRepository.committedRelationshipHints(blueprints)
   })
 
-  ipcMain.handle('db:character-continuity-preflight-nodes', async (_event, expectedProjectPath: string) => {
+  continuity.handle('db:character-continuity-preflight-nodes', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     const database = getProjectDb()
     if (!database) throw new Error('DB_NOT_OPEN')
     return SummaryRepository.readContinuityNodesForPreflight(database)
   })
 
-  ipcMain.handle('db:character-roster-commit', async (
+  roster.handle('db:character-roster-commit', async (
     _event,
     request: CharacterRosterCommitRequest,
     expectedProjectPath: string,
   ) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      const authorDb = getProjectDb()
-      if (!authorDb) throw new Error('PROJECT_NOT_OPEN')
-      const authorSession = projectAccess.captureCurrentSession()
-      if (!authorSession) throw new Error('CHARACTER_AUTHOR_SCOPE_REQUIRED')
-      return { success: true, receipt: commitAuthorCharacterRoster(authorDb, request,
-        { projectId: authorSession.projectId, epoch: authorSession.leaseId }, () => {
-          projectAccess.assertCurrentSession(authorSession)
-          assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-        }) }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    const authorDb = getProjectDb()
+    if (!authorDb) throw new Error('PROJECT_NOT_OPEN')
+    const authorSession = projectAccess.captureCurrentSession()
+    if (!authorSession) throw new Error('CHARACTER_AUTHOR_SCOPE_REQUIRED')
+    return { success: true, receipt: commitAuthorCharacterRoster(authorDb, request,
+      { projectId: authorSession.projectId, epoch: authorSession.leaseId }, () => {
+        projectAccess.assertCurrentSession(authorSession)
+        assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+      }) }
   })
 
   // ============================================================
   // 4. drafts — 草稿
   // ============================================================
-  ipcMain.handle('db:draft-import-finalized-batch', async (
+  // 失败时已存的稿件都还在：新建、删除各在一个事务里，改状态是一条语句，改正文不删稿。
+  const drafts = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, {
+      code: 'DRAFT_WRITE_FAILED',
+      note: wireNote('error.draftWriteFailed'),
+    }),
+  }
+  const importedDrafts = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, { code: IPC_HANDLER_FAILED }),
+  }
+
+  importedDrafts.handle('db:draft-import-finalized-batch', async (
     _event,
     request: FinalizedDraftImportRequest,
     expectedProjectPath: string,
@@ -765,7 +754,7 @@ export function registerDatabaseController() {
     }
   })
 
-  ipcMain.handle('db:draft-create', async (_event, params: {
+  drafts.handle('db:draft-create', async (_event, params: {
     chapterNumber: number
     version: number
     source: 'write' | 'rewrite'
@@ -773,116 +762,99 @@ export function registerDatabaseController() {
     wordCount: number
     sourceDependencies?: DraftSourceDependency[]
   }, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      const id = DraftRepository.create(params)
-      return { success: true, id }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    return { success: true, id: DraftRepository.create(params) }
   })
 
-  ipcMain.handle('db:draft-list', async (_event, chapterNumber: number, expectedProjectPath: string) => {
+  drafts.handle('db:draft-list', async (_event, chapterNumber: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return DraftRepository.listByChapter(chapterNumber)
   })
 
-  ipcMain.handle('db:draft-list-all', async (_event, expectedProjectPath: string) => {
+  drafts.handle('db:draft-list-all', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return DraftRepository.listAll()
   })
 
-  ipcMain.handle('db:draft-get-meta', async (_event, id: number, expectedProjectPath: string) => {
+  drafts.handle('db:draft-get-meta', async (_event, id: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return DraftRepository.getMeta(id)
   })
 
-  ipcMain.handle('db:draft-get-full', async (_event, id: number, expectedProjectPath: string) => {
+  drafts.handle('db:draft-get-full', async (_event, id: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return DraftRepository.getFull(id)
   })
 
-  ipcMain.handle('db:draft-get-latest', async (_event, chapterNumber: number, expectedProjectPath: string) => {
+  drafts.handle('db:draft-get-latest', async (_event, chapterNumber: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return DraftRepository.getLatestByChapter(chapterNumber)
   })
 
-  ipcMain.handle('db:draft-get-finalized', async (_event, chapterNumber: number, expectedProjectPath: string) => {
+  drafts.handle('db:draft-get-finalized', async (_event, chapterNumber: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return DraftRepository.getFinalizedByChapter(chapterNumber)
   })
 
-  ipcMain.handle('db:draft-get-max-finalized-chapter', async (_event, expectedProjectPath: string) => {
+  drafts.handle('db:draft-get-max-finalized-chapter', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return DraftRepository.getMaxFinalizedChapter()
   })
 
-  ipcMain.handle('db:draft-authority-sequence', async (_event, expectedProjectPath: string) => {
+  drafts.handle('db:draft-authority-sequence', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return FinalizedDraftImportRepository.authoritySequence()
   })
 
-  ipcMain.handle('db:draft-export-snapshot', async (_event, expectedProjectPath: string) => {
+  drafts.handle('db:draft-export-snapshot', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return FinalizationRepository.listAuthoritativeForExport()
   })
 
-  ipcMain.handle('db:draft-export-authority-current', async (_event, receipt, expectedProjectPath: string) => {
+  drafts.handle('db:draft-export-authority-current', async (_event, receipt, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return FinalizationRepository.matchesAuthoritativeExportReceipt(receipt)
   })
 
-  ipcMain.handle('db:continuity-save-finalized', async (_event, _request, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      throw new Error('GENERATION_FINALIZATION_ADMISSION_REQUIRED')
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  const retiredContinuity = {
+    handle: (channel: string, handler: ProjectDatabaseHandler) => registerMigratedDatabaseHandler(channel, handler, { code: IPC_HANDLER_FAILED }),
+  }
+
+  retiredContinuity.handle('db:continuity-save-finalized', async (_event, _request, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    throw new Error('GENERATION_FINALIZATION_ADMISSION_REQUIRED')
   })
 
-  ipcMain.handle('db:continuity-save-character-state-candidates', async (_event, _request, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      throw new Error('GENERATION_FINALIZATION_ADMISSION_REQUIRED')
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  retiredContinuity.handle('db:continuity-save-character-state-candidates', async (_event, _request, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    throw new Error('GENERATION_FINALIZATION_ADMISSION_REQUIRED')
   })
 
-  ipcMain.handle('db:continuity-list-before', async (_event, chapterNumber: number, expectedProjectPath: string) => {
+  continuity.handle('db:continuity-list-before', async (_event, chapterNumber: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return SummaryRepository.listFinalizedContinuityBefore(chapterNumber)
   })
 
-  ipcMain.handle('db:continuity-read-source', async (_event, draftId: number, expectedProjectPath: string) => {
+  continuity.handle('db:continuity-read-source', async (_event, draftId: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return SummaryRepository.readFinalizedSource(draftId)
   })
 
-  ipcMain.handle('db:consistency-exemption-list', async (_event, expectedProjectPath: string) => {
+  continuity.handle('db:consistency-exemption-list', async (_event, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return ConsistencyExemptionRepository.list()
   })
 
-  ipcMain.handle('db:consistency-exemption-save', async (_event, stableFactKey: string, reason: string, chapterNumber: number | null, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      ConsistencyExemptionRepository.save(stableFactKey, reason, chapterNumber)
-      return { success: true }
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
+  continuity.handle('db:consistency-exemption-save', async (_event, stableFactKey: string, reason: string, chapterNumber: number | null, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    ConsistencyExemptionRepository.save(stableFactKey, reason, chapterNumber)
+    return { success: true }
   })
 
-  ipcMain.handle('db:consistency-exemption-revoke', async (_event, stableFactKey: string, chapterNumber: number | null, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      ConsistencyExemptionRepository.revoke(stableFactKey, chapterNumber)
-      return { success: true }
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
+  continuity.handle('db:consistency-exemption-revoke', async (_event, stableFactKey: string, chapterNumber: number | null, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    ConsistencyExemptionRepository.revoke(stableFactKey, chapterNumber)
+    return { success: true }
   })
 
   const plotThreads = {
@@ -951,19 +923,15 @@ export function registerDatabaseController() {
     return { success: true }
   })
 
-  ipcMain.handle('db:draft-next-version', async (_event, chapterNumber: number, expectedProjectPath: string) => {
+  drafts.handle('db:draft-next-version', async (_event, chapterNumber: number, expectedProjectPath: string) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
     return DraftRepository.getNextVersion(chapterNumber)
   })
 
-  ipcMain.handle('db:draft-update-status', async (_event, id: number, status: string, wordCount: number | undefined, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      DraftRepository.updateStatus(id, status, wordCount)
-      return { success: true }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  drafts.handle('db:draft-update-status', async (_event, id: number, status: string, wordCount: number | undefined, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    DraftRepository.updateStatus(id, status, wordCount)
+    return { success: true }
   })
 
   // 审稿、批注写入各在一个事务里（review-repository.ts、annotation-commit），失败整次撤回。
@@ -999,34 +967,17 @@ export function registerDatabaseController() {
     return { success: true }
   })
 
-  ipcMain.handle('db:draft-update-content', async (_event, id: number, content: string, wordCount: number, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      const draft = DraftRepository.getMeta(id)
-      if (!draft) throw new Error('DRAFT_NOT_FOUND')
-      DraftRepository.updateContent(id, content, wordCount)
-      return { success: true }
-    } catch (err) {
-      return { success: false, error: String(err) }
-    }
+  drafts.handle('db:draft-update-content', async (_event, id: number, content: string, wordCount: number, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    if (!DraftRepository.getMeta(id)) throw new Error('DRAFT_NOT_FOUND')
+    DraftRepository.updateContent(id, content, wordCount)
+    return { success: true }
   })
 
-  ipcMain.handle('db:draft-delete', async (_event, id: number, expectedProjectPath: string) => {
-    try {
-      assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-      DraftRepository.delete(id)
-      return { success: true }
-    } catch (err) {
-      if (
-        err
-        && typeof err === 'object'
-        && 'code' in err
-        && err.code === 'FINALIZED_DRAFT_DELETE_REQUIRED'
-      ) {
-        return { success: false, errorCode: 'FINALIZED_DRAFT_DELETE_REQUIRED' as const }
-      }
-      return { success: false, error: String(err) }
-    }
+  drafts.handle('db:draft-delete', async (_event, id: number, expectedProjectPath: string) => {
+    assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
+    DraftRepository.delete(id)
+    return { success: true }
   })
 
   const recoveryCandidates = {

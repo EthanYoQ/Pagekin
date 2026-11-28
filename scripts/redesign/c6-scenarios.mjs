@@ -35,7 +35,7 @@ async function seedKeeperInNextChapter(context) {
   const committed = await invoke(page, 'db:blueprint-commit-range', { mode: 'replace-range', operationId: randomUUID(), startChapter: 5, endChapter: 5, blueprints: [
     { chapterNumber: 5, title: STAGE_SAMPLE.titles[4], role: '发展', purpose: '推进灯塔与沉船的线索', keyEvents: '林岚在灯塔里找到新的线索', characters: ['林岚', '守塔人'],
       suspenseHook: '', userGuidance: '', notes: '', notesUpdatedAt: '', relationshipHints: [] }] }, projectPath, session)
-  assert.equal(committed.success, true, committed.error)
+  assert.equal(committed.success, true, committed.failure?.code)
 }
 
 function relationReply(prompt) {

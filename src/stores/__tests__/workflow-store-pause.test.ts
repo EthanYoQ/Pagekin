@@ -6,6 +6,10 @@ import { useProjectStore } from '../project-store'
 import { useLocaleStore } from '../locale-store'
 import { createBoundedCompletionError } from '../../services/workflows/bounded-completion'
 import { shown } from '../../i18n/__tests__/shown-locale'
+import { authorError, failureText } from '../../i18n/app-errors'
+import { translate } from '../../i18n/core'
+import { runFailure } from '../../components/run/run-failure'
+import { note } from '../../shared/failure'
 import { PromptBudgetExceededError } from '../../services/generation/generation-harness'
 import { SourceDraftChangedError } from '../../services/workflows/source-draft-changed'
 import { WorkflowCancelledError } from '../../services/workflows/workflow-cancellation'
@@ -285,7 +289,7 @@ describe('workflow pause at a safe step boundary', () => {
     const finished = useWorkflowStore.getState().history[0]
     expect(finished).toMatchObject({ id: 'cancel-mid-step', status: 'cancelled' })
     expect(finished.steps[0]).toMatchObject({ status: 'cancelled' })
-    expect(finished.steps[0].error).toBeUndefined()
+    expect(finished.steps[0].failure).toBeUndefined()
     expect(useWorkflowStore.getState().globalLogs.filter(log => log.level === 'error')).toEqual([])
   })
 
@@ -298,7 +302,8 @@ describe('workflow pause at a safe step boundary', () => {
     await completion
     const finished = useWorkflowStore.getState().history[0]
     expect(finished).toMatchObject({ status: 'failed' })
-    expect(finished.steps[0]).toMatchObject({ status: 'failed', error: '模型服务不可用' })
+    expect(finished.steps[0]).toMatchObject({ status: 'failed' })
+    expect(finished.steps[0]).not.toHaveProperty('error')
     expect(useWorkflowStore.getState().globalLogs.some(log => log.level === 'error')).toBe(true)
   })
   it('freezes the project writing language into both the run and command context', async () => {
@@ -487,19 +492,18 @@ describe('workflow pause at a safe step boundary', () => {
 
     useLocaleStore.setState({ locale: 'zh-CN' })
     useWorkflowStore.getState().cancelWorkflow(runId)
-    expect(useWorkflowStore.getState().activeRuns[0]?.error)
-      .toBe('Cancellation requested; waiting for the current operation to exit safely.')
+    expect(useWorkflowStore.getState().activeRuns[0]).toMatchObject({ status: 'cancelling' })
     finishStep!()
     await completion
 
-    expect(useWorkflowStore.getState().history[0]?.error).toBe('Workflow was cancelled.')
+    expect(failureText(shown('en-US'), useWorkflowStore.getState().history[0]?.failure)).toBe('Workflow was cancelled.')
     const messages = useWorkflowStore.getState().globalLogs.map(entry => entry.message).join('\n')
     expect(messages).toContain('[Cancel requested] Waiting for the current operation to exit safely')
     expect(messages).toContain('[Cancelled] [Frozen cancellation copy] Step: Draft — Workflow was cancelled.')
     expect(messages).not.toMatch(/\[(?:取消|失败)\]/u)
   })
 
-  it('keeps the store failure wrapper in the launch UI locale while preserving the original error', async () => {
+  it('keeps the store failure wrapper in the launch UI locale and keeps the unmarked original out of the record', async () => {
     useLocaleStore.setState({ locale: 'en-US' })
 
     await useWorkflowStore.getState().startWorkflow({
@@ -517,9 +521,10 @@ describe('workflow pause at a safe step boundary', () => {
       }],
     })
 
-    expect(useWorkflowStore.getState().history[0]?.error).toBe('provider exploded')
+    expect(useWorkflowStore.getState().history[0]?.failure).toBeUndefined()
     const messages = useWorkflowStore.getState().globalLogs.map(entry => entry.message).join('\n')
-    expect(messages).toContain('[Failed] [Frozen failure copy] Step: Draft — provider exploded')
+    expect(messages).toContain(`[Failed] [Frozen failure copy] Step: Draft — ${translate(shown('en-US'), 'error.unregisteredCode')}`)
+    expect(messages).not.toContain('provider exploded')
     expect(messages).not.toContain('[失败]')
   })
 
@@ -540,14 +545,15 @@ describe('workflow pause at a safe step boundary', () => {
 
     expect(useWorkflowStore.getState().history[0]).toMatchObject({
       status: 'failed',
-      error: 'AI 输出因内容限制而未完成，结果未被保存。',
+      failure: failure.failure,
       failureCode: 'content_filter',
       steps: [expect.objectContaining({
         status: 'failed',
-        error: 'AI 输出因内容限制而未完成，结果未被保存。',
+        failure: failure.failure,
         failureCode: 'content_filter',
       })],
     })
+    expect(failureText(shown('zh-CN'), useWorkflowStore.getState().history[0]?.failure)).toBe('AI 输出因内容限制而未完成，结果未被保存。')
   })
 
   it('preserves a stale-source error code on the failed step and final run', async () => {
@@ -569,12 +575,10 @@ describe('workflow pause at a safe step boundary', () => {
 
     expect(useWorkflowStore.getState().history[0]).toMatchObject({
       status: 'failed',
-      error: failure.message,
-      errorCode: 'SOURCE_DRAFT_CHANGED',
+      failure: { code: 'SOURCE_DRAFT_CHANGED' },
       steps: [expect.objectContaining({
         status: 'failed',
-        error: failure.message,
-        errorCode: 'SOURCE_DRAFT_CHANGED',
+        failure: { code: 'SOURCE_DRAFT_CHANGED' },
       })],
     })
   })
@@ -615,10 +619,11 @@ describe('workflow pause at a safe step boundary', () => {
         promptBudgetReport: failure.report,
       })],
     })
-    expect(run?.error).toContain('提示词共 13,000 UTF-8 字节')
-    expect(run?.error).toContain('全局指导 12,020')
-    expect(run?.error).toContain('模型：model-a；结果码：PROMPT_BUDGET_EXHAUSTED')
-    expect(run?.error).not.toContain('知识库')
+    const reason = runFailure(run!, shown('zh-CN')).presentation.reason
+    expect(reason).toContain('提示词共 13,000 UTF-8 字节')
+    expect(reason).toContain('全局指导 12,020')
+    expect(reason).toContain('模型：model-a；结果码：PROMPT_BUDGET_EXHAUSTED')
+    expect(reason).not.toContain('知识库')
   })
 
   it('atomically replaces provisional output and reconciles it to the terminal step result', async () => {
@@ -696,8 +701,8 @@ describe('workflow pause at a safe step boundary', () => {
     expect(useWorkflowStore.getState().history).toContainEqual(expect.objectContaining({
       id: runId,
       status: 'failed',
-      error: expect.stringContaining('冻结项目会话'),
     }))
+    expect(failureText(shown('zh-CN'), useWorkflowStore.getState().history.find(run => run.id === runId)?.failure)).toContain('冻结项目会话')
   })
 
   it('finishes the current step, pauses before the next one, and resumes without starting it early', async () => {
@@ -807,8 +812,8 @@ describe('workflow pause at a safe step boundary', () => {
     expect(useWorkflowStore.getState().history).toContainEqual(expect.objectContaining({
       id: runId,
       status: 'failed',
-      error: expect.stringContaining('冻结项目会话'),
     }))
+    expect(failureText(shown('zh-CN'), useWorkflowStore.getState().history.find(run => run.id === runId)?.failure)).toContain('冻结项目会话')
   })
 
   it('keeps a cancelling run active until its in-flight executor exits', async () => {
@@ -850,8 +855,8 @@ describe('workflow pause at a safe step boundary', () => {
     expect(useWorkflowStore.getState().history[0]).toMatchObject({
       id: runId,
       status: 'cancelled',
-      error: '工作流已取消',
     })
+    expect(failureText(shown('zh-CN'), useWorkflowStore.getState().history[0]?.failure)).toBe('工作流已取消')
     expect(completedPayloads).toHaveLength(0)
     unsubscribe()
   })
@@ -892,8 +897,8 @@ describe('workflow pause at a safe step boundary', () => {
     expect(seenLeases).toEqual(['lease-test-project'])
     expect(useWorkflowStore.getState().history[0]).toMatchObject({
       status: 'failed',
-      error: expect.stringContaining('项目会话已切换或失效'),
     })
+    expect(failureText(shown('zh-CN'), useWorkflowStore.getState().history[0]?.failure)).toContain('项目会话已切换或失效')
     expect(openResult).not.toHaveBeenCalled()
   })
 })
@@ -990,9 +995,8 @@ describe('作者点了取消，但中止是真实错误造成的：仍记失败�
     const storageFailure = Object.assign(new Error('章节草稿保存失败：磁盘空间不足'), { code: 'GENERATION_STORAGE_FAILED' })
     const finished = await cancelThenThrow(type, storageFailure)
 
-    expect(finished).toMatchObject({ status: 'failed', errorCode: 'GENERATION_STORAGE_FAILED' })
-    expect(finished.error).toContain('磁盘空间不足')
-    expect(finished.steps[0]).toMatchObject({ status: 'failed', errorCode: 'GENERATION_STORAGE_FAILED' })
+    expect(finished).toMatchObject({ status: 'failed', failure: { code: 'GENERATION_STORAGE_FAILED' } })
+    expect(finished.steps[0]).toMatchObject({ status: 'failed', failure: { code: 'GENERATION_STORAGE_FAILED' } })
     expect(errorLogs()).not.toEqual([])
   })
 
@@ -1012,7 +1016,7 @@ describe('作者点了取消，但中止是真实错误造成的：仍记失败�
   it('取消请求之后抛出的普通错误认不出是取消造成的，也记失败', async () => {
     const finished = await cancelThenThrow('chapter_creation', new Error('知识库索引写入失败'))
 
-    expect(finished).toMatchObject({ status: 'failed', error: '知识库索引写入失败' })
+    expect(finished).toMatchObject({ status: 'failed' })
     expect(finished.steps[0]).toMatchObject({ status: 'failed' })
   })
 })
@@ -1075,10 +1079,10 @@ describe('写作 Skill 快照还在读取时作者点了取消', () => {
   })
 
   it('快照读取本身失败了：即使作者点了取消，也记失败并写明原因', async () => {
-    const finished = await startAndCancelDuringSnapshot(holdSkillSnapshot(new Error('写作 Skill 绑定文件已损坏')))
+    const finished = await startAndCancelDuringSnapshot(holdSkillSnapshot(authorError(shown('zh-CN'), { note: note('写作 Skill 绑定文件已损坏', 'The writing Skill binding file is damaged.') })))
 
     expect(finished).toMatchObject({ id: 'snapshot-cancel', status: 'failed' })
-    expect(finished.error).toContain('写作 Skill 绑定文件已损坏')
+    expect(failureText(shown('zh-CN'), finished.failure)).toContain('写作 Skill 绑定文件已损坏')
     expect(errorLogs()).not.toEqual([])
   })
 
@@ -1133,7 +1137,7 @@ describe('写作 Skill 快照还在读取时作者点了取消', () => {
     await afterSeveralPolls()
     expect(switching.returned()).toBe(false)
 
-    request.fail(new Error('磁盘写入失败'))
+    request.fail(authorError(shown('zh-CN'), { note: note('磁盘写入失败', 'The disk write failed.') }))
     await switching.done
     await completion
     expect(useWorkflowStore.getState().history[0]).toMatchObject({ id: 'snapshot-import-cancel', status: 'cancelled' })
@@ -1166,7 +1170,7 @@ describe('导入写到一半被切换作品取消，随后出了真实错误', (
     await switching.done
     await completion
     expect(useWorkflowStore.getState().history[0]).toMatchObject({
-      id: 'mid-step-import-cancel', status: 'failed', errorCode: 'GENERATION_STORAGE_FAILED',
+      id: 'mid-step-import-cancel', status: 'failed', failure: { code: 'GENERATION_STORAGE_FAILED' },
     })
   })
 })

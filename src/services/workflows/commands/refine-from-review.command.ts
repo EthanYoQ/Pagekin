@@ -13,6 +13,8 @@ import { countDraftUnits, draftTargetUnitRange } from '../../../shared/draft-uni
 import { selectFrozenReviewRevisionMaterials } from './review-revision-materials'
 import { promptLanguageText } from '../../prompt-language'
 import { reviewTimeContinuity } from '../../../shared/chapter-time-continuity'
+import { authorError } from '../../../i18n/app-errors'
+import { note } from '../../../shared/failure'
 
 function appendCompleteRevisionContract(prompt: string, source: string, writingLanguage: 'zh-CN' | 'en-US'): string {
   const sourceUnits = countDraftUnits(source)
@@ -55,12 +57,10 @@ export class RefineFromReviewCommand extends ReviewRevisionCommand {
   override execute(params: CommandExecuteParams): Promise<string> {
     if (!this.requested.recoveryHandle) {
       if (!Number.isSafeInteger(this.requested.reviewSourceId) || (this.requested.reviewSourceId ?? 0) <= 0) {
-        return Promise.reject(new Error(workflowUiText(params.context, '审稿修稿需要已保存的人工确认快照，未调用模型。',
-          'Review-based revision requires a saved human-confirmed review snapshot. The model was not called.')))
+        return Promise.reject(authorError(params.context.interfaceLocale, { note: note('审稿修稿需要已保存的人工确认快照，未调用模型。', 'Review-based revision requires a saved human-confirmed review snapshot. The model was not called.') }))
       }
       if (!parseHumanConfirmedReviewSnapshot(this.requested.confirmedReviewContent ?? '')) {
-        return Promise.reject(new Error(workflowUiText(params.context, '审稿修稿需要有效的人工确认快照，未调用模型。',
-          'Review-based revision requires a valid human-confirmed review snapshot. The model was not called.')))
+        return Promise.reject(authorError(params.context.interfaceLocale, { note: note('审稿修稿需要有效的人工确认快照，未调用模型。', 'Review-based revision requires a valid human-confirmed review snapshot. The model was not called.') }))
       }
     }
     return super.execute(params)
@@ -72,12 +72,11 @@ export class RefineFromReviewCommand extends ReviewRevisionCommand {
     }
     const frozen = prepared.materials
     const confirmation = frozen.confirmation?.snapshot
-    if (!confirmation?.sourceDraft || !hasIncludedReviewItems(confirmation)) throw new Error(workflowUiText(params.context,
-      '缺少有效的已确认审稿清单，请重新确认。', 'A valid confirmed review checklist is required. Confirm the review again.'))
+    if (!confirmation?.sourceDraft || !hasIncludedReviewItems(confirmation)) throw authorError(params.context.interfaceLocale, { note: note('缺少有效的已确认审稿清单，请重新确认。', 'A valid confirmed review checklist is required. Confirm the review again.') })
     params.callbacks.log(workflowUiText(params.context, '正在根据已确认的审稿项精准修复...', 'Revising from the confirmed review checklist...'))
     const projectSession = requireWorkflowProjectSession(params.context)
     const template = await resolvePromptTemplate('refine_from_review', projectSession, frozen.writingLanguage)
-    if (!template) throw new Error(workflowUiText(params.context, '未找到审稿修复模板', 'The review-based revision template was not found.'))
+    if (!template) throw authorError(params.context.interfaceLocale, { note: note('未找到审稿修复模板', 'The review-based revision template was not found.') })
     const current = { projectId: projectSession.projectId, epoch: projectSession.leaseId }
     const aiReviewSourceId = `review:confirmed:${frozen.confirmation!.reviewSourceId}`
     const render = (admitted: ReviewRevisionMaterialAdmission['admitted']) => {
@@ -101,9 +100,7 @@ export class RefineFromReviewCommand extends ReviewRevisionCommand {
         this.nonMaterialUnits(params, bare.prompt, bare.systemRole))
     } catch (error) {
       if (!(error instanceof ChapterMaterialCapacityError)) throw error
-      throw new Error(workflowUiText(params.context,
-        '审稿修稿必需材料超出上下文容量，已停止修稿。请精简必需材料后重试。',
-        'The confirmed review checklist exceeds the context capacity, so the revision stopped. Trim the review items and try again.'))
+      throw authorError(params.context.interfaceLocale, { note: note('审稿修稿必需材料超出上下文容量，已停止修稿。请精简必需材料后重试。', 'The confirmed review checklist exceeds the context capacity, so the revision stopped. Trim the review items and try again.') })
     }
     const { prompt, systemRole } = render(admission.admitted)
     await this.bindMaterialDecision(params, admission.decision, prompt)

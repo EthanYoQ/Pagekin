@@ -12,7 +12,8 @@ import { Label } from '../ui/Label'
 import { NativeSelect } from '../ui/NativeSelect'
 import { cn } from '../../lib/utils'
 import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
-import { displayedErrorMessage, englishWithReason } from '../../i18n/app-errors'
+import { failureText, resultFailure } from '../../i18n/app-errors'
+import type { Failure } from '../../shared/failure'
 import { ModelReasoningOverrideSettings, ModelCapabilitySources, ProjectCreativeStrategySettings } from './ReasoningPolicySettings'
 import { openModelProviderResource } from './model-provider-resource'
 import { ModelNameField } from './ModelNameField'
@@ -108,8 +109,8 @@ export function ModelForm({
   const saveHintId = useId()
 
   const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState<{ success: boolean, error?: string } | null>(null)
-  const testFailure = testResult && !testResult.success ? displayedErrorMessage(currentInterfaceLocale(), testResult.error) : ''
+  const [testResult, setTestResult] = useState<{ success: boolean, failure?: Failure } | null>(null)
+  const testFailure = testResult && !testResult.success ? failureText(currentInterfaceLocale(), resultFailure(testResult)) : ''
   const testConnection = useLLMStore(s => s.testConnection)
   const discoverModels = useLLMStore(s => s.discoverModels)
   const discoverLocalContextWindow = useLLMStore(s => s.discoverLocalContextWindow)
@@ -355,7 +356,7 @@ export function ModelForm({
       if (result.success) recordListedModels(requestRevision, result.models)
       setDiscovery(result.success
         ? { status: 'loaded', models: result.models }
-        : { status: 'failed', errorCode: result.errorCode })
+        : { status: 'failed', errorCode: result.reason })
     } catch {
       if (isCurrentRequest()) setDiscovery({ status: 'failed', errorCode: 'network' })
     }
@@ -667,7 +668,7 @@ export function ModelForm({
         <div className={`text-xs p-2 rounded ${testResult.success ? 'bg-green-500/10 text-[var(--color-success-text)] border border-green-500/20' : 'bg-red-500/10 text-[var(--color-error-text)] border border-red-500/20'} break-all`}>
           {testResult.success
             ? text('连接成功', 'Connection succeeded')
-            : text(`连接失败：${testFailure}`, englishWithReason(currentInterfaceLocale(), 'Connection failed', testFailure, ': '))}
+            : text(`连接失败：${testFailure}`, `Connection failed: ${testFailure}`)}
         </div>
       )}
     </div>

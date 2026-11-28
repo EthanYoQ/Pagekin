@@ -189,9 +189,9 @@ async function main() {
         schemaVersion: 1, intent: 'manual_edit', entries: [{ characterId: `draft:${randomUUID()}`,
           name: '林岚', role: 'protagonist', gender: '', age: '', appearance: '', personality: '',
           background: '', abilities: '', motivation: '', relationships: [], arc: '', notes: '' }] }, created.projectPath, session)
-      assert.equal(rosterCommit.success, true, rosterCommit.error)
+      assert.equal(rosterCommit.success, true, rosterCommit.failure?.code)
       const core = await invoke(page, 'db:project-core-update', { totalChapters: 1, wordsPerChapter: 100 }, created.projectPath, session)
-      assert.equal(core.success, true, core.error)
+      assert.equal(core.success, true, core.failure?.code)
       assert.equal((await invoke(page, 'db:blueprint-upsert', { chapterNumber: 1, title: `${names[key]}章节`,
         role: '发展', purpose: '验证历史隔离', keyEvents: '发现线索', characters: [] }, created.projectPath, session)).success, true)
     }

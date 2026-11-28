@@ -127,7 +127,7 @@ describe('writing skill settings', () => {
   })
 
   it('drops the candidate the main process discarded when installation fails', async () => {
-    let answerInstall: (result: { success: false; error: string }) => void = () => {}
+    let answerInstall: (result: { success: false; failure: object }) => void = () => {}
     const installRequested = new Promise<void>(requested => {
       invoke.mockImplementation(async (channel: string) => channel === 'skills:install-local'
         ? new Promise(answer => { answerInstall = answer; requested() })
@@ -139,10 +139,10 @@ describe('writing skill settings', () => {
     await installRequested
     await act(async () => answerInstall({
       success: false,
-      error: 'The skill files could not be written, so nothing was installed. Choose the skill again to retry.',
+      failure: { code: 'WRITING_SKILL_REJECTED', note: { key: 'error.writingSkillWriteFailed' } },
     }))
 
-    expect(page.getByRole('alert').element()).toHaveTextContent(/Choose the skill again to retry/u)
+    expect(page.getByRole('alert').element()).toHaveTextContent('The skill files could not be written, so nothing was installed. Choose or inspect the skill again to retry.')
     expect(page.getByRole('group', { name: 'Skill to install' }).query()).toBeNull()
     const leave = vi.fn()
     leaveSettings(leave)
@@ -158,7 +158,7 @@ describe('writing skill settings', () => {
     expect(page.getByRole('alert').query()).toBeNull()
 
     invoke.mockImplementation(async (channel: string) => channel === 'skills:pick-local'
-      ? { success: false, error: 'The skill contains a symbolic link or junction and was rejected' }
+      ? { success: false, failure: { code: 'WRITING_SKILL_REJECTED', note: { key: 'error.writingSkillSymlink' } } }
       : ipcResult(channel))
     await act(async () => page.getByRole('button', { name: 'Choose folder' }).click())
     await expect.element(page.getByRole('alert')).toHaveTextContent(/symbolic link/u)

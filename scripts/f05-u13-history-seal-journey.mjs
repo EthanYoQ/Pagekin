@@ -151,7 +151,7 @@ async function main() {
     const rosterCommit = await invoke(page, 'db:character-roster-commit', { operationId: randomUUID(), expectedRevision: roster.revision, expectedIdentityRevision: roster.identityRevision, schemaVersion: 1, intent: 'manual_edit', entries: [{ characterId, name: '林岚', role: 'protagonist', gender: '', age: '', appearance: '', personality: '', background: '', abilities: '', motivation: '', relationships: [], arc: '', notes: '' }] }, project.projectPath, context)
     assert.equal(rosterCommit.success, true, JSON.stringify(rosterCommit))
     const core = await invoke(page, 'db:project-core-update', { totalChapters: 1, wordsPerChapter: 100 }, project.projectPath, context)
-    assert.equal(core.success, true, core.error)
+    assert.equal(core.success, true, core.failure?.code)
     assert.equal((await invoke(page, 'db:blueprint-upsert', { chapterNumber: 1, title: '历史印章章节', role: '发展', purpose: '验证历史', keyEvents: '验证状态', characters: [] }, project.projectPath, context)).success, true)
     await quit(app); app = null
     ;({ app } = await launch(port))

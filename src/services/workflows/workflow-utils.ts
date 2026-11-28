@@ -12,13 +12,13 @@ import type { StepCallbacks, WorkflowContext } from '../../stores/workflow-store
 import type { AllInvokeChannels, InvokeChannel, ProjectSessionContext } from '../../shared/ipc-channels'
 import { ipc } from '../ipc-client'
 import { copyLocale, errorLocaleForRun, localize } from '../../i18n/core'
-import { authorError, displayedErrorMessage, resultFailure } from '../../i18n/app-errors'
-import { note } from '../../shared/failure'
+import { authorError, caughtFailure, displayedErrorMessage, errorCodeOf, failureText, resultFailure } from '../../i18n/app-errors'
+import { authorOwned, note, type Failure } from '../../shared/failure'
 import type { ErrorDisplayLocale } from '../../i18n/types'
 import { currentInterfaceLocale } from '../../stores/locale-store'
 import { isWorkflowCancellation, WorkflowCancelledError } from './workflow-cancellation'
 import { workflowMainProcessError } from './workflow-project-session'
-import { describeFinalizationStepError, finalizationStepErrorCode, POST_PROCESS_INTERRUPTED } from '../../shared/finalization-step-error'
+import { describeFinalizationStepError, finalizationStepErrorCode, POST_PROCESS_INTERRUPTED, POST_PROCESS_STEP_FAILED } from '../../shared/finalization-step-error'
 
 /** 步骤表里的码按步骤说明；其余（含落库的裸码或带 IPC 包装的原文）交给通用报错说明。 */
 export function finalizationStepErrorMessage(locale: ErrorDisplayLocale, error: unknown): string {
@@ -58,7 +58,7 @@ export { stripDraftThinkingTags as stripThinkingTags } from '../../shared/draft-
  * @param maxRetries 最大重试次数（不含首次执行）
  * @param label 操作标签（用于日志）
  * @param callbacks 步骤回调（用于输出日志）
- * @returns 成功返回 { ok: true }，全部失败返回 { ok: false, error }
+ * @returns 成功返回 { ok: true }，全部失败返回 { ok: false, error }。error 只放码（步骤表里的码，或报错带的稳定码），不放原文。
  */
 export async function withRetry(
   fn: () => Promise<void>,
@@ -67,7 +67,7 @@ export async function withRetry(
   callbacks: StepCallbacks,
   isCancelled: (() => boolean) | undefined,
   interfaceLocale: ErrorDisplayLocale,
-): Promise<{ ok: boolean; error?: string; attempts: number }> {
+): Promise<{ ok: boolean; error?: string; failure?: Failure; attempts: number }> {
   const text = (zhCNText: string, enUSText: string) => localize(copyLocale(interfaceLocale), zhCNText, enUSText)
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (isCancelled?.()) throw new WorkflowCancelledError(text('工作流已取消', 'Workflow was cancelled.'))
@@ -78,7 +78,7 @@ export async function withRetry(
     } catch (err) {
       const cancelled = isCancelled?.() === true
       if (cancelled && isWorkflowCancellation(err)) throw new WorkflowCancelledError(text('工作流已取消', 'Workflow was cancelled.'))
-      // 原始原因随步骤失败记录保存；日志按冻结的界面语言说明。作者已取消时不再重试，真实失败照常交回。
+      // 已取消时不再重试，真实失败照常交回；失败记录只存码，日志按冻结的界面语言说明。
       const errMsg = err instanceof Error ? err.message : String(err)
       if (attempt < maxRetries && !cancelled) {
         const reason = finalizationStepErrorCode(errMsg) ? '' : displayedErrorMessage(interfaceLocale, err)
@@ -87,13 +87,13 @@ export async function withRetry(
           `  ${label} failed on attempt ${attempt + 1}; retrying...${reason && ` (${reason})`}`,
         ))
       } else {
-        return { ok: false, error: errMsg, attempts: attempt + 1 }
+        return { ok: false, error: finalizationStepErrorCode(errMsg) ?? errorCodeOf(err) ?? POST_PROCESS_STEP_FAILED, failure: caughtFailure(err), attempts: attempt + 1 }
       }
     }
   }
   return {
     ok: false,
-    error: text('未知错误', 'Unknown error'),
+    error: POST_PROCESS_STEP_FAILED,
     attempts: maxRetries + 1,
   }
 }
@@ -348,7 +348,7 @@ export async function runPostProcessPipeline(
         }
       } else {
         // 真实失败先记进后处理状态，再看取消：取消只决定后面不再跑，不能盖掉已经发生的失败。
-        const stepError = result.error || text('未知错误', 'Unknown error')
+        const stepError = result.error || POST_PROCESS_STEP_FAILED
         const markResult = await invokeForProjectSession(
           projectSession,
           'db:post-process-mark-step-failed',
@@ -361,11 +361,8 @@ export async function runPostProcessPipeline(
           throw workflowMainProcessError(interfaceLocale, resultFailure(markResult), '记录后处理失败状态失败', 'Failed to record the failed post-processing state.')
         }
         if (stopOnFailure) {
-          const reason = finalizationStepErrorMessage(interfaceLocale, stepError)
-          throw new Error(text(
-            `后处理步骤失败：${step.label} — ${reason}`,
-            `Post-processing step failed: ${step.label} — ${reason}`,
-          ))
+          const reason = describeFinalizationStepError(stepError, text) ?? failureText(interfaceLocale, result.failure)
+          throw authorError(interfaceLocale, { note: note('后处理步骤失败：{label} — {reason}', 'Post-processing step failed: {label} — {reason}', { label: authorOwned(step.label), reason: authorOwned(reason) }) })
         }
       }
     }

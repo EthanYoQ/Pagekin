@@ -1,15 +1,15 @@
 import { globalEventBus } from '../../shared/event-bus'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { projectSessionContextFromProject, sameProjectSessionContext } from '../../shared/project-session-context'
-import { localize } from '../../i18n/core'
+import { errorLocaleForRun, localize } from '../../i18n/core'
 import type { Locale } from '../../i18n/types'
-import { useLocaleStore } from '../../stores/locale-store'
+import { useLocaleStore, currentInterfaceLocale } from '../../stores/locale-store'
 import { useProjectStore } from '../../stores/project-store'
 import { workflowResourceKey, type WorkflowDefinition } from '../../stores/workflow-store'
 import { importPlanningMaterial, type PlanningMaterial } from '../knowledge-service'
 import { workflowMainProcessError } from './workflow-project-session'
-import { authorOwned } from '../../shared/failure'
-import { resultFailure } from '../../i18n/app-errors'
+import { authorOwned, note } from '../../shared/failure'
+import { resultFailure, authorError } from '../../i18n/app-errors'
 
 export interface PlanningMaterialWorkflowParams {
   projectSession: ProjectSessionContext
@@ -28,10 +28,7 @@ export function createPlanningMaterialWorkflow(
   if (!sameProjectSessionContext(
     params.projectSession,
     projectSessionContextFromProject(useProjectStore.getState().currentProject),
-  )) throw new Error(text(
-    '当前项目已切换，无法导入创作资料',
-    'The project changed, so the planning material cannot be imported.',
-  ))
+  )) throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('当前项目已切换，无法导入创作资料', 'The project changed, so the planning material cannot be imported.') })
   const projectSession = Object.freeze({ ...params.projectSession })
   const materials = params.materials.map(material => Object.freeze({ ...material }))
 
@@ -84,15 +81,9 @@ export function createPlanningMaterialCharacterExtractionWorkflow(
   if (!sameProjectSessionContext(
     params.projectSession,
     projectSessionContextFromProject(useProjectStore.getState().currentProject),
-  )) throw new Error(text(
-    '当前项目已切换，无法提取角色卡',
-    'The project changed, so character cards cannot be extracted.',
-  ))
+  )) throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('当前项目已切换，无法提取角色卡', 'The project changed, so character cards cannot be extracted.') })
   const generationModelId = params.generationModelId.trim()
-  if (!generationModelId) throw new Error(text(
-    '缺少已确认的生成模型',
-    'No confirmed generation model is available.',
-  ))
+  if (!generationModelId) throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('缺少已确认的生成模型', 'No confirmed generation model is available.') })
   const projectSession = Object.freeze({ ...params.projectSession })
   const materials = params.materials.map(material => Object.freeze({ ...material }))
 

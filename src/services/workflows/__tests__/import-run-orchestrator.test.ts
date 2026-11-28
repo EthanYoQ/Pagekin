@@ -20,6 +20,7 @@ import {
 } from '../import-run-orchestrator'
 import { shown } from '../../../i18n/__tests__/shown-locale'
 import type { InterfaceLocale } from '../../../i18n/types'
+import { shownFailure } from '../../../stores/__tests__/run-failure-expect'
 
 function runSnapshot(overrides: Partial<ImportRunSnapshot> = {}): ImportRunSnapshot {
   return {
@@ -603,7 +604,8 @@ describe('ImportRunOrchestrator', () => {
       })
       const finished = useWorkflowStore.getState().history[0]
       expect(finished).toMatchObject({ id: 'import-cancel-run', status: 'cancelled' })
-      expect(finished.steps[0]).toMatchObject({ status: 'cancelled', error: '导入已取消，停在了已保存的进度处。' })
+      expect(finished.steps[0]).toMatchObject({ status: 'cancelled' })
+      expect(shownFailure(finished.steps[0])).toBe('导入已取消，停在了已保存的进度处。')
     } finally {
       vi.unstubAllGlobals()
       useProjectStore.setState({ currentProject: null })

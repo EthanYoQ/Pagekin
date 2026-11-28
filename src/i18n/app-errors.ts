@@ -2,8 +2,8 @@ import { copyLocale, localize, messages, translate, type MessageKey } from './co
 import type { ErrorDisplayLocale, InterfaceLocale, Locale } from './types'
 import type { DamagedReviewCycle } from '../shared/damaged-review-cycle'
 import {
-  AuthorError, AuthorNote, catalogKeyNote, codeOf, failureCode, failureOf,
-  type Failure, type LegacyReason, type NoteParams, type WireFailure, type WireNote, type WireNoteKey,
+  AuthorError, AuthorNote, authorOwned, catalogKeyNote, codeOf, failureCode, failureOf, note,
+  type Failure, type NoteParams, type WireFailure, type WireNote, type WireNoteKey,
 } from '../shared/failure'
 
 /**
@@ -48,6 +48,16 @@ const UNEXPLAINED_FAILURE_KEYS = {
   CLOUD_BACKUP_DISCLOSURE_CONFIRMATION_REQUIRED: 'error.unregisteredCode',
   CLOUD_BACKUP_BINDING_READ_ONLY: 'error.unregisteredCode',
   CLOUD_BACKUP_OPERATION_CONFLICT: 'error.unregisteredCode',
+  // 恢复大纲任务时渲染端按这个码换成专用说明，码要过 handle()；别处抛出时原因各不相同，只说不清原因。
+  GENERATION_PLOT_OUTLINE_PREFIX_INVALID: 'error.unregisteredCode',
+  // 渲染端按这些码分支（定稿后处理的重试、剧情树与蓝图检查的专用说明），码要过 handle()。
+  GENERATION_FINALIZATION_PREDECESSOR_REQUIRED: 'error.unregisteredCode',
+  GENERATION_FINALIZATION_IDENTITY_CHANGED: 'error.unregisteredCode',
+  GENERATION_FINALIZATION_ARTIFACT_INVALID: 'error.unregisteredCode',
+  GENERATION_GRAPH_BLUEPRINT_REQUIRED: 'error.unregisteredCode',
+  NO_EVENT_SOURCES: 'error.unregisteredCode',
+  SOURCE_LIMIT_EXCEEDED: 'error.unregisteredCode',
+  SOURCE_INPUT_TOO_LARGE: 'error.unregisteredCode',
 } as const
 
 /**
@@ -251,6 +261,8 @@ const ERROR_KEYS = {
   GENERATION_AGENT_CANCELLED: 'error.generationCancelled',
   GENERATION_PROVIDER_FAILED: 'error.generationProviderFailed',
   GENERATION_STREAM_INVALID: 'error.generationProviderFailed',
+  // 生成 harness 请求模型服务时抛出（GenerationAttemptError）。
+  PROVIDER_REQUEST_FAILED: 'error.generationProviderFailed',
   NETWORK_ERROR: 'error.generationNetworkFailed',
   GENERATION_CONTEXT_LENGTH_EXCEEDED: 'error.generationContextLengthExceeded',
   GENERATION_FAILED: 'error.generationRequestFailed',
@@ -366,6 +378,7 @@ const ERROR_KEYS = {
   DRAFT_NOT_WRITABLE: 'error.draftFinalizedReadOnly',
   DRAFT_FINALIZED_READ_ONLY: 'error.draftFinalizedReadOnly',
   SUPERSEDED_DRAFT_DELETE_FORBIDDEN: 'error.supersededDraftDeleteForbidden',
+  FINALIZED_DRAFT_DELETE_REQUIRED: 'error.finalizedDraftDeleteRequired',
   FINALIZATION_SUPERSEDED: 'error.finalizationSuperseded',
   FINALIZATION_COMMIT_SUPERSEDED: 'error.finalizationSuperseded',
   // 删除已定稿的这一章（#474 B5）：删除与清理重试时作者能照着处理的拒绝原因。
@@ -416,6 +429,13 @@ const ERROR_KEYS = {
   POST_PROCESS_WRITE_FAILED: 'error.postProcessWriteFailed',
   REVIEW_WRITE_FAILED: 'error.reviewWriteFailed',
   REVISION_WRITE_FAILED: 'error.revisionWriteFailed',
+  CONSISTENCY_EXEMPTION_WRITE_FAILED: 'error.consistencyExemptionWriteFailed',
+  CHARACTER_ROSTER_WRITE_FAILED: 'error.characterRosterWriteFailed',
+  DRAFT_WRITE_FAILED: 'error.draftWriteFailed',
+  BLUEPRINT_WRITE_FAILED: 'error.blueprintWriteFailed',
+  PROJECT_CORE_WRITE_FAILED: 'error.projectCoreWriteFailed',
+  PROJECT_CLEAR_FAILED: 'error.projectClearFailed',
+  PROJECT_CLEAR_RESTORE_FAILED: 'error.projectClearRestoreFailed',
   // 知识库与检索索引（#474 B3）：知识库页、设置里的检索索引检查、导入创作资料与定稿收入知识库按码说明。
   EMBEDDING_REQUEST_FAILED: 'error.embeddingRequestFailed',
   EMBEDDING_OLLAMA_NATIVE_URL: 'error.embeddingOllamaNativeUrl',
@@ -455,6 +475,8 @@ const ERROR_KEYS = {
   LLM_DEFAULT_MODEL_ROLLBACK_FAILED: 'error.defaultModelRollbackFailed',
   LLM_STAGE_MODEL_UNAVAILABLE: 'error.stageModelUnavailable',
   LLM_STAGE_MODEL_REQUEST_INVALID: 'error.stageModelRequestInvalid',
+  LLM_CONNECTION_TEST_FAILED: 'error.connectionFailed',
+  WRITING_SKILL_REJECTED: 'error.writingSkillRejected',
   MODEL_ENDPOINT_INVALID: 'error.modelEndpointInvalid',
   NETWORK_PROXY_INVALID: 'error.networkProxyInvalid',
   CONFIG_FILE_DAMAGED: 'error.configFileDamaged',
@@ -523,18 +545,28 @@ function isKnownCode(code: unknown): code is KnownErrorCode {
  * 主进程只返回错误码；Electron 会在前面加上调用通道，`String(error)` 还会加 "Error: "。
  * 带名字的错误类（ProjectSessionStaleError）加的是自己的类名。
  */
-const WRAPPED_CODE = /^(?:Error invoking remote method '[^']+': )?(?:[A-Za-z]*Error: )?([A-Z][A-Z0-9_]*)$/u
+const WRAPPED_CODE = /^(?:Error invoking remote method '[^']+': )?(?:[A-Za-z]*Error: )?([A-Z][A-Z0-9_]*)(?::(\d+))?$/u
+
+/** 码后面可以跟「:数字」的码。渲染端按这个数字拆批，所以数字要和码一起过 IPC。 */
+const COUNTED_CODES: ReadonlySet<string> = new Set(['TASK_BUDGET_SCOPE_SPLIT_REQUIRED'])
+
+/** counted 为 false 时，「码:数字」形式的 message 不算码；只有 readCode 与 registeredErrorMessage 认数字后缀。 */
+function wrappedCode(error: unknown, counted: boolean): { code: string; count?: string } | undefined {
+  const message = typeof error === 'string' ? error : error instanceof Error ? error.message : undefined
+  const match = message === undefined ? null : WRAPPED_CODE.exec(message.trim())
+  if (!match || match[2] !== undefined && !(counted && COUNTED_CODES.has(match[1]!))) return undefined
+  return { code: match[1]!, count: match[2] }
+}
 
 /** 整条 message 就是码（可带 IPC 前缀）时取 message 里的码，再取对象上的 code 或 errorCode。 */
-function codeCandidates(error: unknown): unknown[] {
-  const message = typeof error === 'string' ? error : error instanceof Error ? error.message : undefined
-  const wrapped = message === undefined ? undefined : WRAPPED_CODE.exec(message.trim())?.[1]
+function codeCandidates(error: unknown, counted = false): unknown[] {
+  const wrapped = wrappedCode(error, counted)?.code
   if (typeof error !== 'object' || error === null) return [wrapped]
   return [wrapped, 'code' in error ? error.code : 'errorCode' in error ? error.errorCode : undefined]
 }
 
 function readCode(error: unknown): KnownErrorCode | undefined {
-  return codeCandidates(error).find(isKnownCode)
+  return codeCandidates(error, true).find(isKnownCode)
 }
 
 /** 主进程的 IPC 入口（electron/ipc/handle.ts）把没登记的失败换成这个码。 */
@@ -542,19 +574,20 @@ export const IPC_HANDLER_FAILED = 'IPC_HANDLER_FAILED' satisfies KnownErrorCode
 
 export const registeredErrorCode: (error: unknown) => string | undefined = readCode
 
+/** 可以过 IPC 的报错 message：已登记的码，连同它带的数字；没登记时 undefined。 */
+export function registeredErrorMessage(error: unknown): string | undefined {
+  const code = readCode(error)
+  if (!code) return undefined
+  const wrapped = wrappedCode(error, true)
+  return wrapped?.code === code && wrapped.count !== undefined ? `${code}:${wrapped.count}` : code
+}
+
 /** 稳定错误码的形状：至少含一个下划线，ENOENT 这类平台码不算。 */
 const CODE_SHAPE = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/u
 
 /** 报错带的稳定错误码，登记与否都读。 */
 export function errorCodeOf(error: unknown): string | undefined {
   return codeCandidates(error).find((code): code is string => typeof code === 'string' && CODE_SHAPE.test(code))
-}
-
-/** Electron 在主进程报错前加的调用通道前缀对作者没有意义，兜底说明里去掉。 */
-const IPC_PREFIX = /^Error invoking remote method '[^']+': (?:[A-Za-z]*Error: )?/u
-
-function readMessage(error: unknown): string {
-  return (error instanceof Error ? error.message : String(error)).replace(IPC_PREFIX, '')
 }
 
 /** 已登记错误码的可读文案；未登记时返回 undefined，由调用方保留原有说明。 */
@@ -683,11 +716,7 @@ const AUTHOR_STOP_KEYS = {
 } as const satisfies Record<ImportStopKind, MessageKey>
 
 export function appErrorMessage(locale: ErrorDisplayLocale, error: unknown): string {
-  const known = knownAppErrorMessage(locale, error)
-  if (known) return known
-  if (error instanceof AuthorError) return unexplained(locale, error.failure)
-  return unregisteredCodeMessage(locale, strippedRaw(error))
-    ?? translate(locale, 'error.unknown', { message: readMessage(error) })
+  return displayedErrorMessage(locale, error)
 }
 
 const loggedUnregisteredCodes = new Set<string>()
@@ -697,12 +726,6 @@ function logUnregisteredCode(code: string): void {
   if (loggedUnregisteredCodes.has(code)) return
   loggedUnregisteredCodes.add(code)
   console.warn(`[app-errors] 未登记文案的错误码：${code}`)
-}
-
-function unregisteredCodeMessage(locale: ErrorDisplayLocale, raw: string, fallback?: string): string | undefined {
-  if (!CODE_SHAPE.test(raw)) return undefined
-  logUnregisteredCode(raw)
-  return fallback || translate(locale, 'error.unregisteredCode')
 }
 
 const loggedValues = new Set<string>()
@@ -743,22 +766,13 @@ function noteText(locale: ErrorDisplayLocale, value: AuthorNote): string | undef
   return template.replace(/\{(\w+)\}/gu, (whole, name: string) => String(value.params?.[name] ?? whole)).trim() || undefined
 }
 
-/** 未迁移通道给的原因按旧规则：已登记码按码说明，没登记的码不显示，其余文字只在中文界面附上。 */
-function legacyReasonText(locale: ErrorDisplayLocale, text: string): string | undefined {
-  const known = knownAppErrorMessage(locale, text)
-  if (known) return known
-  if (errorCodeOf(text) || copyLocale(locale) !== 'zh-CN' || !text.trim()) return undefined
-  return strippedRaw(text) || undefined
-}
-
 function codeText(locale: ErrorDisplayLocale, code: string): string | undefined {
   const known = knownAppErrorMessage(locale, code)
   if (known === undefined) logUnregisteredCode(code)
   return known
 }
 
-function sentences(locale: ErrorDisplayLocale, failure: Failure | LegacyReason): string[] {
-  if ('legacy' in failure) return [legacyReasonText(locale, failure.legacy)].filter((text): text is string => text !== undefined)
+function sentences(locale: ErrorDisplayLocale, failure: Failure): string[] {
   const own = (failure.note && noteText(locale, failure.note)) || (failure.code ? codeText(locale, failure.code) : undefined)
   const rest = failure.because ? sentences(locale, failure.because) : []
   return own === undefined || rest[0] === own ? rest : [own, ...rest]
@@ -795,6 +809,16 @@ export function authorError(locale: ErrorDisplayLocale, failure: Failure, option
   return new AuthorError(failure, failureText(locale, failure), options)
 }
 
+/** 本应用自己按界面语言写好的整句说明，原样给作者看。只能放本应用拼出的句子，不能放 error.message。 */
+export function writtenNote(sentence: string): AuthorNote {
+  return note('{sentence}', '{sentence}', { sentence: authorOwned(sentence) })
+}
+
+/** 说得清的失败照它说明，说不清时用 fallback 这句；选法与 failureText 的 fallback 相同。 */
+export function authorErrorOr(locale: ErrorDisplayLocale, failure: Failure | undefined, fallback: AuthorNote): AuthorError {
+  return authorError(locale, failure && authoredText(locale, failure) ? failure : { note: fallback })
+}
+
 /** catch 处的严格解析：认不出的不造码也不造说明，原文只进控制台，同一个错误只记一次。 */
 export function caughtFailure(error: unknown): Failure | undefined {
   const failure = failureOf(error)
@@ -802,12 +826,17 @@ export function caughtFailure(error: unknown): Failure | undefined {
   return failure
 }
 
-/** error.unknown 整句只装原文，不许过 IPC。 */
-const WIRE_EXCLUDED_KEYS: ReadonlySet<string> = new Set(['error.unknown'] satisfies MessageKey[])
+/** 认得出的失败按标记或码说明；没登记的码照样留着（error.code 仍是它）；其余原文只进控制台。 */
+export function reasonOf(error: unknown): Failure | undefined {
+  const marked = failureOf(error)
+  if (marked) return marked
+  const code = failureCode(readCode(error) ?? errorCodeOf(error))
+  return code ? { code } : caughtFailure(error)
+}
 
 type NoAny<P> = { readonly [K in keyof P]: 0 extends 1 & P[K] ? never : P[K] }
 
-export function wireNote<const P extends NoteParams>(key: Exclude<MessageKey, 'error.unknown'>, params?: P & NoAny<P>): WireNote {
+export function wireNote<const P extends NoteParams>(key: MessageKey, params?: P & NoAny<P>): WireNote {
   return { key: key as string as WireNoteKey, ...(params ? { params } : {}) }
 }
 
@@ -815,7 +844,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
 function wireNoteOf(value: unknown): WireNote | undefined {
-  if (!isRecord(value) || typeof value.key !== 'string' || WIRE_EXCLUDED_KEYS.has(value.key) || !Object.hasOwn(messages['en-US'], value.key)) return undefined
+  if (!isRecord(value) || typeof value.key !== 'string' || !Object.hasOwn(messages['en-US'], value.key)) return undefined
   const { params } = value
   if (params !== undefined && !(isRecord(params) && Object.values(params).every(v => typeof v === 'string' || Number.isFinite(v)))) return undefined
   if (Object.keys(value).every(field => field === 'key' || field === 'params')) return value as unknown as WireNote
@@ -829,7 +858,7 @@ export function publicWireFailure(value: unknown): WireFailure {
   return { code: value.code, ...(note ? { note } : {}) }
 }
 
-/** db:* 不经 handle()，主进程出口管不到，这里是它们唯一的校验。 */
+/** 渲染端入口不信任过 IPC 的形状：码和目录键在这里再认一次。 */
 export function wireFailure(value: unknown): Failure | undefined {
   const code = isRecord(value) ? failureCode(value.code) : undefined
   if (!isRecord(value) || !code) return undefined
@@ -863,16 +892,17 @@ export function resultFailure(result: { failure?: Failure; error?: string; error
 const DISPLAY_PREFIX = /^(?:Error invoking remote method '[^']+': )?(?:[A-Za-z]*Error: )?/u
 
 /**
- * 把报错交给作者看的统一入口（toast、提示框、内联提示）：主进程的 result.error、IPC 抛出的错误
- * 与渲染端按界面语言写好的说明都可以直接传进来。登记过的码按界面语言说明；没登记的码用该处的兜底说明，
- * 没有兜底时用通用说明；其余原文去掉通道与类名前缀后保留；完全没有内容时用该处的兜底说明（调用方用 text(zh, en) 写好）。
+ * 把报错交给作者看的入口：AuthorError 显示它的说明，登记过的码按界面语言说明，
+ * 其余（没登记的码、原文、空）用该处的兜底说明，没有兜底时用通用说明；原文只进控制台。
  */
 export function displayedErrorMessage(locale: ErrorDisplayLocale, error: unknown, fallback?: string): string {
   if (error instanceof AuthorError) return authoredText(locale, error.failure) ?? unexplained(locale, error.failure, fallback)
   const known = knownAppErrorMessage(locale, error)
   if (known) return known
   const raw = strippedRaw(error)
-  return unregisteredCodeMessage(locale, raw, fallback) ?? (raw || fallback || unknownErrorText(locale))
+  if (CODE_SHAPE.test(raw)) logUnregisteredCode(raw)
+  else if (raw) warnOnce('未标记的失败，原文不显示：', typeof error === 'object' && error !== null ? error : raw)
+  return fallback || translate(locale, 'error.unregisteredCode')
 }
 
 const strippedRaw = (error: unknown) => displayedRaw(error).trim().replace(DISPLAY_PREFIX, '')
@@ -890,14 +920,6 @@ function displayedRaw(error: unknown): string {
 
 export function containsHan(value: string): boolean {
   return /\p{Script=Han}/u.test(value)
-}
-
-/**
- * 英文句子后附上原因。英文界面下含汉字的原因（主进程未登记的中文原文）不拼进英文句子，只给概述；
- * 日文界面下原因按日文目录写好，照样附上。
- */
-export function englishWithReason(locale: ErrorDisplayLocale, summary: string, reason: string, separator = ' '): string {
-  return !reason.trim() || (locale === 'en-US' && containsHan(reason)) ? summary : `${summary}${separator}${reason}`
 }
 
 /** 主进程是否登记过这个码（登记过的码才有目录文案）。 */

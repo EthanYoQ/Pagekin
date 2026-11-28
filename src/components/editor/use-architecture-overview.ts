@@ -35,7 +35,8 @@ import { outlineRecoveryGuide, outlineRecoveryViewOnly, planningTitle } from '..
 import { planningRecoverable } from '../../shared/planning-recovery'
 import { outlineProgress, type OutlineProgress } from '../../shared/plot-outline-checkpoint'
 import type { PlotOutlineRangeSource } from '../../shared/plot-outline-contract'
-import { displayedErrorMessage } from '../../i18n/app-errors'
+import { displayedErrorMessage, authorError } from '../../i18n/app-errors'
+import { note } from '../../shared/failure'
 
 /** 架构四节的文档、图标与说明；名字取 ARCH_STEP_NAMES。 */
 export const ARCH_FILES: Array<{
@@ -334,8 +335,8 @@ export function useArchitectureOverview(projectKey: string) {
     targetUnits?: number,
   ) => {
     const projectSession = captureProjectSession(currentProject)
-    if (!projectMatches || !projectSession || !isProjectSessionPath(projectSession, projectKey)) throw new Error(text('项目会话已切换，未启动架构生成', 'The project session changed, so architecture generation was not started.'))
-    if (!isProjectSessionCurrent(projectSession)) throw new Error(text('项目会话已切换，未启动架构生成', 'The project session changed, so architecture generation was not started.'))
+    if (!projectMatches || !projectSession || !isProjectSessionPath(projectSession, projectKey)) throw authorError(currentInterfaceLocale(), { note: note('项目会话已切换，未启动架构生成', 'The project session changed, so architecture generation was not started.') })
+    if (!isProjectSessionCurrent(projectSession)) throw authorError(currentInterfaceLocale(), { note: note('项目会话已切换，未启动架构生成', 'The project session changed, so architecture generation was not started.') })
     await launchCreativeWorkflow({
       workflow: 'generate_architecture',
       selectedSteps,

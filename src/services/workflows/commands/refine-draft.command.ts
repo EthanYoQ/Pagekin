@@ -11,6 +11,8 @@ import {
 } from '../chapter-materials'
 import { requireWorkflowProjectSession, workflowUiText } from '../workflow-project-session'
 import { selectFrozenReviewRevisionMaterials } from './review-revision-materials'
+import { authorError } from '../../../i18n/app-errors'
+import { note } from '../../../shared/failure'
 
 export interface RefineDraftParams extends ReviewRevisionCommandSource {
   chapterInfo: ChapterInfo
@@ -41,7 +43,7 @@ export class RefineDraftCommand extends ReviewRevisionCommand {
     params.callbacks.log(workflowUiText(params.context, '正在精修章节...', 'Refining the chapter...'))
     const projectSession = requireWorkflowProjectSession(params.context)
     const template = await resolvePromptTemplate('refine_chapter', projectSession, language)
-    if (!template) throw new Error(workflowUiText(params.context, '未找到修稿模板', 'The revision prompt template was not found.'))
+    if (!template) throw authorError(params.context.interfaceLocale, { note: note('未找到修稿模板', 'The revision prompt template was not found.') })
     const blueprint = frozen.blueprints.find(item => item.chapterNumber === frozen.source.chapterNumber)
     const guidance = frozen.authorInputs.find(input => input.id === 'merged-guidance')?.text || frozen.config.globalGuidance || ''
     const userPrompt = frozen.authorInputs.find(input => input.id === 'user-prompt')?.text || ''
@@ -80,9 +82,7 @@ export class RefineDraftCommand extends ReviewRevisionCommand {
       params.callbacks.log(workflowUiText(params.context,
         `  必需材料超出上下文容量（${error.decision.decision}）：${blocked}`,
         `  Required material exceeds the context capacity (${error.decision.decision}): ${blocked}`))
-      throw new Error(workflowUiText(params.context,
-        '本章修稿的必需材料超出上下文容量，已停止修稿。请精简相关作者材料或前驱后重试。',
-        'The required material for this revision exceeds the context capacity, so the revision stopped. Trim the required author material or predecessor and try again.'))
+      throw authorError(params.context.interfaceLocale, { note: note('本章修稿的必需材料超出上下文容量，已停止修稿。请精简相关作者材料或前驱后重试。', 'The required material for this revision exceeds the context capacity, so the revision stopped. Trim the required author material or predecessor and try again.') })
     }
     const { prompt, systemRole } = render(admission.admitted)
     await this.bindMaterialDecision(params, admission.decision, prompt)

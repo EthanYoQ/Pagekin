@@ -24,7 +24,7 @@ const seed = context => seedStageSample(context, { landOnChapter3: false, before
     const content = STAGE_SAMPLE.drafts[number].text
     return { chapterNumber: number, title: stageChapterTitle(number), content, wordCount: countUnits(content) }
   }) }, projectPath, session)
-  assert.equal(imported.success, true, imported.error)
+  assert.equal(imported.success, true, imported.failure?.code)
   const created = await invoke(page, 'db:narrative-thread-plan-create', PLAN, projectPath, session)
   assert.equal(created.success, true, JSON.stringify(created.failure))
 } })

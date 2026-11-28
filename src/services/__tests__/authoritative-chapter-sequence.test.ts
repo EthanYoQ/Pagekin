@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { displayedErrorMessage } from '../../i18n/app-errors'
+import { shown } from '../../i18n/__tests__/shown-locale'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import {
   AuthoritativeChapterSequenceError,
@@ -87,5 +89,13 @@ describe('readWritableChapters', () => {
         message: expect.stringMatching(/第 3、7 章.*重复/u),
       }),
     )
+  })
+
+  it('shows the author the repair sentence, not the generic text (#845)', async () => {
+    installSequence({ status: 'invalid', lastChapterNumber: 9, gaps: [], duplicateChapterNumbers: [3, 7], authorityFingerprint: 'd'.repeat(64) })
+
+    const error = await readWritableChapters(PROJECT_SESSION, 'zh-CN').catch((caught: unknown) => caught)
+
+    expect(displayedErrorMessage(shown('zh-CN'), error)).toBe('权威定稿的第 3、7 章存在重复记录。请先修复或移除冲突定稿，再继续创作。')
   })
 })

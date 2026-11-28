@@ -45,7 +45,7 @@ async function openChapterThree() {
 }
 
 const restoredPending = (draftId: number) => ({ success: true, outcome: 'restored', chapterNumber: 3, draftId, finalizationId: 'fin-restored-3',
-  publicationStatus: 'pending', publicationError: 'MANUSCRIPT_WRITE_FAILED' })
+  publicationStatus: 'pending', publicationFailed: true })
 
 function trashed(draftId: number): TrashedChapter {
   return {
@@ -92,7 +92,7 @@ describe('从回收站恢复的章节', () => {
       if (channel === 'chapter:trash-restore') {
         backend.state.calls.push({ channel, args })
         return { success: true, outcome: 'restored', chapterNumber: 3, draftId: final.id, finalizationId: 'fin-restored-3',
-          publicationStatus: 'pending', publicationError: 'MANUSCRIPT_WRITE_FAILED' }
+          publicationStatus: 'pending', publicationFailed: true }
       }
       if (channel === 'finalization:retry') {
         backend.state.calls.push({ channel, args })
@@ -176,7 +176,7 @@ describe('从回收站恢复的章节', () => {
     const plain = backend.invoke.getMockImplementation()!
     let publicationStatus: 'pending' | 'published' = 'pending'
     backend.invoke.mockImplementation(async (channel, ...args) => channel === 'chapter:trash-restore'
-      ? { ...restoredPending(final.id), finalizationId: `fin-${publicationStatus}`, publicationStatus, ...(publicationStatus === 'published' ? { publicationError: undefined } : {}) }
+      ? { ...restoredPending(final.id), finalizationId: `fin-${publicationStatus}`, publicationStatus, ...(publicationStatus === 'published' ? { publicationFailed: undefined } : {}) }
       : plain(channel, ...args))
     await mount()
 

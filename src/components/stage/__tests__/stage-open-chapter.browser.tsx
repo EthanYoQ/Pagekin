@@ -93,7 +93,7 @@ describe('在新外壳里打开一章', () => {
     installDrafts({ 6: { error: '磁盘读取失败' } })
     const error = vi.spyOn(toast, 'error').mockImplementation(() => undefined)
     navigate({ kind: 'chapter', chapterNumber: 6 })
-    await vi.waitFor(() => expect(error).toHaveBeenCalledWith('打开第 6 章失败：磁盘读取失败'))
+    await vi.waitFor(() => expect(error).toHaveBeenCalledWith('打开第 6 章失败：出了意外问题，暂时说不清原因。请再试一次。'))
     expect(useEditorStore.getState().tabs).toEqual([])
   })
 

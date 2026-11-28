@@ -67,7 +67,7 @@ async function runImport(snapshot: ImportRunSnapshot, interfaceLocale: Interface
 function shownOnRunCard(run: WorkflowRun, interfaceLocale: InterfaceLocale): string[] {
   const step = run.steps.find(candidate => candidate.status === 'failed')!
   const locale = errorLocaleForRun(run.uiLocale, shown(interfaceLocale))
-  return [step.error ?? '', step.failure ? failureText(locale, step.failure) : '', runFailure(run, shown(interfaceLocale)).presentation.reason ?? '']
+  return [step.failure ? failureText(locale, step.failure) : '', runFailure(run, shown(interfaceLocale)).presentation.reason ?? '']
     .filter(line => line.trim())
 }
 

@@ -1,6 +1,7 @@
 import type { MainGenerationRunHandle } from '../services/generation/generation-runtime'
 import { PLOT_OUTLINE_PROTOCOL, plotOutlineCoverageNote, plotOutlineLastChapter, plotOutlineNextChapter } from './plot-outline-contract'
 import type { WritingLanguage } from './writing-language'
+import { note, type AuthorNote } from './failure'
 
 export interface SynopsisCheckpoint {
   synopsis_protocol?: typeof PLOT_OUTLINE_PROTOCOL
@@ -61,7 +62,7 @@ export function assertCheckpointDbMirrorCurrent(
   dbOutlineText: string,
   writingLanguage: WritingLanguage,
   totalChapters: number,
-  uiText: (zhCNText: string, enUSText: string) => string,
+  fail: (reason: AuthorNote) => Error,
 ): string {
   const range = partial.synopsis_range
   const coveredTo = partial.synopsis_covered_to ?? 0
@@ -72,7 +73,7 @@ export function assertCheckpointDbMirrorCurrent(
     || (partial.synopsis_incomplete !== true && coveredTo !== range.to)
     || (partial.synopsis_incomplete === true && coveredTo >= range.to)
   ) {
-    throw new Error(uiText(
+    throw fail(note(
       '情节大纲检查点的章节范围或进度已损坏，无法安全续写。请从第 1 章重新生成。',
       'The plot-outline checkpoint has a damaged range or progress value and cannot be continued safely. Regenerate from chapter 1.',
     ))
@@ -81,7 +82,7 @@ export function assertCheckpointDbMirrorCurrent(
     ? partial.synopsis_result.trim()
     : ''
   if (!checkpointBody) {
-    throw new Error(uiText(
+    throw fail(note(
       '情节大纲检查点缺少正文，无法安全续写。请从第 1 章重新生成。',
       'The plot-outline checkpoint has no body and cannot be continued safely. Regenerate from chapter 1.',
     ))
@@ -89,24 +90,22 @@ export function assertCheckpointDbMirrorCurrent(
   const dbOutlineHash = synopsisFactsFingerprint([dbOutlineText])
   const recordedHash = partial.synopsis_db_hash
   if (recordedHash === undefined) {
-    throw new Error(uiText(
+    throw fail(note(
       '续批检查点没有数据库镜像指纹，无法确认大纲未被手动修改。请从「AI 生成故事架构」从第 1 章重新生成大纲。',
       'The continuation checkpoint has no database-mirror fingerprint, so we cannot confirm the outline was not edited by hand. Regenerate the outline from chapter 1 in “Generate story architecture”.',
     ))
   }
   if (recordedHash !== dbOutlineHash) {
-    throw new Error(uiText(
-      '情节大纲正文在上次生成后已被手动修改，续批会覆盖这些修改，已拒绝。'
-        + '如需保留修改，请基于修改后的正文从第 1 章重新生成；若该修改有误，请先撤销后再续批。',
-      'The outline body was manually edited after the last generation; continuing would overwrite those edits, so it was rejected. '
-        + 'To keep the edits, regenerate from chapter 1 on top of them; if the edit was a mistake, revert it before continuing.',
+    throw fail(note(
+      '情节大纲正文在上次生成后已被手动修改，续批会覆盖这些修改，已拒绝。如需保留修改，请基于修改后的正文从第 1 章重新生成；若该修改有误，请先撤销后再续批。',
+      'The outline body was manually edited after the last generation; continuing would overwrite those edits, so it was rejected. To keep the edits, regenerate from chapter 1 on top of them; if the edit was a mistake, revert it before continuing.',
     ))
   }
   if (renderSynopsisDbText(checkpointBody, writingLanguage, totalChapters, partial) !== dbOutlineText
     || (partial.synopsis_body_hash !== undefined
       && partial.synopsis_body_hash !== synopsisFactsFingerprint([checkpointBody]))
   ) {
-    throw new Error(uiText(
+    throw fail(note(
       '情节大纲检查点正文与数据库原文不一致，无法安全续写。数据库正文未被覆盖。',
       'The plot-outline checkpoint body does not exactly match the database source. The database outline was not overwritten.',
     ))
@@ -140,7 +139,7 @@ export function isUsableSynopsisCheckpoint(
       dbOutlineText,
       writingLanguage,
       totalChapters,
-      (zhCNText) => zhCNText,
+      () => new Error('checkpoint mismatch'),
     ).length >= MIN_SYNOPSIS_PARTIAL_PERSIST_CHARS
   } catch {
     return false

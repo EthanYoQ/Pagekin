@@ -62,7 +62,7 @@ describe('MCP IPC trust boundary', () => {
     const result = await handler('mcp:connect')({}, 'safe-id')
     expect(result).toEqual({
       success: false,
-      error: 'MCP_CONNECT_FAILED',
+      failure: { code: 'MCP_CONNECT_FAILED' },
     })
     expect(JSON.stringify(result)).not.toContain('SECRET_INITIALIZE_ERROR_MARKER')
     expect(mocks.connect).toHaveBeenCalledWith('safe-id')
@@ -78,7 +78,7 @@ describe('MCP IPC trust boundary', () => {
       success: false,
       status: 'error',
       servers: [],
-      error: 'MCP_CONFIG_INVALID',
+      failure: { code: 'MCP_CONFIG_INVALID' },
     })
 
     mocks.loadConfig.mockResolvedValueOnce({ status: 'missing', servers: [] })
@@ -87,5 +87,23 @@ describe('MCP IPC trust boundary', () => {
       status: 'missing',
       servers: [],
     })
+  })
+
+  it.each([
+    ['mcp:disconnect', () => mocks.disconnect.mockRejectedValueOnce(new Error('SECRET_DISCONNECT_MARKER C:/Users/a'))],
+    ['mcp:disconnect-all', () => mocks.disconnectAll.mockRejectedValueOnce(new Error('SECRET_DISCONNECT_MARKER C:/Users/a'))],
+  ] as const)('%s 失败时只回通用码，原文留在主进程', async (channel, fail) => {
+    fail()
+    const result = await handler(channel)({}, 'safe-id')
+    expect(result).toEqual({ success: false, failure: { code: 'IPC_HANDLER_FAILED' } })
+  })
+
+  it('工具调用失败只回码：已登记的照传，服务器原文不过 IPC', async () => {
+    mocks.callTool.mockResolvedValueOnce({ success: false, content: '', error: 'MCP_SERVER_NOT_CONNECTED' })
+    await expect(handler('mcp:call-tool')({}, 'safe-id', 'tool', {})).resolves.toEqual({ success: false, content: '', failure: { code: 'MCP_SERVER_NOT_CONNECTED' } })
+
+    mocks.callTool.mockResolvedValueOnce({ success: false, content: '', error: 'Error: SECRET_TOOL_MARKER at C:/Users/a/server.js' })
+    const raw = await handler('mcp:call-tool')({}, 'safe-id', 'tool', {})
+    expect(raw).toEqual({ success: false, content: '', failure: { code: 'IPC_HANDLER_FAILED' } })
   })
 })

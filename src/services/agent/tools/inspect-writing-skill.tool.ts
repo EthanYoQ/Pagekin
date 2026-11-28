@@ -1,6 +1,6 @@
 import { ipc } from '../../ipc-client'
 import { buildAgentTool } from '../tool-registry'
-import { agentToolText, agentToolErrorDetail } from './project-context'
+import { agentToolText, agentToolFailureDetail } from './project-context'
 import { containsHan } from '../../../i18n/app-errors'
 
 export const inspectWritingSkillTool = buildAgentTool({
@@ -30,7 +30,7 @@ export const inspectWritingSkillTool = buildAgentTool({
     }
     const result = await ipc.invoke('skills:inspect-github', sourceUrl)
     if (!result.success || !result.inspection) {
-      const detail = agentToolErrorDetail(context, result.error)
+      const detail = agentToolFailureDetail(context, result)
       return {
         success: false,
         content: '',

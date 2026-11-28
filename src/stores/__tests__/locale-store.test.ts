@@ -246,7 +246,7 @@ describe('locale store', () => {
     expect(state.getState().locale).toBe('zh-CN')
     expect(setDocumentLanguage).toHaveBeenLastCalledWith('zh-CN')
     expect(reportError).toHaveBeenCalledWith(
-      expect.stringMatching(/语言设置保存失败：(?:设置没能写进配置文件。请确认磁盘还有空间、应用数据目录可写，再重试。|IPC unavailable)$/u),
+      expect.stringMatching(/语言设置保存失败：(?:设置没能写进配置文件。请确认磁盘还有空间、应用数据目录可写，再重试。|出了意外问题，暂时说不清原因。请再试一次。)$/u),
       '语言设置保存失败',
     )
   })

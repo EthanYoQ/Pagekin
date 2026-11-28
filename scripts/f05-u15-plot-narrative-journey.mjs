@@ -206,7 +206,7 @@ async function main() {
     const imported = await invoke(session.page, 'db:draft-import-finalized-batch', { operationId: `u15-${runId}`,
       chapters: [{ chapterNumber: 1, title: '旧站来信', content: finalizedText,
         wordCount: [...finalizedText].length }] }, created.projectPath, fixtureSession)
-    assert.equal(imported.success, true, imported.error)
+    assert.equal(imported.success, true, imported.failure?.code)
     const importedDrafts = await invoke(session.page, 'db:draft-list-all', created.projectPath, fixtureSession)
     const importedDraft = importedDrafts.find(draft => draft.chapterNumber === 1 && draft.status === 'finalized')
     assert(importedDraft, 'synthetic finalized chapter was not listed')
@@ -215,7 +215,7 @@ async function main() {
     assert.equal(persistedFinalized?.content, finalizedText)
     const blueprint = await invoke(session.page, 'db:blueprint-upsert', { chapterNumber: 1, title: '旧站来信',
       role: '发展', purpose: '调查来信来源', keyEvents: '发现铜钥匙', characters: [] }, created.projectPath, fixtureSession)
-    assert.equal(blueprint.success, true, blueprint.error)
+    assert.equal(blueprint.success, true, blueprint.failure?.code)
     assert.equal((await invoke(session.page, 'llm:save-model', model)).success, true)
     assert.equal((await invoke(session.page, 'llm:set-default-model', model.id)).success, true)
     await session.page.reload()

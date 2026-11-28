@@ -213,7 +213,7 @@ async function main() {
       operationId: `u15-export-${runId}`,
       chapters: chapters.map(chapter => ({ ...chapter })),
     }, projectPath, projectSession)
-    assert.equal(imported.success, true, imported.error)
+    assert.equal(imported.success, true, imported.failure?.code)
     await quit()
 
     phase = 'writer-merged-md'
@@ -288,24 +288,24 @@ async function main() {
       chapterNumber: 4, title: '来源追踪', role: '', purpose: '', keyEvents: '', characters: [],
       suspenseHook: '', userGuidance: '', notes: '', notesUpdatedAt: '',
     }, projectPath, historySession)
-    assert.equal(blueprint.success, true, blueprint.error)
+    assert.equal(blueprint.success, true, blueprint.failure?.code)
     const sourceBody = '旧港来信'
     const sourceDraft = await invoke(session.page, 'db:draft-create', {
       chapterNumber: 3, version: 1, source: 'write', content: sourceBody, wordCount: sourceBody.length,
     }, projectPath, historySession)
-    assert.equal(sourceDraft.success, true, sourceDraft.error)
+    assert.equal(sourceDraft.success, true, sourceDraft.failure?.code)
     const dependentBody = '依照旧港来信'
     const dependentDraft = await invoke(session.page, 'db:draft-create', {
       chapterNumber: 4, version: 1, source: 'write', content: dependentBody, wordCount: dependentBody.length,
       sourceDependencies: [{ draftId: sourceDraft.id, contentHash: hashBytes(Buffer.from(sourceBody, 'utf8')) }],
     }, projectPath, historySession)
-    assert.equal(dependentDraft.success, true, dependentDraft.error)
+    assert.equal(dependentDraft.success, true, dependentDraft.failure?.code)
     const beforeChange = await invoke(session.page, 'db:draft-list', 4, projectPath, historySession)
     assert.equal(beforeChange.find(draft => draft.id === dependentDraft.id)?.dependenciesStale, false)
     const changedSource = `${sourceBody}已改`
     const updatedSource = await invoke(session.page, 'db:draft-update-content', sourceDraft.id,
       changedSource, changedSource.length, projectPath, historySession)
-    assert.equal(updatedSource.success, true, updatedSource.error)
+    assert.equal(updatedSource.success, true, updatedSource.failure?.code)
     const afterChange = await invoke(session.page, 'db:draft-list', 4, projectPath, historySession)
     assert.equal(afterChange.find(draft => draft.id === dependentDraft.id)?.dependenciesStale, true)
     const dependentV2Body = `${dependentBody}（第二版）`
@@ -313,7 +313,7 @@ async function main() {
       chapterNumber: 4, version: 2, source: 'rewrite', content: dependentV2Body,
       wordCount: dependentV2Body.length,
     }, projectPath, historySession)
-    assert.equal(dependentV2Draft.success, true, dependentV2Draft.error)
+    assert.equal(dependentV2Draft.success, true, dependentV2Draft.failure?.code)
     await quit()
 
     phase = 'writer-history-stale-reopen'

@@ -58,7 +58,6 @@ try {
   const model = (baseUrl, purposes = ['generation']) => ({ id: `probe-${purposes[0]}`, name: 'probe', provider: 'custom', protocol: 'openai',
     modelName: 'probe-model', apiKey: 'sk-probe-not-a-secret', baseUrl, temperature: 0.7, maxTokens: 256, purposes })
   const REMOTE = 'http://model-probe.test/v1'
-  const PROXY_DOWN = '连不上「网络代理」里设置的代理'
 
   app = await electron.launch({ cwd: repository, env, timeout: 90_000,
     args: ['-r', path.join(repository, 'scripts/redesign/offscreen-window.cjs'), '.', `--user-data-dir=${roots.userData}`, '--lang=zh-CN'] })
@@ -115,9 +114,9 @@ try {
   assert.deepEqual(await setProxy({ enabled: true, port: closedPort }), { success: true })
   const down = await run('proxy closed port', { ...calls, ...local })
   for (const name of ['test-connection http', 'test-connection https', 'test-connection embedding', 'test-connection rerank']) {
-    assert.ok(String(down[name].result.error).startsWith(PROXY_DOWN), `${name}: author is told the proxy is unreachable, got ${down[name].result.error}`)
+    assert.equal(down[name].result.failure?.code, 'PROXY_UNREACHABLE', `${name}: author is told the proxy is unreachable`)
   }
-  assert.equal(down['discover-models'].result.errorCode, 'proxy', 'model list reports the unreachable proxy')
+  assert.equal(down['discover-models'].result.reason, 'proxy', 'model list reports the unreachable proxy')
   assert.equal(down['cloud-backup connect'].result.errorCode, 'CLOUD_BACKUP_PROXY_UNREACHABLE', 'cloud backup reports the unreachable proxy')
   for (const name of Object.keys(local)) assert.equal(down[name].result.success, true, `${name}: local model ignores the dead proxy`)
   assert.equal((await invoke('cloud-backup:connect', { endpoint: `http://127.0.0.1:${deadLocalPort}/dav/`, username: 'probe', secret: 'probe-not-a-secret' })).errorCode,
@@ -126,9 +125,9 @@ try {
   assert.deepEqual(await setProxy({ enabled: true, host: 'proxy-host-typo', port: proxyPort }), { success: true })
   const typo = await run('proxy host not found', calls)
   for (const name of ['test-connection http', 'test-connection https', 'test-connection embedding', 'test-connection rerank']) {
-    assert.ok(String(typo[name].result.error).startsWith(PROXY_DOWN), `${name}: a mistyped proxy host is blamed on the proxy, got ${typo[name].result.error}`)
+    assert.equal(typo[name].result.failure?.code, 'PROXY_UNREACHABLE', `${name}: a mistyped proxy host is blamed on the proxy`)
   }
-  assert.equal(typo['discover-models'].result.errorCode, 'proxy', 'model list reports the mistyped proxy host')
+  assert.equal(typo['discover-models'].result.reason, 'proxy', 'model list reports the mistyped proxy host')
   assert.equal(typo['cloud-backup connect'].result.errorCode, 'CLOUD_BACKUP_PROXY_UNREACHABLE', 'cloud backup reports the mistyped proxy host')
 
   for (const host of ['[::1]', '::1']) {

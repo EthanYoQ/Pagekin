@@ -83,7 +83,7 @@ export async function seedBook(context, { finalized = [], drafts = {}, core: cor
       relationships: [], arc: '', notes: '' }, ...characters.map(character => ({ characterId: `draft:${randomUUID()}`, gender: '', age: '', appearance: '',
       abilities: '', relationships: [], arc: '', notes: '', ...character }))] }, projectPath, session)).success, true)
   const core = await invoke(page, 'db:project-core-update', { ...STAGE_SAMPLE.core, totalChapters: TOTAL_CHAPTERS, wordsPerChapter: WORDS_PER_CHAPTER, ...coreFields }, projectPath, session)
-  assert.equal(core.success, true, core.error)
+  assert.equal(core.success, true, core.failure?.code)
   for (let chapterNumber = 1; chapterNumber <= TOTAL_CHAPTERS; chapterNumber++) {
     assert.equal((await invoke(page, 'db:blueprint-upsert', { chapterNumber, title: stageChapterTitle(chapterNumber), role: '发展',
       purpose: '推进灯塔与沉船的线索', keyEvents: KEY_EVENTS[chapterNumber - 1], characters: ['林岚'] }, projectPath, session)).success, true)
@@ -92,11 +92,11 @@ export async function seedBook(context, { finalized = [], drafts = {}, core: cor
     const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(),
       chapters: finalized.map(number => ({ chapterNumber: number, title: stageChapterTitle(number), content: FINALIZED_TEXT[number],
         wordCount: countUnits(FINALIZED_TEXT[number]) })) }, projectPath, session)
-    assert.equal(imported.success, true, imported.error)
+    assert.equal(imported.success, true, imported.failure?.code)
   }
   for (const [number, content] of Object.entries(drafts)) {
     const draft = await invoke(page, 'db:draft-create', { chapterNumber: Number(number), version: 1, source: 'write', content, wordCount: countUnits(content) }, projectPath, session)
-    assert.equal(draft.success, true, draft.error)
+    assert.equal(draft.success, true, draft.failure?.code)
   }
   await reload()
   await stage.openFromLibrary(page, BOOK)
@@ -111,10 +111,10 @@ async function seedRelationBook(context) {
       const content = STAGE_SAMPLE.drafts[number].text
       return { chapterNumber: number, title: stageChapterTitle(number), content, wordCount: countUnits(content) }
     }) }, projectPath, session)
-    assert.equal(imported.success, true, imported.error)
+    assert.equal(imported.success, true, imported.failure?.code)
     for (const [number, content] of Object.entries(RELATION_CHAPTERS)) {
       const draft = await invoke(page, 'db:draft-create', { chapterNumber: Number(number), version: 1, source: 'write', content, wordCount: countUnits(content) }, projectPath, session)
-      assert.equal(draft.success, true, draft.error)
+      assert.equal(draft.success, true, draft.failure?.code)
     }
     await context.installRealModels()
   } })
@@ -708,7 +708,7 @@ async function seedEvalBook(context, book) {
   const session = { projectId: created.projectId, projectPath, leaseId: opened.project.sessionLease }
   const call = async (channel, ...args) => {
     const result = await invoke(page, channel, ...args, projectPath, session)
-    assert.notEqual(result?.success, false, `${channel}：${result?.error}`)
+    assert.notEqual(result?.success, false, `${channel}：${result?.failure?.code ?? result?.error}`)
     return result
   }
   await context.installRealModels()

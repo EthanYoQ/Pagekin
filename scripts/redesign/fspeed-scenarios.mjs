@@ -111,7 +111,7 @@ async function seed(context, fakeMode, chapters) {
   assert.equal((await invoke(page, 'db:character-roster-commit', { operationId: randomUUID(), expectedRevision: roster.revision,
     expectedIdentityRevision: roster.identityRevision, schemaVersion: 1, intent: 'manual_edit', entries }, projectPath, session)).success, true)
   const core = await invoke(page, 'db:project-core-update', { ...STAGE_SAMPLE.core, totalChapters: TOTAL_CHAPTERS, wordsPerChapter: 1000 }, projectPath, session)
-  assert.equal(core.success, true, core.error)
+  assert.equal(core.success, true, core.failure?.code)
   const title = number => QUALITY_CHAPTERS[number]?.title ?? stageChapterTitle(number)
   for (let chapterNumber = 1; chapterNumber <= TOTAL_CHAPTERS; chapterNumber++) {
     assert.equal((await invoke(page, 'db:blueprint-upsert', { chapterNumber, title: title(chapterNumber), role: '发展',
@@ -121,11 +121,11 @@ async function seed(context, fakeMode, chapters) {
   const imported = await invoke(page, 'db:draft-import-finalized-batch', { operationId: randomUUID(),
     chapters: [1, 2].map(number => ({ chapterNumber: number, title: title(number), content: STAGE_SAMPLE.finalized[number],
       wordCount: countUnits(STAGE_SAMPLE.finalized[number]) })) }, projectPath, session)
-  assert.equal(imported.success, true, imported.error)
+  assert.equal(imported.success, true, imported.failure?.code)
   for (const number of chapters) {
     const content = chapterText(number)
     const draft = await invoke(page, 'db:draft-create', { chapterNumber: number, version: 1, source: 'write', content, wordCount: countUnits(content) }, projectPath, session)
-    assert.equal(draft.success, true, draft.error)
+    assert.equal(draft.success, true, draft.failure?.code)
   }
   await reload()
   await stage.openFromLibrary(page, BOOK)

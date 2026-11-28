@@ -1,4 +1,4 @@
-import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import type { IpcMainInvokeEvent, WebContents } from 'electron'
 import type Database from 'better-sqlite3'
 import type { GenerationOwnerChannels } from '../../src/shared/generation-owner-contract'
 import type { CharacterProposalChannels } from '../../src/shared/character-proposal'
@@ -85,7 +85,6 @@ export function assertImportGenerationSourcesCurrent(handle: MainGenerationRunHa
 
 const GENERATION_ERROR_CODE = /^(?:GENERATION|ROOT_BUDGET|ARTIFACT|MAIN|CHARACTER|FINALIZED_CHARACTER|LEGACY_ROSTER)_[A-Z_]+$/u
 const DIAGNOSTIC_MESSAGE_LIMIT = 200
-const MIGRATED_CHANNEL = /^(?:character-proposal|character-identity|finalized-character|legacy-roster|review-revision):/u
 
 /**
  * 生成 IPC 只向渲染端返回错误码。没有错误码的异常要先留下主进程诊断，再统一成
@@ -184,8 +183,7 @@ export function registerGenerationController(options: {
   }
   function register<C extends keyof OwnerChannels>(channel: C, arity: number,
     handler: (owner: Owner, ...args: OwnerChannels[C]['args']) => OwnerChannels[C]['return'] | Promise<OwnerChannels[C]['return']>) {
-    const registerIpc = MIGRATED_CHANNEL.test(channel) ? handle : ipcMain.handle.bind(ipcMain)
-    registerIpc(channel, async (event, ...raw: unknown[]) => {
+    handle(channel, async (event, ...raw: unknown[]) => {
       try {
         const session = raw.pop()
         if (!isProjectSessionContext(session) || raw.length !== arity && !(channel === 'generation:compose-visible' && raw.length === 3)) throw new Error('GENERATION_PROJECT_SESSION_REQUIRED')

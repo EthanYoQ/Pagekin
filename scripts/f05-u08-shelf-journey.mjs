@@ -131,16 +131,16 @@ async function seed(app, page, roots) {
   const context = { projectId: projects.a.id, projectPath: projects.a.path, leaseId: opened.project.sessionLease }
   const blueprint = await invoke(page, 'db:blueprint-upsert', { chapterNumber: 1, title: '旧车站', role: '发展',
     purpose: '调查来信', keyEvents: '发现线索', characters: [] }, projects.a.path, context)
-  assert.equal(blueprint.success, true, blueprint.error)
+  assert.equal(blueprint.success, true, blueprint.failure?.code)
   const draft = await invoke(page, 'db:draft-create', { chapterNumber: 1, version: 1, source: 'write',
     content: excerpt, wordCount: 12 }, projects.a.path, context)
-  assert.equal(draft.success, true, draft.error)
+  assert.equal(draft.success, true, draft.failure?.code)
   const roster = await invoke(page, 'db:character-roster-read', projects.a.path, context)
   const character = { characterId: `draft:${randomUUID()}`, name: '林舟', role: 'protagonist', gender: '', age: '', appearance: '', personality: '',
     background: '', abilities: '', motivation: '', relationships: [], arc: '', notes: '' }
   const committed = await invoke(page, 'db:character-roster-commit', { operationId: randomUUID(), expectedRevision: roster.revision,
     expectedIdentityRevision: roster.identityRevision, schemaVersion: 1, intent: 'manual_edit', entries: [character] }, projects.a.path, context)
-  assert.equal(committed.success, true, committed.error)
+  assert.equal(committed.success, true, committed.failure?.code)
   const openedBlank = await invoke(page, 'project:open', projects.b.path, randomUUID(), null)
   assert.equal(openedBlank.success, true, openedBlank.error)
   const blankContext = { projectId: projects.b.id, projectPath: projects.b.path, leaseId: openedBlank.project.sessionLease }

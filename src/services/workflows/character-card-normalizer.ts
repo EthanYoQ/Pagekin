@@ -13,10 +13,11 @@ import {
   normalizeCharacterRole,
   type CharacterRole,
 } from '../../shared/character-role'
+import { authorError } from '../../i18n/app-errors'
+import { authorOwned, note } from '../../shared/failure'
+import { currentInterfaceLocale } from '../../stores/locale-store'
 
 type RawCard = RawCharacterCard
-/** 按调用方冻结的界面语言选文案。 */
-type UiText = (zhCNText: string, enUSText: string) => string
 export type CharacterRelationshipEdge = { target: string; relation: string }
 
 const RELATIONSHIP_DESCRIPTOR_KEYS: ReadonlySet<string> = new Set([
@@ -296,15 +297,12 @@ function mergeModelAndSourceCards(
   return deduplicateRawCards(merged)
 }
 
-function assertModelCardsMatchSource(modelCards: readonly RawCard[], sourceCards: readonly RawCard[], text: UiText): void {
+function assertModelCardsMatchSource(modelCards: readonly RawCard[], sourceCards: readonly RawCard[]): void {
   const sourceKeys = new Set(deduplicateRawCards(sourceCards).map(card => characterKey(characterName(card))))
   for (const model of deduplicateRawCards(modelCards)) {
     const name = characterName(model)
     if (name && !sourceKeys.has(characterKey(name))) {
-      throw new Error(text(
-        `模型角色「${name}」不在角色名单完整清单中，未写入角色列表`,
-        `The model character "${name}" is not in the complete cast list. No characters were written.`,
-      ))
+      throw authorError(currentInterfaceLocale(), { note: note(`模型角色「{name}」不在角色名单完整清单中，未写入角色列表`, `The model character "{name}" is not in the complete cast list. No characters were written.`, { name: authorOwned(name) }) })
     }
   }
 }
@@ -343,29 +341,24 @@ function assertCompleteCharacterCards(
   cards: readonly CharacterData[],
   sourceCards: readonly RawCard[],
   mergedRawCards: readonly RawCard[],
-  text: UiText,
 ): void {
   const names = new Set(cards.map(card => characterKey(card.name)))
   if (names.size !== cards.length) {
-    throw new Error(text('角色卡包含重复角色名，未写入角色列表', 'The character cards repeat a name. No characters were written.'))
+    throw authorError(currentInterfaceLocale(), { note: note('角色卡包含重复角色名，未写入角色列表', 'The character cards repeat a name. No characters were written.') })
   }
 
   for (const source of sourceCards) {
     const sourceName = characterName(source)
     if (!sourceName || !names.has(characterKey(sourceName))) {
-      throw new Error(text(
-        `角色名单中的「${sourceName || '未命名角色'}」未被补齐，未写入角色列表`,
-        `The cast entry "${sourceName || 'unnamed character'}" was not completed. No characters were written.`,
-      ))
+      throw authorError(currentInterfaceLocale(), { note: sourceName
+        ? note('角色名单中的「{name}」未被补齐，未写入角色列表', 'The cast entry "{name}" was not completed. No characters were written.', { name: authorOwned(sourceName) })
+        : note('角色名单中的「未命名角色」未被补齐，未写入角色列表', 'The cast entry "unnamed character" was not completed. No characters were written.') })
     }
     const sourceRole = readMeaningfulField(source, CHARACTER_FIELD_ALIASES.role)
     if (sourceRole === undefined) continue
     const persisted = cards.find(card => characterKey(card.name) === characterKey(sourceName))
     if (!persisted || persisted.role !== normalizeRole(sourceRole)) {
-      throw new Error(text(
-        `角色名单中的「${sourceName}」角色定位未被保留，未写入角色列表`,
-        `The role of the cast entry "${sourceName}" was not kept. No characters were written.`,
-      ))
+      throw authorError(currentInterfaceLocale(), { note: note(`角色名单中的「{sourceName}」角色定位未被保留，未写入角色列表`, `The role of the cast entry "{sourceName}" was not kept. No characters were written.`, { sourceName: authorOwned(sourceName) }) })
     }
   }
 
@@ -373,10 +366,7 @@ function assertCompleteCharacterCards(
     const relationships = readMeaningfulField(card, CHARACTER_FIELD_ALIASES.relationships)
     for (const target of explicitRelationshipTargets(relationships)) {
       if (!names.has(characterKey(target))) {
-        throw new Error(text(
-          `角色关系目标「${target}」不在完整角色清单中，未写入角色列表`,
-          `The relationship target "${target}" is not in the complete cast list. No characters were written.`,
-        ))
+        throw authorError(currentInterfaceLocale(), { note: note(`角色关系目标「{target}」不在完整角色清单中，未写入角色列表`, `The relationship target "{target}" is not in the complete cast list. No characters were written.`, { target: authorOwned(target) }) })
       }
     }
   }
@@ -386,10 +376,7 @@ function assertCompleteCharacterCards(
     const targets = parsed === null ? null : structuredRelationshipTargets(parsed)
     if (!targets) continue
     if (targets.some(target => !names.has(characterKey(target)))) {
-      throw new Error(text(
-        `角色「${card.name}」包含无效关系目标，未写入角色列表`,
-        `The character "${card.name}" has an invalid relationship target. No characters were written.`,
-      ))
+      throw authorError(currentInterfaceLocale(), { note: note(`角色「{name}」包含无效关系目标，未写入角色列表`, `The character "{name}" has an invalid relationship target. No characters were written.`, { name: authorOwned(card.name) }) })
     }
   }
 }
@@ -400,27 +387,21 @@ function assertCompleteCharacterCards(
  * safe to save because `character-save-all` may overwrite matching manual
  * cards.
  */
-export function extractCompleteCharacterCards(modelText: string, sourceText: string, text: UiText): CharacterData[] {
+export function extractCompleteCharacterCards(modelText: string, sourceText: string): CharacterData[] {
   const modelCards = parseModelCharacterCards(modelText)
   const sourceRoster = parseArchitectureCharacterRoster(sourceText)
   if (!sourceRoster.complete) {
-    throw new Error(text(
-      '无法从角色名单中安全识别完整角色清单，未写入角色列表',
-      'The complete cast list could not be identified safely. No characters were written.',
-    ))
+    throw authorError(currentInterfaceLocale(), { note: note('无法从角色名单中安全识别完整角色清单，未写入角色列表', 'The complete cast list could not be identified safely. No characters were written.') })
   }
   const sourceCards = sourceRoster.cards
 
-  assertModelCardsMatchSource(modelCards, sourceCards, text)
+  assertModelCardsMatchSource(modelCards, sourceCards)
   const mergedRawCards = mergeModelAndSourceCards(modelCards, sourceCards, false)
   const cards = normalizeCharacterCardsForPersistence(mergedRawCards)
   if (cards.length === 0) {
-    throw new Error(text(
-      '未能从 AI 输出或角色名单中提取到有效角色卡，未写入角色列表',
-      'No valid character cards could be extracted from the AI output or the cast list. No characters were written.',
-    ))
+    throw authorError(currentInterfaceLocale(), { note: note('未能从 AI 输出或角色名单中提取到有效角色卡，未写入角色列表', 'No valid character cards could be extracted from the AI output or the cast list. No characters were written.') })
   }
-  assertCompleteCharacterCards(cards, sourceCards, mergedRawCards, text)
+  assertCompleteCharacterCards(cards, sourceCards, mergedRawCards)
   return cards
 }
 

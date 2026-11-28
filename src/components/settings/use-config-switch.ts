@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ipc } from '../../services/ipc-client'
 import { currentInterfaceLocale } from '../../stores/locale-store'
-import { displayedErrorMessage, failureText, resultFailure } from '../../i18n/app-errors'
-import { note } from '../../shared/failure'
+import { displayedErrorMessage, resultFailure, authorErrorOr, catalogNote } from '../../i18n/app-errors'
 import type { GlobalConfig } from '../../shared/ipc-channels'
 
 type SwitchKey = 'autoOpenNextChapterAfterFinalize' | 'backgroundStageNotifications'
@@ -26,7 +25,7 @@ export function useConfigSwitch(key: SwitchKey, fallback: boolean, failure: (rea
     setError(null)
     try {
       const result = await ipc.invoke('config:set', { [key]: checked })
-      if (!result.success) throw new Error(failureText(currentInterfaceLocale(), resultFailure(result), { fallback: note('未知错误', 'Unknown error') }))
+      if (!result.success) throw authorErrorOr(currentInterfaceLocale(), resultFailure(result), catalogNote('error.unregisteredCode'))
     } catch (cause) {
       setEnabled(previous)
       setError(failure(displayedErrorMessage(currentInterfaceLocale(), cause)))

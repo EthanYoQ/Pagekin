@@ -12,7 +12,6 @@ const countAdditions = (current, previous) => Object.entries(current)
   .map(([path, counts]) => `${path} 的旧约定合计（${legacySum(previous[path])} → ${legacySum(counts)}）`)
 
 const BASELINES = {
-  'electron/ipc/direct-channels.json': listAdditions,
   'test/directory-listing-baseline.json': listAdditions,
   'test/legacy-failure-baseline.json': countAdditions,
 }

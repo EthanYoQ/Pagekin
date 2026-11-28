@@ -394,7 +394,7 @@ describe('workflow mutation failure boundaries', () => {
       context().projectSession!,
       '保存架构生成检查点',
     ))
-      .rejects.toThrow('checkpoint rejected')
+      .rejects.toThrow('保存架构生成检查点失败，请再试一次。')
   })
 
   it.each([
@@ -458,7 +458,7 @@ describe('workflow mutation failure boundaries', () => {
   it('stops the chapter-notes post-process step when blueprint persistence fails', async () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'db:blueprint-update-notes') {
-        return { success: false, error: 'notes rejected' }
+        return { success: false, failure: { code: 'IPC_HANDLER_FAILED' } }
       }
       throw new Error(`unexpected IPC: ${channel}`)
     })
@@ -479,7 +479,7 @@ describe('workflow mutation failure boundaries', () => {
     const stepCallbacks = callbacks()
 
     await expect(step!.executor(stepCallbacks, context()))
-      .rejects.toThrow('notes rejected')
+      .rejects.toMatchObject({ code: 'IPC_HANDLER_FAILED' })
     expect(stepCallbacks.log).not.toHaveBeenCalledWith(expect.stringContaining('剧情要点提取完成'))
   })
 
@@ -489,7 +489,7 @@ describe('workflow mutation failure boundaries', () => {
       if (channel === 'db:blueprint-update-notes') {
         persistenceAttempts += 1
         return persistenceAttempts === 1
-          ? { success: false, error: 'transient notes failure' }
+          ? { success: false, failure: { code: 'IPC_HANDLER_FAILED' } }
           : { success: true }
       }
       throw new Error(`unexpected IPC: ${channel}`)
@@ -500,7 +500,7 @@ describe('workflow mutation failure boundaries', () => {
       { path: PROJECT_PATH }, 1, '第一章', '正文', { complete },
     ).find(candidate => candidate.key === 'chapter_notes')!
 
-    await expect(step.executor(callbacks(), context())).rejects.toThrow('transient notes failure')
+    await expect(step.executor(callbacks(), context())).rejects.toMatchObject({ code: 'IPC_HANDLER_FAILED' })
     await expect(step.executor(callbacks(), context())).resolves.toBeUndefined()
 
     expect(complete).toHaveBeenCalledOnce()
@@ -702,7 +702,7 @@ describe('workflow mutation failure boundaries', () => {
       'db:post-process-mark-step-failed',
       'run-1',
       'chapter_notes',
-      expect.stringContaining('输出达到本次请求长度限制'),
+      'POST_PROCESS_STEP_FAILED',
       PROJECT_PATH,
       workflowContext.projectSession,
     )
@@ -1323,7 +1323,7 @@ describe('workflow mutation failure boundaries', () => {
 
     await expect(command.execute({
       step: {},
-      context: { ...context(), uiLocale, writingLanguage },
+      context: { ...context(), uiLocale, interfaceLocale: shown(uiLocale), writingLanguage },
       callbacks: stepCallbacks,
     })).rejects.toThrow(expectedError)
 

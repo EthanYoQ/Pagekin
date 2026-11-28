@@ -202,7 +202,7 @@ const draftWrite = writeProof ? `
     { chapterNumber: 43, version: 1, source: 'write', content, wordCount: content.length },
     ${JSON.stringify(resolve(projectPath))}, context)
   if (!created || !created.success || !Number.isInteger(created.id)) {
-    throw new Error(created && created.error ? created.error : 'legacy draft-create failed')
+    throw new Error(created?.failure?.code || 'legacy draft-create failed')
   }
   const readBack = await window.velaAPI.invoke('db:draft-get-full', created.id, ${JSON.stringify(resolve(projectPath))}, context)
   if (!readBack || readBack.id !== created.id || readBack.content !== content) {
@@ -271,7 +271,7 @@ const rosterWrite = rosterWriteProof ? `
     ],
   }, result.project.path, context)
   if (saved?.success !== true || saved.receipt?.operationId !== operationId || saved.receipt.idempotent !== false) {
-    throw new Error(saved?.error || 'legacy roster manual_edit did not return a fresh save receipt')
+    throw new Error(saved?.failure?.code || 'legacy roster manual_edit did not return a fresh save receipt')
   }
   const after = await window.velaAPI.invoke('db:character-roster-read', result.project.path, context)
   if (after?.status !== 'ready' || !Array.isArray(after.entries) || after.entries.length !== 2
@@ -367,15 +367,15 @@ const completeReader = completeWriteProof || completeReadProof ? `
 const completeWrite = completeWriteProof ? `
   const seed = ${JSON.stringify(completeSourceSeed)}
   const blueprintSaved = await window.velaAPI.invoke('db:blueprint-upsert', seed.blueprint, result.project.path, context)
-  if (blueprintSaved?.success !== true) throw new Error(blueprintSaved?.error || 'complete source blueprint save failed')
+  if (blueprintSaved?.success !== true) throw new Error(blueprintSaved?.failure?.code || 'complete source blueprint save failed')
   const first = await window.velaAPI.invoke('db:draft-create',
     { chapterNumber: 1, version: 1, source: 'write', content: seed.draft1, wordCount: seed.draft1.length }, result.project.path, context)
-  if (first?.success !== true || !Number.isInteger(first.id)) throw new Error(first?.error || 'complete source first draft save failed')
+  if (first?.success !== true || !Number.isInteger(first.id)) throw new Error(first?.failure?.code || 'complete source first draft save failed')
   const firstDraft = await window.velaAPI.invoke('db:draft-get-full', first.id, result.project.path, context)
   if (firstDraft?.content !== seed.draft1 || firstDraft.version !== 1) throw new Error('complete source first draft immediate read-back failed')
   const second = await window.velaAPI.invoke('db:draft-create',
     { chapterNumber: 1, version: 2, source: 'rewrite', content: seed.draft2, wordCount: seed.draft2.length }, result.project.path, context)
-  if (second?.success !== true || !Number.isInteger(second.id)) throw new Error(second?.error || 'complete source second draft save failed')
+  if (second?.success !== true || !Number.isInteger(second.id)) throw new Error(second?.failure?.code || 'complete source second draft save failed')
   const secondDraft = await window.velaAPI.invoke('db:draft-get-full', second.id, result.project.path, context)
   if (secondDraft?.content !== seed.draft2 || secondDraft.version !== 2) throw new Error('complete source second draft immediate read-back failed')
   const secondSource = { id: second.id, chapterNumber: 1, version: 2, status: secondDraft.status, content: seed.draft2 }
@@ -383,7 +383,7 @@ const completeWrite = completeWriteProof ? `
     { baseDraftId: second.id, content: seed.review, expectedSource: secondSource }, result.project.path, context)
   if (reviewSaved?.success !== true || !Number.isInteger(reviewSaved.id)) throw new Error(reviewSaved?.failure?.code || 'complete source review save failed')
   const reviewed = await window.velaAPI.invoke('db:draft-update-status', second.id, 'reviewed', seed.draft2.length, result.project.path, context)
-  if (reviewed?.success !== true) throw new Error(reviewed?.error || 'complete source reviewed status save failed')
+  if (reviewed?.success !== true) throw new Error(reviewed?.failure?.code || 'complete source reviewed status save failed')
   const revisionSaved = await window.velaAPI.invoke('db:revision-create',
     { baseDraftId: second.id, revisionType: 'review-fix', reviewSourceId: reviewSaved.id,
       content: seed.revision, wordCount: seed.revision.length,

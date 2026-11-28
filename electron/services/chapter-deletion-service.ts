@@ -100,8 +100,6 @@ function purgeTargets(request: PurgeTrashRequest): readonly string[] | 'all' | n
     : null
 }
 
-const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error)
-
 export class ChapterDeletionService {
   private readonly createOperationId: () => string
   private readonly cleaner: ChapterDeletionProjectionCleaner
@@ -239,13 +237,15 @@ export class ChapterDeletionService {
       // 恢复已经提交，重发失败或抛错都只让实体稿停在待发布，不能把这次恢复报成没成功。
       try {
         const published = await this.finalizations.retry({ projectRoot, finalizationId: restored.finalizationId })
+        if (!published.success) console.warn('[chapter-deletion] 恢复后重发实体稿失败：', published)
         return {
           ...restored,
           publicationStatus: published.publicationStatus ?? 'pending',
-          ...(published.success ? {} : { publicationError: published.error ?? 'FINALIZATION_PUBLICATION_FAILED' }),
+          ...(published.success ? {} : { publicationFailed: true }),
         }
       } catch (error) {
-        return { ...restored, publicationStatus: 'pending', publicationError: messageOf(error) }
+        console.warn('[chapter-deletion] 恢复后重发实体稿失败：', error)
+        return { ...restored, publicationStatus: 'pending', publicationFailed: true }
       }
     })
   }

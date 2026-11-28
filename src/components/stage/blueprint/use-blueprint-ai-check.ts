@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { displayedErrorMessage, errorCodeOf } from '../../../i18n/app-errors'
+import { displayedErrorMessage, errorCodeOf, IPC_HANDLER_FAILED } from '../../../i18n/app-errors'
 import {
   releaseShownContinuityCheck, pendingContinuityCheck, readContinuityReport, readLatestContinuityReport, runContinuityCheck,
   type ContinuityCheckOutcome, type ContinuityReport,
@@ -117,9 +117,10 @@ export function useBlueprintAiCheck(projectKey: string, blueprints: readonly Cha
       if (!shown()) return
       const code = errorCodeOf(error)
       if (code === 'GENERATION_GRAPH_CONTINUITY_TIMELINE_REQUIRED') { setHasTimeline(false); setStatus({ kind: 'idle' }); return }
+      const fallback = text('蓝图没有改动。这次没查成，再点一次“AI 检查”。', 'Your blueprints are unchanged. The check did not finish. Choose AI check again.')
       setStatus({ kind: 'failed', message: code === 'GENERATION_GRAPH_BLUEPRINT_REQUIRED'
         ? text('没有还没定稿的章节要检查。', 'Every chapter is finalized, so there is nothing to check.')
-        : displayedErrorMessage(currentInterfaceLocale(), error, text('蓝图没有改动。这次没查成，再点一次“AI 检查”。', 'Your blueprints are unchanged. The check did not finish. Choose AI check again.')) })
+        : code === IPC_HANDLER_FAILED ? fallback : displayedErrorMessage(currentInterfaceLocale(), error, fallback) })
     })
   }, [readExemptions, readTimeline])
 

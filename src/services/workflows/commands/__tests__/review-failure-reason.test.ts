@@ -8,6 +8,7 @@ import { useLocaleStore } from '../../../../stores/locale-store'
 import { useWorkflowStore, type WorkflowContext, type WorkflowRun } from '../../../../stores/workflow-store'
 import { runFailure } from '../../../../components/run/run-failure'
 import { shown } from '../../../../i18n/__tests__/shown-locale'
+import { knownAppErrorMessage } from '../../../../i18n/app-errors'
 import type { GenerationAttemptReceipt } from '../../../generation/generation-harness'
 import type { GenerationTransportDiagnostics } from '../../../../shared/generation-contract'
 
@@ -104,8 +105,9 @@ describe('审稿运行因模型连接失败时的失败提示与 master 逐字�
     expect(await reviewFailureReason(code, diagnostics, locale)).toBe(expected)
   })
 
-  it.each(CODES)('作者取消后收据带 %s 时同样相同', async code => {
-    for (const [diagnostics, expected] of [[BY_DIAGNOSTICS[0][1], BY_DIAGNOSTICS[0][2]['zh-CN']], [undefined, code === 'NETWORK_ERROR' ? NOT_FAILED[2][2]['zh-CN'] : GENERIC['zh-CN']]] as const) {
+  // 取消后的失败只带收据码（failureWithoutFallbackNote），运行卡片按码说明，与 toast 相同；master 的运行卡片读旧 error 字段，给的是通用说明。
+  it.each(CODES)('作者取消后收据带 %s 时：有诊断按诊断说明，没有诊断按码说明', async code => {
+    for (const [diagnostics, expected] of [[BY_DIAGNOSTICS[0][1], BY_DIAGNOSTICS[0][2]['zh-CN']], [undefined, knownAppErrorMessage(shown('zh-CN'), code)]] as const) {
       expect(await reviewFailureReason(code, diagnostics, 'zh-CN', true)).toBe(expected)
     }
   })

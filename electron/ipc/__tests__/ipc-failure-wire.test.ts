@@ -63,7 +63,6 @@ describe('过 IPC 的失败形状（#844 PR-B）', () => {
 
   it.each([
     ['写好的句子当键', { key: '请先打开项目。' }],
-    ['整句装原文的键', { key: 'error.unknown', params: { message: RAW } }],
     ['参数不是数字或字符串', { key: 'error.projectPathTooDeepForDatabase', params: { max: { raw: RAW } } }],
   ])('过 IPC 的目录键不在目录里时渲染端只按码说明（%s）', async (_case, note) => {
     for (const bypassExit of [false, true]) {

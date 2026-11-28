@@ -84,7 +84,7 @@ describe('structured character roster static contract', () => {
       expect(controller).not.toContain(channel)
     }
     expect(protocol).toContain("'db:character-roster-commit'")
-    expect(controller).toContain("ipcMain.handle('db:character-roster-commit'")
+    expect(controller).toContain("roster.handle('db:character-roster-commit'")
     expect(projectCore).toContain("Object.hasOwn(data, 'charactersArch')")
     expect(projectCore).not.toContain("charactersArch: 'characters_arch'")
     expect(projectClear).not.toContain('characters_arch')

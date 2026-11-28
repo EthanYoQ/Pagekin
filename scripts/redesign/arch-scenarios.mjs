@@ -58,7 +58,7 @@ async function addCharacters({ page, invoke, path, session }, names) {
     background: `${name}在旧港住了很多年。` }))
   const committed = await invoke(page, 'db:character-roster-commit', { operationId: randomUUID(), expectedRevision: roster.revision,
     expectedIdentityRevision: roster.identityRevision, schemaVersion: 1, intent: 'manual_edit', entries: [...roster.entries, ...added] }, path, session)
-  assert.equal(committed.success, true, committed.error)
+  assert.equal(committed.success, true, committed.failure?.code)
 }
 
 export function seedArch({ clear = [], totalChapters, characters = [], core = {} } = {}) {
@@ -67,7 +67,7 @@ export function seedArch({ clear = [], totalChapters, characters = [], core = {}
     await seedStageSample(context, { totalChapters, landOnChapter3: clear.length === 0, beforeReload: async ({ page, invoke, path, session }) => {
       if (clear.length > 0 || Object.keys(core).length > 0) {
         const cleared = await invoke(page, 'db:project-core-update', { ...Object.fromEntries(clear.map(key => [key, ''])), ...core }, path, session)
-        assert.equal(cleared.success, true, cleared.error)
+        assert.equal(cleared.success, true, cleared.failure?.code)
       }
       if (characters.length > 0) await addCharacters({ page, invoke, path, session }, characters)
     } })
@@ -496,7 +496,7 @@ export const ARCH_SCENARIOS = {
     context.before = generated.replace(/^(## 第[1-5]章：[^\n]*\n[^\n]*)/gmu, '$1（作者旧稿）')
     const session = await uiSession(context.app)
     const saved = await context.invoke(page, 'db:project-core-update', { synopsis: context.before }, session.projectPath, session)
-    assert.equal(saved.success, true, saved.error)
+    assert.equal(saved.success, true, saved.failure?.code)
     await root(page).getByRole('button', { name: '架构的更多操作' }).click()
     await page.getByRole('menuitem', { name: '刷新状态' }).click()
     await arch.badge(page, 'synopsis').filter({ hasText: '部分完成 · 16 / 24 章' }).waitFor({ timeout: 30_000 })
@@ -538,7 +538,7 @@ export const ARCH_SCENARIOS = {
     const body = Array.from({ length: 16 }, (_, index) => `## 第${index + 1}章：灯下第${index + 1}夜\n林岚在第${index + 1}夜核对雾钟与潮位。`).join('\n\n')
     const synopsis = `# 情节大纲\n\n${body}\n\n> 本大纲已覆盖至第 16 章（全书 24 章），其余章节将在后续批次继续生成。`
     const saved = await invoke(page, 'db:project-core-update', { synopsis }, path, session)
-    assert.equal(saved.success, true, saved.error)
+    assert.equal(saved.success, true, saved.failure?.code)
   } }), run: async ({ page }) => {
     const tree = page.locator('.tree-item')
     await tree.filter({ hasText: /^故事架构/ }).filter({ hasText: '4/4' }).waitFor({ timeout: 20_000 })

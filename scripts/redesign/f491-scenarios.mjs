@@ -115,7 +115,7 @@ const seedHandEditedState = context => seedStageSample(context, { landOnChapter3
     const content = STAGE_SAMPLE.drafts[number].text
     return { chapterNumber: number, title: stageChapterTitle(number), content, wordCount: countUnits(content) }
   }) }, path, session)
-  assert.equal(imported.success, true, imported.error)
+  assert.equal(imported.success, true, imported.failure?.code)
   assert.equal((await invoke(page, 'db:blueprint-upsert', { chapterNumber: 5, title: stageChapterTitle(5), role: '发展', purpose: '推进灯塔与沉船的线索',
     keyEvents: '林岚在灯塔里找到新的线索', characters: ['林岚'] }, path, session)).success, true)
   const roster = await invoke(page, 'db:character-roster-read', path, session)

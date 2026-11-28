@@ -3,11 +3,14 @@ import type {
   BlueprintCharacterSyncOperation,
 } from '../../../electron/repositories/blueprint-repository'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
-import { copyLocale, localize } from '../../i18n/core'
+import { resultFailure, authorError } from '../../i18n/app-errors'
+import { copyLocale, errorLocaleForRun } from '../../i18n/core'
 import type { ErrorDisplayLocale } from '../../i18n/types'
 import { ipc } from '../ipc-client'
 import { syncBlueprintCharacterCandidates } from './blueprint-character-sync'
 import { workflowMainProcessError } from './workflow-project-session'
+import { note } from '../../shared/failure'
+import { currentInterfaceLocale } from '../../stores/locale-store'
 
 export type DirectoryCharacterSyncReceipt = BlueprintCharacterSyncCompletionReceipt
 
@@ -40,11 +43,11 @@ export async function retryDirectoryCharacterSync(
     expectedProjectPath,
   )
   if (!operation) {
-    throw new Error(localize(uiLocale, '待重试的蓝图角色提议操作不存在', 'The pending blueprint character-proposal operation no longer exists.'))
+    throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('待重试的蓝图角色提议操作不存在', 'The pending blueprint character-proposal operation no longer exists.') })
   }
   if (operation.status === 'completed') {
     if (!operation.completionReceipt) {
-      throw new Error(localize(uiLocale, '蓝图角色提议完成操作缺少回执', 'The completed blueprint character-proposal operation has no receipt.'))
+      throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('蓝图角色提议完成操作缺少回执', 'The completed blueprint character-proposal operation has no receipt.') })
     }
     return operation.completionReceipt
   }
@@ -64,15 +67,17 @@ export async function retryDirectoryCharacterSync(
     expectedProjectPath,
   )
   if (!completed.success || completed.operation?.status !== 'completed') {
+    const failure = resultFailure(completed)
+    const claimsRosterUnchanged = failure?.code === 'CHARACTER_ROSTER_WRITE_FAILED'
     throw workflowMainProcessError(
       interfaceLocale,
-      completed.error,
+      claimsRosterUnchanged ? undefined : failure,
       '蓝图角色提议已保存，但回执未能持久化',
       'The blueprint character proposals were saved, but their receipt could not be stored.',
     )
   }
   if (!completed.operation.completionReceipt) {
-    throw new Error(localize(uiLocale, '蓝图角色提议回执回读失败', 'Could not read back the blueprint character-proposal receipt.'))
+    throw authorError(errorLocaleForRun(uiLocale, currentInterfaceLocale()), { note: note('蓝图角色提议回执回读失败', 'Could not read back the blueprint character-proposal receipt.') })
   }
   return completed.operation.completionReceipt
 }

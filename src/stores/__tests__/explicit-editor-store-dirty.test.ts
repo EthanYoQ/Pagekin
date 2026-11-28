@@ -295,7 +295,7 @@ describe('explicit editor dirty integration', () => {
     recentList.resolve([])
     await expect(opening).resolves.toBe(true)
     expect(alertError).toHaveBeenCalledWith(
-      expect.stringContaining('unexpected IPC'),
+      '草稿列表读取失败',
       expect.objectContaining({ title: '项目已打开，部分数据加载失败' }),
     )
     expect(useCharacterStore.getState()).toMatchObject({
@@ -654,9 +654,9 @@ describe('explicit editor dirty integration', () => {
       loaded: true,
     })
     useCharacterStore.getState().renameCharacter('id:旧名', '冲突名')
-    invoke.mockResolvedValueOnce({ success: false, error: '角色名已存在' })
+    invoke.mockResolvedValueOnce({ success: false, failure: { code: 'CHARACTER_ID_REVISION_CONFLICT' } })
 
-    await expect(useCharacterStore.getState().saveAll(project().path)).rejects.toThrow(/已存在/)
+    await expect(useCharacterStore.getState().saveAll(project().path)).rejects.toThrow(/角色名单在这期间被改动了/)
 
     const ledger = parseProjectEditorDraftLedger<CharacterCard[]>(
       draftLedgerContent(CHARACTER_DRAFT_TAB.id),
