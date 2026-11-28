@@ -58,7 +58,6 @@ const UNEXPLAINED_FAILURE_KEYS = {
   NO_EVENT_SOURCES: 'error.unregisteredCode',
   SOURCE_LIMIT_EXCEEDED: 'error.unregisteredCode',
   SOURCE_INPUT_TOO_LARGE: 'error.unregisteredCode',
-  // 导入运行记下的失败没有可存的登记码时用它（#942），作者看到的是说不清原因那句。
   IMPORT_RUN_FAILED: 'error.unregisteredCode',
 } as const
 
@@ -885,8 +884,9 @@ export function importFailureRecord(value: unknown): WireFailure | undefined {
 export function importFailureRecordOf(failure: Failure | undefined): WireFailure {
   let keyed = failure
   while (keyed && keyed.note?.key === undefined) keyed = keyed.because
-  const note = keyed?.note && { key: keyed.note.key, ...(keyed.note.params ? { params: keyed.note.params } : {}) }
-  return importFailureRecord({ code: (failure && codeOf(failure)) ?? IMPORT_RUN_FAILED, note }) ?? { code: IMPORT_RUN_FAILED }
+  const note = wireNoteOf(keyed?.note && { key: keyed.note.key, ...(keyed.note.params ? { params: keyed.note.params } : {}) })
+  const code = (failure && codeOf(failure)) ?? IMPORT_RUN_FAILED
+  return { code: isKnownCode(code) ? code : IMPORT_RUN_FAILED, ...(note ? { note } : {}) }
 }
 
 /** 渲染端入口不信任过 IPC 的形状：码和目录键在这里再认一次。 */

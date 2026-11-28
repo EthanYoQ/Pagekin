@@ -97,7 +97,7 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
   const resumableRun = resumableRuns.find(run => run.id === selectedResumableRunId)
     ?? resumableRuns[0]
     ?? null
-  // 取消的运行也会残留上次的原因，只在失败时显示。存下的是码与目录键（#942），按当前界面语言说明；旧记录没有原因，显示通用说明。
+  // 取消的运行也会残留上次的原因，只在失败时显示。
   const resumableFailure = resumableRun?.status === 'failed' ? failureText(currentInterfaceLocale(), wireFailure(resumableRun.lastFailure)) : ''
   const resumableRunIsActive = resumableRun
     ? activeWorkflows.some(workflow => workflow.id === resumableRun.id)

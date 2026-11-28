@@ -42,7 +42,7 @@ export function explainImportRunFailure(error: unknown, locale: Locale | (() => 
   }
 }
 
-/** 主进程自己抛出的失败存进导入运行时只存登记码（#942）；没登记的码和原文存通用码。 */
+/** 导入运行只存登记码，不存原文；没登记的码存通用码（#942）。 */
 export function importRunFailureOf(error: unknown): WireFailure {
   const code = failureCode(registeredErrorCode(error))
   return importFailureRecordOf(code ? { code } : undefined)

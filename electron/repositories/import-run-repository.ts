@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
 import type { MainGenerationRunHandle } from '../../src/services/generation/generation-runtime'
 import { countDraftUnits } from '../../src/shared/draft-units'
-import { failureCode, type WireFailure, type WireNote } from '../../src/shared/failure'
+import { importFailureRecord } from '../../src/i18n/app-errors'
+import type { WireFailure } from '../../src/shared/failure'
 
 import {
   AUTHOR_IMPORT_PREVIEW_STALE,
@@ -248,11 +249,7 @@ function failureColumn(failure: WireFailure): string {
 }
 
 function storedFailure(column: string): WireFailure | undefined {
-  const value = parseJson<unknown>(column, undefined)
-  const code = isRecord(value) ? failureCode(value.code) : undefined
-  if (!isRecord(value) || !code) return undefined
-  const note = isRecord(value.note) && typeof value.note.key === 'string' ? value.note as unknown as WireNote : undefined
-  return { code, ...(note ? { note } : {}) }
+  return importFailureRecord(parseJson<unknown>(column, undefined))
 }
 
 function canonicalize(value: unknown): unknown {
