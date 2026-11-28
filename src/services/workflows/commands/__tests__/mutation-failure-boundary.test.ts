@@ -394,7 +394,7 @@ describe('workflow mutation failure boundaries', () => {
       context().projectSession!,
       '保存架构生成检查点',
     ))
-      .rejects.toThrow('保存架构生成检查点失败，请再试一次。')
+      .rejects.toThrow('没能保存架构生成检查点，请再试一次。')
   })
 
   it.each([
@@ -578,6 +578,25 @@ describe('workflow mutation failure boundaries', () => {
       PROJECT_PATH,
       expect.objectContaining({ projectId: 'A', leaseId: 'lease-A' }),
     )
+  })
+
+  it('says the import succeeded but the link to the finalized chapter failed when only the link fails', async () => {
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'kb:import-text') return { success: true, docId: 'knowledge-document-41', chunkCount: 1 }
+      if (channel === 'db:finalization-link-knowledge-document') return { success: false }
+      throw new Error(`unexpected IPC: ${channel}`)
+    })
+    stubVelaIpc(invoke)
+    const step = buildFinalizePostProcessSteps(
+      { path: PROJECT_PATH },
+      1,
+      '第一章',
+      '正文',
+      testPostProcessGeneration(),
+      41,
+    ).find(candidate => candidate.key === 'kb_import')
+
+    await expect(step!.executor(callbacks(), context())).rejects.toThrow('没能把已导入的知识库文档关联到定稿章节，请再试一次。')
   })
 
   it('uses an English knowledge-document prefix without rewriting mixed UTF-8 chapter facts', async () => {

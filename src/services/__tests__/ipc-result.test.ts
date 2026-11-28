@@ -18,7 +18,7 @@ it('falls back to English, not the Chinese action label, when the main process g
   useLocaleStore.setState({ locale: 'en-US' })
   expect(() => requireIpcSuccess({ success: false }, '保存草稿')).toThrow(/^The operation did not finish\. Try again\.$/u)
   useLocaleStore.setState({ locale: 'zh-CN' })
-  expect(() => requireIpcSuccess({ success: false }, '保存草稿')).toThrow(/^保存草稿失败，请再试一次。$/u)
+  expect(() => requireIpcSuccess({ success: false }, '保存草稿')).toThrow(/^没能保存草稿，请再试一次。$/u)
 })
 
 it('explains a registered main-process code and the fallback in Japanese under a Japanese interface (#722)', () => {

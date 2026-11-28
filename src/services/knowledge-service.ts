@@ -7,10 +7,9 @@
 
 import { ipc } from './ipc-client'
 import { authorError, failureText, resultFailure } from '../i18n/app-errors'
-import { AuthorError } from '../shared/failure'
+import { AuthorError, type Failure } from '../shared/failure'
 import { currentInterfaceLocale } from '../stores/locale-store'
 import type {
-  AppErrorCode,
   AppFailure,
   ProjectSessionContext,
 } from '../shared/ipc-channels'
@@ -21,10 +20,10 @@ export interface PlanningMaterial {
   text: string
 }
 
-/** 只带码：主进程旧 error 字段的说明按系统语言写，不采用。 */
+/** 不采用主进程旧 error 字段，它按系统语言写，和界面语言可能不一致。 */
 export class KnowledgeBaseServiceError extends AuthorError {
-  constructor(code: AppErrorCode) {
-    super({ code }, failureText(currentInterfaceLocale(), { code }))
+  constructor(failure: Failure) {
+    super(failure, failureText(currentInterfaceLocale(), failure))
     this.name = 'KnowledgeBaseServiceError'
   }
 }
@@ -35,9 +34,9 @@ export function unwrapKnowledgeValue<T>(result: T | AppFailure): T {
     result !== null &&
     'success' in result &&
     result.success === false &&
-    'errorCode' in result
+    ('errorCode' in result || 'failure' in result)
   ) {
-    throw new KnowledgeBaseServiceError(result.errorCode)
+    throw new KnowledgeBaseServiceError(resultFailure(result) ?? { code: result.errorCode })
   }
   return result as T
 }
