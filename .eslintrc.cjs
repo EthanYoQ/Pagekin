@@ -39,12 +39,12 @@ const EMPTY_CATCH_FREE_SCRIPTS = [
   'scripts/redesign/trash-scenarios.mjs',
   'scripts/run-continuity-calibration.mjs',
   'scripts/windows-in-app-update-e2e-driver.mjs',
-  'scripts/__tests__/release-win-verify.test.ts',
 ]
 const EMPTY_CATCH_FREE_SCRIPT_TESTS = [
   'scripts/__tests__/probe-legacy-project-open.node.mjs',
   'scripts/__tests__/quality-modernization-run.test.mjs',
   'scripts/__tests__/quality-modernization-stream-settlement.test.mjs',
+  'scripts/__tests__/release-win-verify.test.ts',
 ]
 const LISTING_MESSAGE = '测试列仓库源码改用 test/helpers/repo-source-files.ts 的 repoSourceFiles()，列临时目录改用 test/helpers/temporary-directory.ts 的 listTemporaryDirectory()。'
 const LISTING_PRIMITIVES = ['readdir', 'readdirSync', 'opendir', 'opendirSync', 'glob', 'globSync', 'readDirectory']

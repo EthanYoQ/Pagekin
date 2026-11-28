@@ -3,19 +3,27 @@ const path = require('node:path')
 const childProcess = require('node:child_process')
 const { syncBuiltinESMExports } = require('node:module')
 const { createHash } = require('node:crypto')
+const { format } = require('node:util')
 const installed = Symbol.for('ai-novel.vitest-worker-diagnostics')
 
+function writeStderr(line) {
+  try {
+    fs.writeSync(2, line)
+  } catch {
+    // 不经 process.stderr 再报：断管时它异步抛出无人接的 EPIPE，vitest 会以 1 退出
+  }
+}
 async function ignoreFailure(reason, run) {
   try {
     return await run()
   } catch (error) {
-    console.warn(`[ignored] ${reason}`, error)
+    writeStderr(format(`[ignored] ${reason}`, error) + '\n')
     return undefined
   }
 }
 function emit(event, metadata = {}) {
-  void ignoreFailure('诊断输出写不出时不影响测试结果', () => fs.writeSync(2, '[vitest-worker-diagnostic] '
-    + JSON.stringify({ event, observerPid: process.pid, monotonicNs: process.hrtime.bigint().toString(), ...metadata }) + '\n'))
+  writeStderr('[vitest-worker-diagnostic] '
+    + JSON.stringify({ event, observerPid: process.pid, monotonicNs: process.hrtime.bigint().toString(), ...metadata }) + '\n')
 }
 function relativeTestFile(root, value) {
   if (typeof value !== 'string') return null

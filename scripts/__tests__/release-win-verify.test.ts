@@ -1,9 +1,10 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { ignoreFailure } from '../../src/shared/ignore-failure'
+import { listTemporaryDirectory } from '../../test/helpers/temporary-directory'
 
 const releaseScript = resolve('scripts/release-win-verify.mjs')
 const releaseMonitorScript = resolve('scripts/monitor-win-release-gate.ps1')
@@ -124,7 +125,7 @@ async function waitForFile(path: string, timeoutMilliseconds = 3_000): Promise<v
 
 function releaseGateRoots(tempRoot: string): string[] {
   if (!existsSync(tempRoot)) return []
-  return readdirSync(tempRoot, { withFileTypes: true })
+  return listTemporaryDirectory(tempRoot)
     .filter(entry => entry.isDirectory() && entry.name.startsWith('ai-novel-release-gate-'))
     .map(entry => join(tempRoot, entry.name))
 }
@@ -750,7 +751,8 @@ describe('Windows release verification orchestration', () => {
       expect(isProcessRunning(monitorProcessId)).toBe(false)
       expect(existsSync(join(releaseRoot, 'monitor-process.json'))).toBe(false)
       expect(
-        readdirSync(releaseRoot).filter(name => name.startsWith('monitor-process.json.') && name.endsWith('.tmp')),
+        listTemporaryDirectory(releaseRoot).map(entry => entry.name)
+          .filter(name => name.startsWith('monitor-process.json.') && name.endsWith('.tmp')),
       ).toEqual([])
 
       const failures = readFileSync(
