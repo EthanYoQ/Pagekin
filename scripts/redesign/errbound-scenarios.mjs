@@ -33,8 +33,9 @@ function stubClipboard(page) {
   })
 }
 
-async function observe(page, panel, { heading, copy, copied, name, shoot }) {
+async function observe(page, panel, { heading, retry, copy, copied, name, shoot }) {
   await panel.getByRole('heading', { name: heading }).waitFor({ state: 'visible', timeout: 10_000 })
+  await panel.getByRole('button', { name: retry, exact: true }).waitFor({ state: 'visible' })
   const shown = await panel.innerText()
   assert.doesNotMatch(shown, RAW, '面板不露异常原文与组件栈')
   await shoot(`${name}-panel`)
@@ -58,7 +59,7 @@ export const ERRBOUND_SCENARIOS = {
     await stage.showSettingsPage(page, '写作 Skills')
     assert.equal(await crashSkillsPage(page), true, '能让技能设置页渲染出错')
     const result = await observe(page, settingsBody(page), {
-      heading: '设置页渲染失败', copy: '复制诊断信息', copied: '已复制', name: 'errbound-settings-crash', shoot: context.shoot,
+      heading: '设置页渲染失败', retry: '重试', copy: '复制诊断信息', copied: '已复制', name: 'errbound-settings-crash', shoot: context.shoot,
     })
     assert.match(result.shown, /已保存的内容不受影响/u)
     return result
@@ -75,7 +76,7 @@ export const ERRBOUND_SCENARIOS = {
     await stage.root(page).getByRole('heading', { level: 1, name: 'Writing skills', exact: true }).waitFor({ state: 'visible' })
     assert.equal(await crashSkillsPage(page), true, '能让技能设置页渲染出错')
     const result = await observe(page, settingsBody(page), {
-      heading: 'Settings failed to render', copy: 'Copy diagnostics', copied: 'Copied', name: 'errbound-settings-crash-en', shoot: context.shoot,
+      heading: 'Settings failed to render', retry: 'Retry', copy: 'Copy diagnostics', copied: 'Copied', name: 'errbound-settings-crash-en', shoot: context.shoot,
     })
     assert.match(result.shown, /Your saved work is not affected/u)
     return result
