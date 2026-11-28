@@ -325,6 +325,8 @@ export const enUS = {
   'error.characterRosterWriteFailed': 'The character cards were not changed. This change could not be saved to the project. Try again.',
   'error.draftWriteFailed': 'Your saved drafts are all still there. This change did not finish saving. Try again.',
   'error.blueprintWriteFailed': 'Your existing chapter blueprints are all still there. This change could not be saved to the project. Try again.',
+  'error.blueprintGenerationFailedRecoveryKept': 'Your existing blueprints are unchanged, and the generated text is in the recovery draft. Generation failed. Click Edit recovery draft, or generate again.',
+  'error.blueprintGenerationFailedNothingKept': 'Your existing blueprints are unchanged. Generation failed. Click Generate blueprints to try again.',
   'error.projectCoreWriteFailed': 'Your story settings and architecture were not changed. This change could not be saved to the project. Try again.',
   'error.projectClearFailed': 'Nothing in the project was cleared. Clearing did not finish. Try again.',
   'error.projectClearRestoreFailed': 'Nothing in the project database was cleared, but some chapter text files could not be moved back to the project folder and are in the trash folder of the project data. Move them back to the project folder, then try again.',

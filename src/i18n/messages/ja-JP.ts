@@ -327,6 +327,8 @@ export const jaJP = {
   'error.characterRosterWriteFailed': '人物カードは変更されていません。今回の変更をプロジェクトに保存できませんでした。もう一度お試しください。',
   'error.draftWriteFailed': '保存済みの草稿はすべて残っています。今回の変更は保存を完了できませんでした。もう一度お試しください。',
   'error.blueprintWriteFailed': '既存の章のブループリントはすべて残っています。この変更はプロジェクトに保存できませんでした。もう一度お試しください。',
+  'error.blueprintGenerationFailedRecoveryKept': '既存のブループリントは変更されていません。生成した内容は復元稿にあります。生成に失敗したため、「Edit recovery draft」で編集するか、もう一度生成してください。',
+  'error.blueprintGenerationFailedNothingKept': '既存のブループリントは変更されていません。生成に失敗しました。「Generate blueprints」からもう一度お試しください。',
   'error.projectCoreWriteFailed': '物語の設定と構成は変更されていません。この変更はプロジェクトに保存できませんでした。もう一度お試しください。',
   'error.projectClearFailed': 'プロジェクトの内容は何も消去されていません。消去が完了しませんでした。もう一度お試しください。',
   'error.projectClearRestoreFailed': 'プロジェクトのデータベースの内容は消去されていませんが、一部の章の本文ファイルをプロジェクトフォルダーに戻せず、プロジェクトデータの trash フォルダーに置かれています。プロジェクトフォルダーに戻してから、もう一度お試しください。',
