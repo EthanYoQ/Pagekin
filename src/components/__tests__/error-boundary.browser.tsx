@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { act } from 'react'
+import { act, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 import { ErrorBoundary } from '../ErrorBoundary'
@@ -14,6 +14,12 @@ function ChapterPreviewCrasher() {
   if (broken) throw new TypeError(RAW_MESSAGE)
   return <p>章节预览已恢复</p>
 }
+
+function ManuscriptPane({ children }: { children: ReactNode }) {
+  return <section>{children}</section>
+}
+
+const crashing = <ErrorBoundary><ManuscriptPane><ChapterPreviewCrasher /></ManuscriptPane></ErrorBoundary>
 
 const locales = [
   { name: 'zh-CN', state: { interfaceLocale: 'zh-CN', locale: 'zh-CN' }, retry: '重试', copy: '复制诊断信息', copied: '已复制', failed: '复制失败' },
@@ -54,11 +60,12 @@ describe.each(locales)('组件出错面板（$name）', ({ state, retry, copy, c
   beforeEach(() => { useLocaleStore.setState(state) })
 
   it('面板不显示异常原文与组件栈，原文与组件栈写进日志', async () => {
-    await act(async () => root.render(<ErrorBoundary><ChapterPreviewCrasher /></ErrorBoundary>))
+    await act(async () => root.render(crashing))
 
     const shown = container.textContent ?? ''
     expect(shown).not.toContain(RAW_MESSAGE)
     expect(shown).not.toContain('ChapterPreviewCrasher')
+    expect(shown).not.toContain('ManuscriptPane')
     expect(shown).not.toContain('TypeError')
     button(retry)
     button(copy)
@@ -68,20 +75,20 @@ describe.each(locales)('组件出错面板（$name）', ({ state, retry, copy, c
   })
 
   it('复制诊断信息把原文与组件栈写进剪贴板，并提示已复制', async () => {
-    await act(async () => root.render(<ErrorBoundary><ChapterPreviewCrasher /></ErrorBoundary>))
+    await act(async () => root.render(crashing))
 
     await act(async () => button(copy).click())
 
     expect(writeText).toHaveBeenCalledTimes(1)
     const diagnostics = String(writeText.mock.calls[0][0])
     expect(diagnostics).toContain(RAW_MESSAGE)
-    expect(diagnostics).toContain('ChapterPreviewCrasher')
+    expect(diagnostics).toContain('ManuscriptPane')
     await vi.waitFor(() => expect(container.textContent).toContain(copied))
   })
 
   it('剪贴板写入失败时提示复制失败', async () => {
     writeText.mockRejectedValue(new Error('denied'))
-    await act(async () => root.render(<ErrorBoundary><ChapterPreviewCrasher /></ErrorBoundary>))
+    await act(async () => root.render(crashing))
 
     await act(async () => button(copy).click())
 
@@ -90,11 +97,35 @@ describe.each(locales)('组件出错面板（$name）', ({ state, retry, copy, c
   })
 
   it('重试后重新渲染子组件', async () => {
-    await act(async () => root.render(<ErrorBoundary><ChapterPreviewCrasher /></ErrorBoundary>))
+    await act(async () => root.render(crashing))
     broken = false
 
     await act(async () => button(retry).click())
 
     expect(container.textContent).toContain('章节预览已恢复')
+  })
+})
+
+describe('复制诊断信息的边界情况', () => {
+  it('环境没有剪贴板时提示复制失败', async () => {
+    Reflect.deleteProperty(navigator, 'clipboard')
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
+    await act(async () => root.render(crashing))
+
+    await act(async () => button('复制诊断信息').click())
+
+    await vi.waitFor(() => expect(container.textContent).toContain('复制失败'))
+  })
+
+  it('抛出的不是 Error 时诊断信息仍含它的说明', async () => {
+    function PlainObjectThrower(): never {
+      throw { message: '章节对象缺少标题' }
+    }
+    await act(async () => root.render(<ErrorBoundary><PlainObjectThrower /></ErrorBoundary>))
+
+    await act(async () => button('复制诊断信息').click())
+
+    expect(String(writeText.mock.calls[0]?.[0])).toContain('章节对象缺少标题')
+    await vi.waitFor(() => expect(container.textContent).toContain('已复制'))
   })
 })
