@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appErrorMessage, archiveFailureMessage, damagedReviewCycleMessage, omittedReviewCyclesMessage, displayedErrorMessage, errorCodeOf, errorMessageForModel, failureText, importStopFailure, knownAppErrorMessage, legacyImportFailureMessage, projectOpenFailureMessage } from '../app-errors'
+import { appErrorMessage, archiveFailureMessage, damagedReviewCycleMessage, omittedReviewCyclesMessage, displayedErrorMessage, errorCodeOf, errorMessageForModel, failureText, importStopFailure, knownAppErrorMessage, legacyImportFailureMessage, projectDeleteFailureMessage, projectOpenFailureMessage, catalogNote } from '../app-errors'
 import { shown } from './shown-locale'
 import { translate } from '../core'
 
@@ -581,13 +581,26 @@ describe('omittedReviewCyclesMessage', () => {
 
 describe('打开作品时文件暂时读不了（#702）', () => {
   it('三种界面语言都指向作者要再点的那个按钮，书名填进去', () => {
-    expect(projectOpenFailureMessage(shown('en-US'), { errorCode: 'PROJECT_OPEN_FILES_BUSY' }, 'Lighthouse'))
+    expect(projectOpenFailureMessage(shown('en-US'), { code: 'PROJECT_OPEN_FILES_BUSY' }, 'Lighthouse'))
       .toBe('Your saved content is not affected. The book’s files are in use right now, so it could not be opened. Wait a few seconds, then click Open “Lighthouse” again.')
-    expect(projectOpenFailureMessage(shown('ja-JP'), { errorCode: 'PROJECT_OPEN_IO_FAILED' }, '灯塔'))
+    expect(projectOpenFailureMessage(shown('ja-JP'), { code: 'PROJECT_OPEN_IO_FAILED' }, '灯塔'))
       .toBe('作品のファイルを今回は読み込めませんでした。数秒待ってから、もう一度「Open “灯塔”」をクリックしてください。')
   })
 
   it('其他打开失败照旧说明，不接「再点打开」', () => {
-    expect(projectOpenFailureMessage(shown('zh-CN'), { errorCode: 'PROJECT_NOT_OPEN' }, '灯塔')).toBe('请先打开项目。')
+    expect(projectOpenFailureMessage(shown('zh-CN'), { code: 'PROJECT_NOT_OPEN' }, '灯塔')).toBe('请先打开项目。')
+  })
+})
+
+describe('打开、删除作品失败带着说明时照说明显示（#899）', () => {
+  it('打开：说明照显示，文件被占用时仍接「再点打开」', () => {
+    expect(projectOpenFailureMessage(shown('en-US'), { code: 'PROJECT_STORAGE_PATH_UNSUPPORTED', note: catalogNote('error.projectPathTooDeepForDatabase', { max: 85 }) }))
+      .toBe(translate('en-US', 'error.projectPathTooDeepForDatabase', { max: 85 }))
+    expect(projectOpenFailureMessage(shown('zh-CN'), { code: 'PROJECT_OPEN_FILES_BUSY' }, '灯塔')).toMatch(/作品文件[\s\S]*打开《灯塔》/u)
+  })
+
+  it('删除：说明照显示，没删完时仍接作品现在的状态', () => {
+    expect(projectDeleteFailureMessage(shown('ja-JP'), { code: 'PROJECT_DELETE_FILES_BUSY', note: catalogNote('error.projectPathTooDeepForDatabase', { max: 85 }) }))
+      .toBe(translate('ja-JP', 'error.projectPathTooDeepForDatabase', { max: 85 }) + translate('ja-JP', 'error.projectDeleteStillOpen'))
   })
 })

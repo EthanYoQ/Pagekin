@@ -34,7 +34,7 @@ it('requireIpcSuccess 遇到没有码的失败时作者看到调用点的兜底�
     expect(displayedErrorMessage(shown('zh-CN'), withFallback), name).toBe('草稿没有保存，请再试一次。')
     expect(failureText(shown('zh-CN'), caughtFailure(withFallback)), name).toBe('草稿没有保存，请再试一次。')
     const withoutFallback = thrownBy(() => requireIpcSuccess(result, '保存草稿'))
-    expect(displayedErrorMessage(shown('zh-CN'), withoutFallback), name).toBe('保存草稿失败，请再试一次。')
+    expect(displayedErrorMessage(shown('zh-CN'), withoutFallback), name).toBe('没能保存草稿，请再试一次。')
     expect(withoutFallback.message, name).not.toContain('ECONNREFUSED')
   }
   expect(warn.mock.calls.flat().some(arg => String(arg).includes(raw))).toBe(true)

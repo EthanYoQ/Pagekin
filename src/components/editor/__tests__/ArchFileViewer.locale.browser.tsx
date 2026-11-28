@@ -188,13 +188,13 @@ describe('ArchFileViewer locale', () => {
         projectKey={PROJECT_PATH} content="未保存的故事前提" savedContent="" />,
     ))
     await act(async () => (container.querySelector('[title="保存（Cmd+S）"]') as HTMLButtonElement).click())
-    expect(errorToast).toHaveBeenCalledWith('保存架构文件失败，请再试一次。')
+    expect(errorToast).toHaveBeenCalledWith('没能保存架构文件，请再试一次。')
     expect(container.textContent).toContain('保存失败')
     expect(container.textContent).toContain('未保存的故事前提')
     expect(container.querySelector('[title="有未保存的修改"]')).not.toBeNull()
     expect(useEditorStore.getState().tabs[0]).toMatchObject({ dirty: true, savedContent: '' })
     await act(async () => {
-      await expect(saveDirtyEditorChangesForExit(PROJECT_PATH)).rejects.toThrow('保存架构文件失败，请再试一次。')
+      await expect(saveDirtyEditorChangesForExit(PROJECT_PATH)).rejects.toThrow('没能保存架构文件，请再试一次。')
     })
     expect(useEditorStore.getState().tabs[0].dirty).toBe(true)
   })
