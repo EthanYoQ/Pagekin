@@ -3,7 +3,7 @@ import type { ErrorDisplayLocale, InterfaceLocale, Locale } from './types'
 import type { DamagedReviewCycle } from '../shared/damaged-review-cycle'
 import {
   AuthorError, AuthorNote, authorOwned, catalogKeyNote, codeOf, failureCode, failureOf, note,
-  type Failure, type NoteParams, type WireFailure, type WireNote, type WireNoteKey,
+  type Failure, type FailureCode, type NoteParams, type WireFailure, type WireNote, type WireNoteKey,
 } from '../shared/failure'
 
 /**
@@ -870,11 +870,20 @@ export function publicWireFailure(value: unknown): WireFailure {
   return { code: value.code, ...(note ? { note } : {}) }
 }
 
-/** 导入运行存下的失败（#942）：只留登记码和目录键，显示时按当时的界面语言说明。没登记的码换成通用码；不是失败形状的返回 undefined。 */
+/** 旧实现按 2000 字截断 last_error；记录是 JSON 不能截断，说明超长时只留码。 */
+const FAILURE_RECORD_NOTE_LIMIT = 2_000
+
+/** 没登记的码换成通用码并去掉说明，面板显示通用说明（#942 目标 3）。 */
+function failureRecord(code: FailureCode, noteValue: unknown): WireFailure {
+  if (!isKnownCode(code)) return { code: IMPORT_RUN_FAILED }
+  const note = wireNoteOf(noteValue)
+  return note && JSON.stringify(note).length <= FAILURE_RECORD_NOTE_LIMIT ? { code, note } : { code }
+}
+
+/** 导入运行存下的失败（#942）：只留登记码和目录键，显示时按当时的界面语言说明。不是失败形状的返回 undefined。 */
 export function importFailureRecord(value: unknown): WireFailure | undefined {
-  if (!isRecord(value) || !failureCode(value.code)) return undefined
-  const note = wireNoteOf(value.note)
-  return { code: isKnownCode(value.code) ? value.code : IMPORT_RUN_FAILED, ...(note ? { note } : {}) }
+  const code = isRecord(value) ? failureCode(value.code) : undefined
+  return isRecord(value) && code ? failureRecord(code, value.note) : undefined
 }
 
 /**
@@ -884,9 +893,8 @@ export function importFailureRecord(value: unknown): WireFailure | undefined {
 export function importFailureRecordOf(failure: Failure | undefined): WireFailure {
   let keyed = failure
   while (keyed && keyed.note?.key === undefined) keyed = keyed.because
-  const note = wireNoteOf(keyed?.note && { key: keyed.note.key, ...(keyed.note.params ? { params: keyed.note.params } : {}) })
-  const code = (failure && codeOf(failure)) ?? IMPORT_RUN_FAILED
-  return { code: isKnownCode(code) ? code : IMPORT_RUN_FAILED, ...(note ? { note } : {}) }
+  const note = keyed?.note && { key: keyed.note.key, ...(keyed.note.params ? { params: keyed.note.params } : {}) }
+  return failureRecord((failure && codeOf(failure)) ?? IMPORT_RUN_FAILED, note)
 }
 
 /** 渲染端入口不信任过 IPC 的形状：码和目录键在这里再认一次。 */

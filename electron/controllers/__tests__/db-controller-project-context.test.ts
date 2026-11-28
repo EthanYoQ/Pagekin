@@ -609,6 +609,8 @@ describe('database controller project context guard', () => {
       ['没登记的码', { code: 'PRIVATE_DIAGNOSTIC_CODE' }, { code: 'IMPORT_RUN_FAILED' }],
       ['目录里没有的键', { code: 'IMPORT_INSPECTION_LIMIT', note: { key: 'Chapter 3 could not be written.' } }, { code: 'IMPORT_INSPECTION_LIMIT' }],
       ['旧渲染端交来的句子', "Error invoking remote method 'kb:import-reference-text': Error: Chapter 3 could not be written.", { code: 'IMPORT_RUN_FAILED' }],
+      ['没登记的码带的目录说明', { code: 'PRIVATE_DIAGNOSTIC_CODE', note: { key: 'error.importReferenceChapterNotWritten', params: { number: 3 } } }, { code: 'IMPORT_RUN_FAILED' }],
+      ['超长的说明参数', { code: 'IMPORT_RUN_FAILED', note: { key: 'error.importBlueprintSyncFailed', params: { start: 1, end: 'x'.repeat(5_000) } } }, { code: 'IMPORT_RUN_FAILED' }],
     ])('%s不进记录', async (_case, failure, stored) => {
       await fail(failure)
       expect(mocks.importRunFail).toHaveBeenLastCalledWith('run', 'knowledge', stored, execution)

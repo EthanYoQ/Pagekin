@@ -16,8 +16,7 @@ import {
 import type { ImportedChapter } from './import-novel.command'
 import { promptLanguageText } from '../../prompt-language'
 import type { WritingLanguage } from '../../../shared/writing-language'
-import { authorError } from '../../../i18n/app-errors'
-import { note } from '../../../shared/failure'
+import { authorError, catalogNote } from '../../../i18n/app-errors'
 
 export interface AnalyzeWritingStyleOptions {
   sampleText?: string
@@ -57,7 +56,7 @@ export class AnalyzeWritingStyleCommand extends BaseWorkflowCommand<string> {
     if (!project || !sameProjectSessionContext(
       projectSession,
       projectSessionContextFromProject(project),
-    )) throw authorError(context.interfaceLocale, { note: note('当前项目已切换，文风分析已停止', 'The project changed, so writing-style analysis stopped.') })
+    )) throw authorError(context.interfaceLocale, { note: catalogNote('error.styleAnalysisProjectChanged') })
 
     const expectedConfig = structuredClone(project.novelConfig)
     if (importRuntime && (!frozen || frozen.slot.stage !== 'style')) throw new Error('IMPORT_GENERATION_CONTEXT_REQUIRED')
@@ -109,7 +108,7 @@ export class AnalyzeWritingStyleCommand extends BaseWorkflowCommand<string> {
 
     const template = frozen ? frozen.prompts.analyze_writing_style
       : await resolvePromptTemplate('analyze_writing_style', projectSession, writingLanguage)
-    if (!template) throw authorError(context.interfaceLocale, { note: note('未找到文风分析模板', 'The writing-style analysis prompt template was not found.') })
+    if (!template) throw authorError(context.interfaceLocale, { note: catalogNote('error.styleAnalysisTemplateMissing') })
 
     const sampleText = sampleTexts.join('\n\n---\n\n')
     const prompt = new BasePromptBuilder(template, writingLanguage)
@@ -157,7 +156,7 @@ export class AnalyzeWritingStyleCommand extends BaseWorkflowCommand<string> {
             return persisted === undefined ? undefined : { writingStyle: persisted }
           } : undefined,
         )
-        if (!saved) throw authorError(context.interfaceLocale, { note: note('文风特征保存失败', 'Failed to save the writing-style profile.') })
+        if (!saved) throw authorError(context.interfaceLocale, { note: catalogNote('error.styleAnalysisSaveFailed') })
       } else {
         const saveResult = await ipc.invokeWithProjectSession(projectSession, 'db:project-core-update',
           { writingStyle: cleanResult }, context.projectPath)
@@ -167,7 +166,7 @@ export class AnalyzeWritingStyleCommand extends BaseWorkflowCommand<string> {
         projectSession,
         projectSessionContextFromProject(useProjectStore.getState().currentProject),
       )) {
-        throw authorError(context.interfaceLocale, { note: note('当前项目已切换，文风分析结果未应用到界面', 'The project changed, so the writing-style result was not applied to the interface.') })
+        throw authorError(context.interfaceLocale, { note: catalogNote('error.styleAnalysisNotApplied') })
       }
       this.assertNotCancelled(context)
       const { publishSavedNovelConfig, updateNovelConfig } = useProjectStore.getState()

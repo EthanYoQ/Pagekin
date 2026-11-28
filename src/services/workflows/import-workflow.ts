@@ -405,7 +405,7 @@ function productionDependencies(
       await ipc.invokeWithProjectSession(
         session, 'db:import-run-fail', runId, stage, failure, execution, projectPath,
       ),
-      note('无法保存导入失败记录。', 'Could not save the import failure.'),
+      catalogNote('error.importFailureRecordSaveFailed'),
     ).run!,
     cancelAtBoundary: async (runId, execution) => required(
       await ipc.invokeWithProjectSession(
