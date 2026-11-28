@@ -18,6 +18,7 @@ import { SummaryRepository, invalidateContinuityProjectionFrom } from '../../rep
 import { DEFAULT_MATERIAL_ADMISSION, MATERIAL_DECISION_MAX_INPUT_UNITS, MATERIAL_DECISION_RECEIPT_VERSION, type MaterialDecisionReceipt } from '../../../src/shared/generation-owner-contract';
 import { captureReviewRevisionContext } from '../review-revision-context';
 import { textHash } from '../../repositories/generation-run-repository';
+import { knownAppErrorMessage } from '../../../src/i18n/app-errors';
 import type { PrepareReviewRevisionRequest } from '../../../src/shared/review-revision-generation';
 import { selectFrozenReviewRevisionMaterials } from '../../../src/services/workflows/commands/review-revision-materials';
 import { FinalizationRepository } from '../../repositories/finalization-repository';
@@ -424,6 +425,17 @@ describe('main rebuilt generation sources', () => {
         f.input.outputContract = 'structured-data'; expect(compareGenerationSourceBindings(a.binding, f.build().binding)).toBe(false); });
     it('resolves project over global over builtin while retaining immutable builtin contract changes', () => { const f = fixture(), a = f.build(); put(f.deps.globalDataRoot, 'prompts/draft.zh-CN.json', JSON.stringify({ key: 'draft', writingLanguage: 'zh-CN', content: 'global' })); const global = f.build(); expect(global.binding.fingerprint.templateHash).not.toBe(a.binding.fingerprint.templateHash); put(f.deps.projectStorageRoot, 'prompts/draft.json', JSON.stringify({ key: 'draft', content: 'project' })); const project = f.build(); put(f.deps.globalDataRoot, 'prompts/draft.zh-CN.json', JSON.stringify({ key: 'draft', writingLanguage: 'zh-CN', content: 'unused global edit' })); expect(f.build().binding.fingerprint.templateHash).toBe(project.binding.fingerprint.templateHash); f.deps.readBuiltinPrompt = () => JSON.stringify({ key: 'draft', content: 'builtin', systemRole: 'changed system contract' }); expect(f.build().binding.fingerprint.templateHash).not.toBe(project.binding.fingerprint.templateHash); });
     it('hashes raw selected custom prompt bytes including whitespace', () => { const f = fixture(); put(f.deps.projectStorageRoot, 'prompts/draft.json', '{"key":"draft","content":"同文"}'); const a = f.build(); put(f.deps.projectStorageRoot, 'prompts/draft.json', '{ "key":"draft","content":"同文"}'); expect(f.build().binding.fingerprint.templateHash).not.toBe(a.binding.fingerprint.templateHash); });
+    it.each(['projectStorageRoot', 'globalDataRoot'] as const)('改坏的自定义提示词 JSON（%s）按登记码拒绝，作者看到去「提示词模板」处理的说明', root => {
+        const f = fixture();
+        put(f.deps[root], 'prompts/draft.json', '{"key":"draft",');
+        const rejected = (() => { try { f.build(); return undefined; } catch (error) { return error as Error; } })();
+        expect(rejected?.message).toBe('GENERATION_PROMPT_INVALID');
+        for (const [locale, page] of [['zh-CN', '「提示词模板」'], ['en-US', 'Prompt templates'], ['ja-JP', '「Prompt templates」']] as const) {
+            const shown = knownAppErrorMessage(locale as never, rejected);
+            expect(shown, locale).toContain(page);
+            expect(shown, locale).not.toMatch(/GENERATION_|SyntaxError|JSON|Unexpected/u);
+        }
+    });
     it('binds actual selected Skill bytes and rejects a missing binding target', () => { const f = fixture(); put(f.deps.projectStorageRoot, 'writing-skills.json', JSON.stringify({ version: 1, bindings: { drafting: 'project:author' } })); expect(() => f.build()).toThrow(); put(f.deps.projectStorageRoot, 'skills/author/SKILL.md', '---\nname: author\nlanguage: zh-CN\nstage: drafting\n---\n保持作者事实。'); const a = f.build(); put(f.deps.projectStorageRoot, 'skills/author/SKILL.md', '---\nname: author\nlanguage: zh-CN\nstage: drafting\n---\n新作者规则。'); expect(f.build().binding.fingerprint.skillSnapshotHash).not.toBe(a.binding.fingerprint.skillSnapshotHash); });
     const installFolderSkill = (f: ReturnType<typeof fixture>, files: { path: string; content: string }[]) => {
         const skill = '---\nname: voice\nlanguage: zh-CN\n---\n遵循 references/voice.md。';

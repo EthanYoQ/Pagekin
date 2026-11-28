@@ -343,3 +343,38 @@ it('原来能看到的具体说明逐字保留：项目提示词读取被拒时�
     useLocaleStore.setState(original, true)
   }
 })
+
+it('项目提示词改坏后，运行失败说明写出文件名和去「提示词模板」的办法，重新保存后可以用', async () => {
+  const { useLocaleStore } = await import('../../stores/locale-store')
+  const { failureText, reasonOf } = await import('../../i18n/app-errors')
+  const original = useLocaleStore.getState()
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const file = `${builtin.key}.zh-CN.json`
+  const spy = vi.spyOn(ipc, 'invokeWithProjectSession').mockImplementation((async (_session: unknown, channel: string) => {
+    if (channel === 'fs:check-exists') return true
+    if (channel === 'fs:list-dir') return [{ name: file, path: `${session.projectPath}/.ai-novel/prompts/${file}`, isDir: false }]
+    if (channel === 'fs:read-file') return { success: true, content: '{"key": "first_chapter_draft",' }
+    throw new Error(`unexpected ${channel}`)
+  }) as never)
+  try {
+    const saveProject = vi.fn(async () => {})
+    const catalog = new PromptCatalog([builtin], persistence({ loadProject: ipcPromptPersistence.loadProject, saveProject }), () => session)
+    const shownFor = async (locale: 'zh-CN' | 'en-US' | 'ja-JP') => {
+      useLocaleStore.setState({ interfaceLocale: locale, locale: locale === 'zh-CN' ? 'zh-CN' : 'en-US' })
+      const error = await catalog.resolve(builtin.key, session).then(() => undefined, (rejected: unknown) => rejected)
+      return failureText(locale as never, reasonOf(error))
+    }
+    expect(await shownFor('zh-CN')).toBe(`提示词文件「${file}」读不出来或格式不对，这次没有生成。请到设置的「提示词模板」里重新保存或删掉这个提示词。`)
+    expect(await shownFor('en-US')).toBe(`The prompt file "${file}" cannot be read or is malformed, so nothing was generated. Resave or delete this prompt in Settings > Prompt templates.`)
+    const ja = await shownFor('ja-JP')
+    expect(ja).toBe(`プロンプトファイル「${file}」を読み込めないか形式が正しくないため、生成しませんでした。設定の「Prompt templates」でこのプロンプトを保存し直すか、削除してください。`)
+    for (const shown of [await shownFor('en-US'), ja]) expect(shown).not.toMatch(/novel-1|SyntaxError|Expected|PROMPT_/u)
+
+    await expect(catalog.commit({ action: 'save', scope: 'project', projectSession: session, template: { ...builtin, writingLanguage: 'zh-CN', content: '重新保存' } })).resolves.toBe(true)
+    await expect(catalog.resolve(builtin.key, session)).resolves.toMatchObject({ source: 'project', template: { content: '重新保存' } })
+  } finally {
+    spy.mockRestore()
+    warn.mockRestore()
+    useLocaleStore.setState(original, true)
+  }
+})
