@@ -43,9 +43,9 @@ node scripts/redesign/drive.mjs --scenario <名称> ...
 
 RD-10 删除旧外壳之后，场景分三类：
 
-- 只走旧外壳的场景只对 trunk 跑（`--app-root`）：下面「场景」表的 8 个基线场景与 `baseline-all`、`nav-*`、`write-latency`、`settings-appearance`、`run-write-steps`、`legacy-no-chat`、`arch-legacy-sidebar`。对照时 head 一侧改跑对应的新外壳场景。
+- 只走旧外壳的场景只对 trunk 跑（`--app-root`）：`settings-appearance`、`arch-legacy-sidebar`。`nav-*`、`write-latency`、`run-write-steps`、`legacy-no-chat` 共用 `baseline-all` 的预置，#940 起它从纸墨书房打开作品，这几个在 trunk 上也跑不通。对照时 head 一侧改跑对应的新外壳场景。
 - 两种外壳都能跑的场景运行时按页面上有没有纸墨外壳选页面对象，head 与 trunk 用同一条命令：`startup-timing`、`idle-memory`、`chapter-switch`、`chapter-open`、`typing-latency`、`chapter-regression`、`blueprint-regression`、`blueprint-timing`、`refs-regression`、`refs-timing`、`new-project-files`。
-- 其余声明了 `shell: 'stage'` 的场景只对 RD-3 及以后的构建跑。
+- 其余声明了 `shell: 'stage'` 的场景只对 RD-3 及以后的构建跑，`baseline-all` 的 8 个基线场景也在这一类（#940 起）。
 
 ## 输出
 
@@ -72,12 +72,6 @@ RD-10 删除旧外壳之后，场景分三类：
 
 ```bash
 node scripts/redesign/drive.mjs --scenario stage-open-sample --dump-dom --console --out <目录>
-```
-
-历史写法（RD-10 之前，`open-sample` 是旧外壳基线场景，现在只能加 `--app-root` 指向当时的 trunk 跑）：
-
-```bash
-node scripts/redesign/drive.mjs --scenario open-sample --dump-dom --console --out <目录>
 ```
 
 - `--dump-dom` 在每个截图点截图后写 `<场景>-<主题>.dom.html`（`page.content()`）和 `.aria.yml`（Playwright 无障碍快照）。改页面对象前先看 `.aria.yml`，选择器优先用其中的角色与可访问名称。

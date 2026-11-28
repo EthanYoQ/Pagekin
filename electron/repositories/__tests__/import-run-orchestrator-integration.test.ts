@@ -260,6 +260,7 @@ beforeEach(() => {
   ImportRunRepository.prepare({
     runId: 'integration-run',
     purpose: 'reference',
+    coreWriteMode: 'replace',
     sourceFingerprint: 'a'.repeat(64),
     sourceDisplay: [{ displayName: 'reference.txt', mediaType: 'text/plain', size: 22 }],
     locale: 'en-US',
@@ -284,6 +285,7 @@ describe('ImportRunOrchestrator with the real import repository', () => {
     ImportRunRepository.prepare({
       runId: 'sparse-run',
       purpose: 'reference',
+      coreWriteMode: 'replace',
       sourceFingerprint: 'b'.repeat(64),
       sourceDisplay: [{ displayName: 'sparse.txt', mediaType: 'text/plain', size: 22 }],
       locale: 'en-US',
@@ -410,6 +412,7 @@ describe('ImportRunOrchestrator with the real import repository', () => {
     ImportRunRepository.prepare({
       runId,
       purpose: 'reference',
+      coreWriteMode: 'replace',
       sourceFingerprint: 'c'.repeat(64),
       sourceDisplay: [{ displayName: 'full-recovery.txt', mediaType: 'text/plain', size: 66 }],
       locale: 'en-US',

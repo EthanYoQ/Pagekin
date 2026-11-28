@@ -10,6 +10,11 @@ import { STAGE_SAMPLE } from './stage-sample.mjs'
 
 const CHAPTERS = 15
 
+// 导入当前项目只补没有蓝图的章（#855），预置蓝图会让这些章被跳过。
+const seedWithoutBlueprints = context => seedStageSample(context, { beforeReload: async ({ page, invoke, path, session }) => {
+  assert.equal((await invoke(page, 'db:blueprint-clear-all', path, session)).success, true)
+} })
+
 const latestRun = db => db.prepare('SELECT id, stage, status, last_error, updated_at FROM import_runs ORDER BY rowid DESC LIMIT 1').get()
 
 const runsPerSlot = db => db.prepare(`SELECT json_extract(binding_json,'$.sourceManifest.importSlot.stage') AS stage,
@@ -50,7 +55,7 @@ async function finished(context, shotName, before, previous) {
   await runSheet.lastRun(context.page).filter({ hasText: '小说拆解与仿写' }).getByText(/已完成|Complete/).waitFor({ state: 'visible' })
   await context.page.waitForTimeout(400)
   await context.shoot(shotName)
-  assert.deepEqual(measured.blueprints, Array(CHAPTERS).fill('推进灯塔线索'), '每一章都是导入写入的蓝图，不是预置样例')
+  assert.deepEqual(measured.blueprints, Array(CHAPTERS).fill('推进灯塔线索'), '每一章都是导入写入的蓝图')
   const retried = measured.runsPerSlot.filter(slot => slot.runs > 1)
   assert.equal(retried.length, 1, `只有中断的 slot 重开：${JSON.stringify(measured.runsPerSlot)}`)
   assert.equal(retried[0].runs, 2)
@@ -99,6 +104,6 @@ async function activeTimeThenContinue(context) {
 }
 
 export const F555_SCENARIOS = {
-  'f555-close-window': { model: true, shell: 'stage', setup: seedStageSample, run: closeWindowThenContinue },
-  'f555-stop-time': { model: true, shell: 'stage', setup: seedStageSample, run: activeTimeThenContinue },
+  'f555-close-window': { model: true, shell: 'stage', setup: seedWithoutBlueprints, run: closeWindowThenContinue },
+  'f555-stop-time': { model: true, shell: 'stage', setup: seedWithoutBlueprints, run: activeTimeThenContinue },
 }
