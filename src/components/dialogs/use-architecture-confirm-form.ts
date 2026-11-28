@@ -47,6 +47,7 @@ export function useArchitectureConfirmForm({
 }: ArchitectureConfirmFormOptions) {
   const currentProject = useProjectStore(s => s.currentProject)
   const text = useLocaleStore(s => s.text)
+  const t = useLocaleStore(s => s.t)
 
   // 默认：未确认的全部勾选；或使用 initialSelectedSteps 覆盖
   const [checked, setChecked] = useState<Record<ArchStepKey, boolean>>(() => {
@@ -114,10 +115,7 @@ export function useArchitectureConfirmForm({
     && Number.isSafeInteger(from) && Number.isSafeInteger(to) && from >= 1 && to >= from)
   // 超过单批上限或全书章数的范围，主进程开跑前就会拒绝，对话框里直接判无效。
   const outOfBounds = rangeFilled && (to - from + 1 > PLANNING_ACTION_CHAPTER_LIMIT || (totalChapters > 0 && to > totalChapters))
-  const boundsIssue = text(
-    `情节大纲范围无效。请选择第 1–${totalChapters} 章内连续的 1–${PLANNING_ACTION_CHAPTER_LIMIT} 章。`,
-    `Invalid plot-outline range. Select 1-${PLANNING_ACTION_CHAPTER_LIMIT} consecutive chapters within chapters 1-${totalChapters}.`,
-  )
+  const boundsIssue = t('error.plotOutlineRangeOutOfBounds', { totalChapters, limit: PLANNING_ACTION_CHAPTER_LIMIT })
 
   /** 这一批交给主进程会怎样；范围本身不完整或越界时为 null，由提交时的范围校验报错。 */
   const synopsisEffect: PlotOutlineRangeEffect | null = rangeFilled && !outOfBounds
@@ -128,17 +126,14 @@ export function useArchitectureConfirmForm({
   const synopsisRangeIssueText = (): string | null => {
     if (outOfBounds) return boundsIssue
     if (synopsisEffect?.kind !== 'invalid') return null
-    if (!synopsisSource.synopsis.trim()) return text('还没有情节大纲，请从第 1 章起生成。', 'There is no plot outline yet. Start from chapter 1.')
-    if (!synopsisEffect.hasEntries) return text('已有大纲没有按章的标题，只能从第 1 章起整份重写。', 'The existing outline has no chapter headings, so it can only be rewritten whole from chapter 1.')
+    if (!synopsisSource.synopsis.trim()) return t('error.plotOutlineRangeNoOutline')
+    if (!synopsisEffect.hasEntries) return t('error.plotOutlineRangeNoHeadings')
     const { orderIssue, lastChapter } = synopsisEffect
-    if (!orderIssue && lastChapter < 1) return text(`已有大纲只有序章，不能跳到第 ${from} 章开始。请从第 1 章起生成，序章会原样保留。`,
-      `The outline only has a prologue, so it cannot skip to chapter ${from}. Start from chapter 1; the prologue stays as it is.`)
-    if (orderIssue?.kind === 'duplicate') return text(`已有大纲里第 ${orderIssue.chapter} 章出现了不止一次，按范围重写会打乱其他章。请先删掉或改正重复的那一章。`,
-      `Chapter ${orderIssue.chapter} appears more than once in the existing outline, so rewriting a range would scramble other chapters. Remove or correct the duplicate first.`)
-    if (orderIssue) return text('已有大纲的章节没按章号排列，按范围重写会打乱其他章。请先把章节按章号排好。', 'The chapters in the existing outline are out of order, so rewriting a range would scramble other chapters. Put them in order first.')
-    if (from > lastChapter + 1) return text(`已有大纲写到第 ${lastChapter} 章，不能跳到第 ${from} 章。请从第 ${lastChapter + 1} 章续写，或从第 1–${lastChapter} 章中某一章起重写。`,
-      `The outline reaches chapter ${lastChapter}, so it cannot skip to chapter ${from}. Continue from chapter ${lastChapter + 1}, or rewrite from a chapter between 1 and ${lastChapter}.`)
-    return text('这个范围会切开已有的章节条目，或已有大纲末尾的分批说明与正文对不上，后台会拒绝。请换一个起止章。', 'This range splits an existing chapter entry, or the batch note at the end of the outline does not match its text, so it would be rejected. Choose other chapters.')
+    if (!orderIssue && lastChapter < 1) return t('error.plotOutlineRangePrologueOnly', { from })
+    if (orderIssue?.kind === 'duplicate') return t('error.plotOutlineRangeDuplicateChapter', { chapter: orderIssue.chapter })
+    if (orderIssue) return t('error.plotOutlineRangeOutOfOrder')
+    if (from > lastChapter + 1) return t('error.plotOutlineRangeSkipsAhead', { lastChapter, from, nextChapter: lastChapter + 1 })
+    return t('error.plotOutlineRangeSplitsEntry')
   }
   const synopsisRangeIssue = synopsisRangeIssueText()
 
@@ -203,15 +198,15 @@ export function useArchitectureConfirmForm({
       // 前置校验 1：小说配置是否填写
       const configGuard = guardArchitectureGeneration()
       if (!configGuard.ok) {
-        // i18n-exempt: 前置校验的 message 是 workflow-guards 按文案语言写好的句子（日文界面用英文），不是报错原文
-        setGuardError(configGuard.message || text('配置校验失败', 'Configuration validation failed.'))
+        // i18n-exempt: 前置校验的 message 是 workflow-guards 按界面语言写好的句子，不是报错原文
+        setGuardError(configGuard.message || t('error.unregisteredCode'))
         return
       }
 
       // 范围合法性（超出总章数或起大于止）
       const resolution = resolveSynopsisRange()
       if (!resolution.ok) {
-        // i18n-exempt: resolveSynopsisRange 的 message 是本文件按文案语言写好的范围说明
+        // i18n-exempt: resolveSynopsisRange 的 message 是本文件按界面语言写好的范围说明
         setGuardError(resolution.message || boundsIssue)
         return
       }
@@ -220,8 +215,8 @@ export function useArchitectureConfirmForm({
       if (selectedSteps.includes('characters') && archStatus.characters) {
         const charGuard = await guardCharacterRegeneration()
         if (!charGuard.ok) {
-          // i18n-exempt: 前置校验的 message 是 workflow-guards 按文案语言写好的句子（日文界面用英文），不是报错原文
-          setGuardError(charGuard.message || text('角色卡不可重新生成', 'Character cards cannot be regenerated.'))
+          // i18n-exempt: 前置校验的 message 是 workflow-guards 按界面语言写好的句子，不是报错原文
+          setGuardError(charGuard.message || t('error.unregisteredCode'))
           return
         }
       }
@@ -230,12 +225,12 @@ export function useArchitectureConfirmForm({
       let target: number | undefined
       if (checked.synopsis) {
         try { target = parsePlanningTargetUnits(Number(targetUnits)) } catch {
-          setGuardError(text(`每章大纲目标须为 1–${PLANNING_TARGET_UNITS_LIMIT} 的整数。`, `The outline target must be an integer from 1 to ${PLANNING_TARGET_UNITS_LIMIT}.`))
+          setGuardError(t('error.outlineTargetUnitsInvalid', { limit: PLANNING_TARGET_UNITS_LIMIT }))
           return
         }
         const saved = await ipc.invoke('config:set', { outlineTargetUnits: target }).then(result => result.success, () => false)
         if (!saved) {
-          setGuardError(text('目标字数偏好保存失败。请重试，输入已保留。', 'Could not save the target preference. Your input is retained. Please retry.'))
+          setGuardError(t('error.outlineTargetSaveFailed'))
           return
         }
       }

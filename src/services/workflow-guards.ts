@@ -1,5 +1,5 @@
 import { useProjectStore } from '../stores/project-store'
-import { useLocaleStore } from '../stores/locale-store'
+import { currentInterfaceLocale, useLocaleStore } from '../stores/locale-store'
 import { ipc } from './ipc-client'
 import type { ProjectData, ProjectSessionContext } from '../shared/ipc-channels'
 import {
@@ -7,9 +7,9 @@ import {
   sameProjectPathKey,
   sameProjectSessionContext,
 } from '../shared/project-session-context'
-import { localize } from '../i18n/core'
+import { localize, translate } from '../i18n/core'
 import { ARCH_STEP_NAMES } from './architecture-step-selection'
-import type { ErrorDisplayLocale, Locale } from '../i18n/types'
+import type { ErrorDisplayLocale, InterfaceLocale, Locale } from '../i18n/types'
 import { authorError, writtenNote } from '../i18n/app-errors'
 import type { AuthorError, AuthorNote } from '../shared/failure'
 
@@ -45,13 +45,13 @@ function captureGuardProject(
 export function guardArchitectureGeneration(
   expectedProjectPath?: string,
   expectedProjectSession?: ProjectSessionContext,
-  uiLocale: Locale = useLocaleStore.getState().locale,
+  uiLocale: InterfaceLocale = currentInterfaceLocale(),
 ): GuardResult {
   const captured = captureGuardProject(expectedProjectPath, expectedProjectSession)
   if (!captured) {
     return {
       ok: false,
-      message: localize(uiLocale, '请先打开或新建一个项目。', 'Open or create a project first.'),
+      message: translate(uiLocale, 'error.openOrCreateProjectFirst'),
     }
   }
 
@@ -67,11 +67,9 @@ export function guardArchitectureGeneration(
   if (!hasConfig) {
     return {
       ok: false,
-      message: localize(
-        uiLocale,
-        `请先填写「小说配置」中的核心大纲或主角人设，AI 才能据此生成故事架构。\n\n当前类型：${genre || '未设置'}`,
-        `Fill in the core outline or protagonist profile in Novel Configuration before generating the story architecture.\n\nCurrent genre: ${genre || 'Not set'}`,
-      ),
+      message: genre
+        ? translate(uiLocale, 'error.architectureConfigMissing', { genre })
+        : translate(uiLocale, 'error.architectureConfigMissingNoGenre'),
       action: 'open-config',
     }
   }
@@ -89,7 +87,7 @@ export async function guardDirectoryGeneration(
   if (!captured) {
     return {
       ok: false,
-      message: localize(shown(), '请先打开或新建一个项目。', 'Open or create a project first.'),
+      message: translate(shown(), 'error.openOrCreateProjectFirst'),
     }
   }
 
@@ -154,7 +152,7 @@ export async function guardChapterWriting(
   if (!captured) {
     return {
       ok: false,
-      message: localize(shown(), '请先打开或新建一个项目。', 'Open or create a project first.'),
+      message: translate(shown(), 'error.openOrCreateProjectFirst'),
     }
   }
 
@@ -239,7 +237,7 @@ export async function guardCharacterRegeneration(
   if (!captured) {
     return {
       ok: false,
-      message: localize(useLocaleStore.getState().locale, '请先打开或新建一个项目。', 'Open or create a project first.'),
+      message: translate(currentInterfaceLocale(), 'error.openOrCreateProjectFirst'),
     }
   }
 
@@ -251,11 +249,7 @@ export async function guardCharacterRegeneration(
   if (blueprints.length > 0) {
     return {
       ok: false,
-      message: localize(
-        useLocaleStore.getState().locale,
-        '已有章节蓝图，不能重新生成角色卡，否则现有蓝图和已写章节都会失效。\n\n要改角色，请直接编辑角色卡。',
-        'Character cards cannot be regenerated while chapter blueprints exist, because that would invalidate existing blueprints and drafted chapters.\n\nEdit the character cards directly instead.',
-      ),
+      message: translate(currentInterfaceLocale(), 'error.characterRegenerationBlocked'),
     }
   }
 
@@ -270,7 +264,7 @@ export async function guardRepairPostProcess(
   const text = (zhCNText: string, enUSText: string) => localize(useLocaleStore.getState().locale, zhCNText, enUSText)
   const captured = captureGuardProject(expectedProjectPath, expectedProjectSession)
   if (!captured) {
-    return { ok: false, message: text('请先打开或新建一个项目。', 'Open or create a project first.') }
+    return { ok: false, message: translate(useLocaleStore.getState().locale, 'error.openOrCreateProjectFirst') }
   }
 
   const maxFinalized = await ipc.invokeWithProjectSession(

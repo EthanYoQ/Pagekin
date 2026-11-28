@@ -68,11 +68,10 @@ export const PRH2JA_SCENARIOS = {
     await page.keyboard.press('Escape')
     await page.getByRole('textbox', { name: 'Chapter title' }).fill('霧鐘・改')
     await page.getByRole('button', { name: 'Save chapter' }).click()
-    // 蓝图保存走 specificWriteFailure 的两句 text(zh, en)，日文界面下显示英文，不查日文目录。
-    const toast = page.locator('.pi-toast-body').filter({ hasText: 'Could not save the blueprint.' }).first()
+    const toast = page.locator('.pi-toast-body').filter({ hasText: 'ブループリントを保存できませんでした。' }).first()
     await toast.waitFor({ state: 'visible', timeout: 20_000 })
     const shown = (await toast.locator('p').allInnerTexts()).map(line => line.trim())
-    assert.deepEqual(shown, ['Could not save the blueprint.', 'Could not save the chapter blueprint.'])
+    assert.deepEqual(shown, ['ブループリントを保存できませんでした。', '既存の章のブループリントはすべて残っています。この変更はプロジェクトに保存できませんでした。もう一度お試しください。'])
     assert.doesNotMatch(shown.join(' '), /malformed|SqliteError|SQLITE_/u, '不露库的原文')
     assert.doesNotMatch(shown.join(' '), NO_CODE_NO_HAN, '不露码也不夹中文')
     await shoot('prh2ja-blueprint-save-failed')

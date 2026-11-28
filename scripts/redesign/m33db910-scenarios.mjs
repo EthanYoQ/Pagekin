@@ -7,7 +7,7 @@ import * as stage from './pages/stage.mjs'
 import { seedStageSample } from './scenarios.mjs'
 
 const Database = createRequire(import.meta.url)('better-sqlite3')
-const SAVE_FAILED_EN = ['Could not save the blueprint.', 'Could not save the chapter blueprint.']
+const SAVE_FAILED_EN = ['Could not save the blueprint.', 'Your existing chapter blueprints are all still there. This change could not be saved to the project. Try again.']
 
 function withBook(projectRoot, action) {
   const database = new Database(path.join(projectRoot, '.ai-novel', 'project.db'), { fileMustExist: true })
