@@ -54,7 +54,7 @@ async function seedSample({ app, page, roots, invoke, reload }, { withDraft }) {
   assert.equal(imported.success, true, imported.failure?.code)
   if (withDraft) {
     const draft = await invoke(page, 'db:draft-create', { chapterNumber: SAMPLE.chapterNumber, version: 1, source: 'write',
-      content: FIXTURE_PROSE, wordCount: FIXTURE_PROSE.length }, created.projectPath, session)
+      content: FIXTURE_PROSE, wordCount: countUnits(FIXTURE_PROSE) }, created.projectPath, session)
     assert.equal(draft.success, true, draft.failure?.code)
   }
   await reload()
@@ -122,6 +122,7 @@ export const SCENARIOS = {
     await openChapter(page, SAMPLE.chapterNumber)
     await chapterView.finalize(page, SAMPLE.chapterNumber)
     await chapterView.postProcess(page).getByText('4 / 4 完成').waitFor({ state: 'visible', timeout: 90_000 })
+    await runsSettled(page)
   } },
   'run-panel': { model: true, shell: 'stage', setup: seedAndWrite, run: async ({ page, reload }) => {
     await reload()

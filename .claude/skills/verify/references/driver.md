@@ -43,7 +43,7 @@ node scripts/redesign/drive.mjs --scenario <名称> ...
 
 RD-10 删除旧外壳之后，场景分三类：
 
-- 只走旧外壳的场景只对 trunk 跑（`--app-root`）：`nav-*`、`write-latency`、`settings-appearance`、`run-write-steps`、`legacy-no-chat`、`arch-legacy-sidebar`。对照时 head 一侧改跑对应的新外壳场景。
+- 只走旧外壳的场景只对 trunk 跑（`--app-root`）：`settings-appearance`、`arch-legacy-sidebar`。`nav-*`、`write-latency`、`run-write-steps`、`legacy-no-chat` 共用 `baseline-all` 的预置，#940 起它从纸墨书房打开作品，这几个在 trunk 上也跑不通。对照时 head 一侧改跑对应的新外壳场景。
 - 两种外壳都能跑的场景运行时按页面上有没有纸墨外壳选页面对象，head 与 trunk 用同一条命令：`startup-timing`、`idle-memory`、`chapter-switch`、`chapter-open`、`typing-latency`、`chapter-regression`、`blueprint-regression`、`blueprint-timing`、`refs-regression`、`refs-timing`、`new-project-files`。
 - 其余声明了 `shell: 'stage'` 的场景只对 RD-3 及以后的构建跑，`baseline-all` 的 8 个基线场景也在这一类（#940 起）。
 

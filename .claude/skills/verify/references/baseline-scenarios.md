@@ -1,6 +1,6 @@
 # 基线场景
 
-`baseline-all` 的 8 个场景走纸墨外壳，对当前构建跑（#940 起）。下面「不进 baseline-all 的场景」一节仍是 RD-10 之前的旧外壳场景，只对当时的 trunk（`--app-root`）跑；某个场景现在能不能对 head 跑，以 `driver.md`「RD-10 删除旧外壳之后」的分类为准。改 `scenarios.mjs` 时读。
+`baseline-all` 的 8 个场景走纸墨外壳，对当前构建跑（#940 起）。下面「不进 baseline-all 的场景」一节是 RD-10 之前的旧外壳场景，现在在哪个构建上都跑不通，见该节。改 `scenarios.mjs` 时读。
 
 ## 场景
 
@@ -28,7 +28,7 @@
 
 ## 不进 baseline-all 的场景
 
-`scenarios.mjs` 的 `EXTRA_SCENARIOS` 只能单跑，不进 `baseline-all`。其中用 `seedWithoutDraft` 预置的场景（`write-latency`、`nav-*` 等）共用上面的预置，它现在从纸墨书房打开作品，所以这些旧外壳场景对 RD-10 之前的 trunk 也跑不通了。`run` 的返回值写进结果的 `measured`。需要卡住模型调用时，场景从上下文的 `fake.gate` 调 `hold()`，在 `after` 里 `release()`。`hold()` 只卡对话请求；只走嵌入的步骤（参考文本入库）用 `hold({ embeddings: true })` 连嵌入一起卡。`fake.gate.waiting` 是正卡在门上的请求数，截图前等它大于 0，画面才停在确定的那一步。
+`scenarios.mjs` 的 `EXTRA_SCENARIOS` 只能单跑，不进 `baseline-all`。表里的场景走旧外壳：RD-10 起 head 没有旧外壳；用 `seedWithoutDraft`、`seedWithDraft` 预置的（`write-latency`、全部 `nav-*`）又共用上面的预置，它从 #940 起从纸墨书房打开作品、第 1 章导入为定稿，所以对 RD-10 之前的 trunk 也跑不通。下面的用法只作历史记录。`run` 的返回值写进结果的 `measured`。需要卡住模型调用时，场景从上下文的 `fake.gate` 调 `hold()`，在 `after` 里 `release()`。`hold()` 只卡对话请求；只走嵌入的步骤（参考文本入库）用 `hold({ embeddings: true })` 连嵌入一起卡。`fake.gate.waiting` 是正卡在门上的请求数，截图前等它大于 0，画面才停在确定的那一步。
 
 | 名称 | 检查 | 单跑时截图停在 | 用夹具模型 |
 |---|---|---|---|
