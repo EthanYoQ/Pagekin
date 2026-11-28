@@ -251,7 +251,7 @@ export const useDraftStore = create<DraftState>()((set, get) => ({
         undefined,
         project.path,
       ),
-      '更新草稿状态',
+      ['更新草稿状态', 'update the draft status', '草稿の状態の更新'],
     )
     if (!isDraftProjectSessionCurrent(projectSession)) return
     await get().loadChapterDrafts(chapterNumber, project.path, projectSession)
@@ -315,7 +315,7 @@ export const useDraftStore = create<DraftState>()((set, get) => ({
           },
           expectedProjectPath,
         ),
-        '提交合并后的修订稿',
+        ['提交合并后的修订稿', 'submit the merged revision', '統合した改稿の確定'],
       )
       committedReceipt = merged.receipt
       if (!isDraftProjectSessionCurrent(projectSession)) {

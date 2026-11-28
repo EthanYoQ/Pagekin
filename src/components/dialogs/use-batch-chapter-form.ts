@@ -21,7 +21,7 @@ import { readWritableChapters } from '../../services/authoritative-chapter-seque
 import type { ChapterGap } from '../../shared/chapter-sequence'
 import { readConsistencyPreflight, saveFindingExemption, type ConsistencyPreflightResult, type ExemptionScope, type PreflightFinding } from '../../services/consistency-preflight'
 import type { ConsistencyExemption } from '../../shared/consistency-preflight'
-import { requireIpcSuccess } from '../../services/ipc-result'
+import { type ActionName, requireIpcSuccess } from '../../services/ipc-result'
 import { normalizeChapterWordsTarget } from '../../services/workflows/chapter-creation-parameters'
 import {
   availableGenerationModelId,
@@ -255,7 +255,7 @@ export function useBatchChapterForm({ isOpen, startChapterNumber, onClose }: Bat
   }
 
   /** 保存或撤销一致性安排：进行中按钮不可再点，失败时在对话框里写明原因。返回是否成功。 */
-  const changeArrangement = async (action: string, call: (session: ProjectSessionContext) => Promise<{ success: boolean; error?: string }>) => {
+  const changeArrangement = async (action: ActionName, call: (session: ProjectSessionContext) => Promise<{ success: boolean; error?: string }>) => {
     const session = captureProjectSession(useProjectStore.getState().currentProject)
     if (!session || starting) return false
     setStarting(true)
@@ -272,13 +272,13 @@ export function useBatchChapterForm({ isOpen, startChapterNumber, onClose }: Bat
   }
 
   const saveArrangement = async (finding: PreflightFinding, scope: ExemptionScope) => {
-    const saved = await changeArrangement(text('保存一致性安排', 'Save consistency arrangement'),
+    const saved = await changeArrangement(['保存一致性安排', 'save the consistency arrangement', '整合性の調整の保存'],
       session => saveFindingExemption(session, finding, scope, text))
     if (saved) await handleStart(false)
   }
 
   const revokeArrangement = async (exemption: ConsistencyExemption) => {
-    const revoked = await changeArrangement(text('撤销一致性安排', 'Revoke consistency arrangement'),
+    const revoked = await changeArrangement(['撤销一致性安排', 'revoke the consistency arrangement', '整合性の調整の取り消し'],
       session => ipc.invokeWithProjectSession(session, 'db:consistency-exemption-revoke', exemption.stableFactKey, exemption.chapterNumber, session.projectPath))
     if (!revoked) return
     setConsistencyPreflight(current => current ? {

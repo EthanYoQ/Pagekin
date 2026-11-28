@@ -274,7 +274,7 @@ function ArchFileViewerSession({
           ...submission.request, authorRecovery: { ...submission.request.authorRecovery, leaseEpoch: candidate.leaseEpoch },
         }, projectKey)
         if (!result.success && !pending && isProjectSessionCurrent(session)) useEditorStore.getState().setPlanningSaveSnapshot(tabId, undefined)
-        requireIpcSuccess(result, '保存恢复大纲')
+        requireIpcSuccess(result, ['保存恢复大纲', 'save the recovered outline', '復元した大綱の保存'])
         if (!isProjectSessionCurrent(session)) return
         submittedSnapshot = { ...submission, content: submission.request.synopsis }
         const currentTab = useEditorStore.getState().tabs.find(tab => tab.id === tabId)
@@ -295,7 +295,7 @@ function ArchFileViewerSession({
           'db:project-core-update',
           { [dbField]: md },
           projectSession.projectPath,
-        ), '保存架构文件')
+        ), ['保存架构文件', 'save the architecture file', 'アーキテクチャファイルの保存'])
       }
       if (isProjectSessionCurrent(projectSession)) {
         reloadGateRef.current.invalidate()

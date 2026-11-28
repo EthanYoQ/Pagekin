@@ -178,7 +178,7 @@ describe('定稿后处理的重试规则不变', () => {
   it('旧的连续性写入失败后，存下的步骤原因仍按可重试处理', async () => {
     let stored = ''
     try {
-      requireIpcSuccess(await received('db:continuity-save-finalized', [{ draftId: 7 }, PATH]), '保存定稿连续性事实')
+      requireIpcSuccess(await received('db:continuity-save-finalized', [{ draftId: 7 }, PATH]), ['保存定稿连续性事实', 'save the finalized continuity facts', '確定稿の連続性情報の保存'])
     } catch (error) {
       stored = error instanceof Error ? error.message : String(error)
     }

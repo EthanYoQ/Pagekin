@@ -71,7 +71,7 @@ function requireExportWriteSuccess(
   fallback: AuthorNote,
 ): void {
   try {
-    requireIpcSuccess(result, '写入导出文件', fallback)
+    requireIpcSuccess(result, fallback)
   } catch (error) {
     throw Object.assign(
       error as AuthorError,
@@ -335,8 +335,7 @@ export async function exportNovel(
         if (!isProjectSessionCurrent(projectSession)) return staleExportResult(uiLocale)
         requireIpcSuccess(
           mkdirResult,
-          text('创建导出目录', 'Create export directory'),
-          text('创建导出目录失败', 'Failed to create the export directory.'),
+          note('创建导出目录失败', 'Failed to create the export directory.'),
         )
 
         for (const ch of chapterContents) {

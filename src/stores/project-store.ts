@@ -921,7 +921,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     else {
       const result = await ipc.invokeWithProjectSession(expectedProjectSession, 'db:project-core-commit-generated',
         { data, aiSources, generationRunHandle }, project.path)
-      requireIpcSuccess(result, '保存故事设定', catalogNote('error.projectCoreWriteFailed'))
+      requireIpcSuccess(result, catalogNote('error.projectCoreWriteFailed'))
     }
     const current = get().currentProject
     if (!current || !sameProjectSessionContext(expectedProjectSession, projectSessionContextFromProject(current))) return false
@@ -1192,7 +1192,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
           throw authorError(currentInterfaceLocale(), { note: note('项目上下文已变化，关闭操作已取消。', 'The project context changed, so the close operation was cancelled.') })
         }
         const result = await ipc.invokeWithProjectSession(projectSession, 'db:close', projectPath)
-        requireIpcSuccess(result, '关闭项目')
+        requireIpcSuccess(result, ['关闭项目', 'close the project', 'プロジェクトのクローズ'])
         if (!isPreparedProjectTransitionCurrent(project, preparedTransition)) {
           await detachProjectBindings({
             projectPath,
@@ -1264,7 +1264,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         15_000,
         'project:save(characterStates)',
       )
-      requireIpcSuccess(result, '保存角色状态')
+      requireIpcSuccess(result, ['保存角色状态', 'save the character states', 'キャラクター状態の保存'])
       if (sameProjectSessionContext(
         projectSession,
         projectSessionContextFromProject(get().currentProject),

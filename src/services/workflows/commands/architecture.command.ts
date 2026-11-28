@@ -22,7 +22,7 @@ import {
 } from '../../prompt-templates'
 import { ArchitecturePromptBuilder } from '../../prompts/prompt-builder'
 import { ipc } from '../../ipc-client'
-import { requireIpcSuccess } from '../../ipc-result'
+import { type ActionName, requireIpcSuccess } from '../../ipc-result'
 import { specificWriteFailure } from '../../specific-write-failure'
 import { projectSessionContextFromProject, sameProjectSessionContext } from '../../../shared/project-session-context'
 import {
@@ -654,8 +654,7 @@ export async function savePartialData(
   projectPath: string,
   data: PartialArchData,
   projectSession: ProjectSessionContext,
-  operationLabel: string,
-  fallbackMessage?: string | AuthorNote,
+  unexplained: ActionName | AuthorNote,
 ): Promise<void> {
   const result = await ipc.invokeWithProjectSession(
     projectSession,
@@ -664,7 +663,7 @@ export async function savePartialData(
     data,
     projectPath,
   )
-  requireIpcSuccess(result, operationLabel, fallbackMessage)
+  requireIpcSuccess(result, unexplained)
 }
 
 async function writeArchToDb(
@@ -959,8 +958,7 @@ export class GenerateCoreSeedCommand extends BaseWorkflowCommand<string> {
       expectedProjectPath,
       partial,
       projectSession,
-      text('保存架构生成进度', 'Save architecture-generation progress'),
-      text('保存架构生成进度失败', 'Failed to save the architecture-generation progress.'),
+      note('保存架构生成进度失败', 'Failed to save the architecture-generation progress.'),
     )
     context.data.partial = partial
 
@@ -1288,7 +1286,7 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
         const session = requireWorkflowProjectSession(params.context)
         const partial = (params.context.data.partial as PartialArchData) || await loadPartialData(this.snapshot.expectedProjectPath, session)
         partial.world_building_generation_handle = handle
-        await savePartialData(this.snapshot.expectedProjectPath, partial, session, 'Save generation run navigation',
+        await savePartialData(this.snapshot.expectedProjectPath, partial, session,
           catalogNote('error.generationRunRecordSaveFailed'))
         params.context.data.partial = partial
       },
@@ -1524,8 +1522,7 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
       expectedProjectPath,
       partial,
       projectSession,
-      text('保存架构生成进度', 'Save architecture-generation progress'),
-      text('保存架构生成进度失败', 'Failed to save the architecture-generation progress.'),
+      note('保存架构生成进度失败', 'Failed to save the architecture-generation progress.'),
     )
     context.data.partial = partial
 
@@ -1558,8 +1555,7 @@ export class GenerateWorldBuildingCommand extends BaseWorkflowCommand<string> {
       expectedProjectPath,
       partial,
       projectSession,
-      workflowUiText(context, '保存世界观未完成候选', 'Save the incomplete worldbuilding candidate'),
-      workflowUiText(context, '保存世界观未完成候选失败', 'Failed to save the incomplete worldbuilding candidate.'),
+      note('保存世界观未完成候选失败', 'Failed to save the incomplete worldbuilding candidate.'),
     )
     context.data.partial = partial
   }
@@ -1594,7 +1590,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
         const session = requireWorkflowProjectSession(params.context)
         const partial = (params.context.data.partial as PartialArchData) || await loadPartialData(this.snapshot.expectedProjectPath, session)
         partial.synopsis_generation_handle = handle
-        await savePartialData(this.snapshot.expectedProjectPath, partial, session, 'Save generation run navigation',
+        await savePartialData(this.snapshot.expectedProjectPath, partial, session,
           catalogNote('error.generationRunRecordSaveFailed'))
         params.context.data.partial = partial
       },
@@ -1991,8 +1987,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       expectedProjectPath,
       partial,
       projectSession,
-      text('保存情节大纲本批进度', 'Save the plot-outline batch progress'),
-      text('保存情节大纲本批进度失败', 'Failed to save the plot-outline batch progress.'),
+      note('保存情节大纲本批进度失败', 'Failed to save the plot-outline batch progress.'),
     )
     if (context.cancelled) {
       await this.rollbackSynopsisCheckpoint(
@@ -2033,8 +2028,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
           '{}',
           expectedProjectPath,
         ),
-        text('清理架构生成进度', 'Clear architecture-generation progress'),
-        text('清理架构生成进度失败', 'Failed to clear the architecture-generation progress.'),
+        note('清理架构生成进度失败', 'Failed to clear the architecture-generation progress.'),
       )
     }
 
@@ -2100,7 +2094,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       if (complete) partial.synopsis_result = body
       else delete partial.synopsis_result
       context.data.partial = partial
-      await savePartialData(expectedProjectPath, partial, session, text('保存情节大纲进度', 'Save plot-outline navigation'))
+      await savePartialData(expectedProjectPath, partial, session, ['保存情节大纲进度', 'save the plot-outline progress', '情節大綱の進捗の保存'])
     }
     const stopped = (cursor: Extract<PlotOutlineProgress['cursor'], { kind: 'stopped' }>) => {
       if (cursor.reason === 'source-invalid') return authorError(context.interfaceLocale, { note: writtenNote(plotOutlineSourceInvalidText(sourceExpected.synopsis, workflowUiLocale(context))) })
@@ -2159,7 +2153,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
     const synopsis = renderPlotOutlineRange(outline.composition?.text ?? '', outline.range, sourceExpected)
     try {
       const committed = await ipc.invokeWithProjectSession(session, 'db:project-core-synopsis-commit', { synopsis, expected: sourceExpected, generationRunHandle: handle }, expectedProjectPath)
-      requireIpcSuccess(committed, text('保存完整情节大纲', 'Save the complete plot outline'))
+      requireIpcSuccess(committed, ['保存完整情节大纲', 'save the complete plot outline', '情節大綱全体の保存'])
     } catch (error) {
       // 最后一章生成完、正式保存前来源变了：主进程在保存这一步只报通用码，不分模型还是其他来源。
       const code = failureCode(errorCodeOf(error))
@@ -2185,7 +2179,6 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
     previousPartial: PartialArchData,
     writtenPartial: PartialArchData,
   ): Promise<void> {
-    const text = (zhCNText: string, enUSText: string) => workflowUiText(context, zhCNText, enUSText)
     const readResult = await ipc.invokeWithProjectSession(
       projectSession,
       'fs:read-json',
@@ -2205,8 +2198,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       expectedProjectPath,
       restored,
       projectSession,
-      text('恢复上一版情节大纲进度', 'Restore the previous plot-outline progress'),
-      text('恢复上一版情节大纲进度失败', 'Failed to restore the previous plot-outline progress.'),
+      note('恢复上一版情节大纲进度失败', 'Failed to restore the previous plot-outline progress.'),
     )
     context.data.partial = restored
   }
@@ -2298,8 +2290,7 @@ export class GeneratePlotArchitectureCommand extends BaseWorkflowCommand<string>
       expectedProjectPath,
       partial,
       projectSession,
-      text('保存中断时的情节大纲进度', 'Save the interrupted plot-outline progress'),
-      text('保存中断时的情节大纲进度失败', 'Failed to save the interrupted plot-outline progress.'),
+      note('保存中断时的情节大纲进度失败', 'Failed to save the interrupted plot-outline progress.'),
     )
     // Main owns interrupted candidate text; formal synopsis remains unchanged.
     if (this.requireGenerationExecution().mainOwned) return

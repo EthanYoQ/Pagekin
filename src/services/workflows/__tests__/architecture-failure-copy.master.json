@@ -499,6 +499,36 @@
    "src/services/workflows/commands/architecture.command.ts",
    "⟨commitDetail⟩ 同时无法安全恢复旧检查点：⟨detail⟩",
    "⟨commitDetail⟩ The previous checkpoint also could not be restored safely: ⟨detail⟩"
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "未找到中断的情节大纲检查点（当前大纲没有未完成的批次）。请从「AI 生成故事架构」重新生成。",
+   "No interrupted plot-outline checkpoint was found (no batch is incomplete). Regenerate from “Generate story architecture” instead."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "中断检查点缺少批次范围，无法续写。请从「AI 生成故事架构」重新生成。",
+   "The interrupted checkpoint is missing its batch range. Regenerate from “Generate story architecture” instead."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "中断检查点内容过短，无法安全续写。请从「AI 生成故事架构」重新生成。",
+   "The interrupted checkpoint is too short to resume safely. Regenerate from “Generate story architecture” instead."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "续批检查点缺少上一批范围，无法确认连续覆盖。请从第 1 章重新生成。",
+   "The continuation checkpoint is missing the previous batch range. Regenerate from chapter 1."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "本批没有新增情节大纲内容，已保留上一批检查点。",
+   "This batch added no plot-outline content; the previous checkpoint was preserved."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "无法回读当前架构检查点",
+   "The current architecture checkpoint could not be read back."
   ]
  ],
  "addedRestructured": [
@@ -646,8 +676,73 @@
   ],
   [
    "src/services/workflows/commands/architecture.command.ts",
-   "情节大纲没能保存，旧检查点也没能安全恢复",
-   "The plot outline could not be saved, and the previous checkpoint could not be restored safely either."
+   "保存架构生成进度失败",
+   "Failed to save the architecture-generation progress."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "保存架构生成进度失败",
+   "Failed to save the architecture-generation progress."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "保存世界观未完成候选失败",
+   "Failed to save the incomplete worldbuilding candidate."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "没有可续写的情节大纲。请从「AI 生成故事架构」重新生成。",
+   "There is no interrupted plot outline to resume. Regenerate from “Generate story architecture”."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "上次中断的进度不完整，无法续写。请从「AI 生成故事架构」重新生成。",
+   "The saved progress is incomplete and cannot be resumed. Regenerate from “Generate story architecture”."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "上次中断时保存的内容太短，无法续写。请从「AI 生成故事架构」重新生成。",
+   "Too little was saved before the interruption to resume. Regenerate from “Generate story architecture”."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "上一批的进度不完整，无法接着生成。请从第 1 章重新生成。",
+   "The previous batch’s progress is incomplete, so generation cannot continue. Regenerate from chapter 1."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "这一批没有写出新的情节大纲，上一批的内容已保留。",
+   "This batch added no plot-outline content; the previous batch was kept."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "保存情节大纲本批进度失败",
+   "Failed to save the plot-outline batch progress."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "清理架构生成进度失败",
+   "Failed to clear the architecture-generation progress."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "读不到刚保存的生成进度，请再试一次。",
+   "The saved generation progress could not be read back. Try again."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "恢复上一版情节大纲进度失败",
+   "Failed to restore the previous plot-outline progress."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "情节大纲没能保存，之前的进度也没能恢复。",
+   "The plot outline could not be saved, and the previous progress could not be restored either."
+  ],
+  [
+   "src/services/workflows/commands/architecture.command.ts",
+   "保存中断时的情节大纲进度失败",
+   "Failed to save the interrupted plot-outline progress."
   ]
  ]
 }

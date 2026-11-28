@@ -201,7 +201,7 @@ describe('定稿后处理（withRetry）：作者点了取消', () => {
   it('作者取消后主进程以取消码拒绝写入（requireIpcSuccess）：这一步记为中断、可重试，运行与这一步都记已取消', async () => {
     const finished = await runOneStep(postProcess(true, async () => {
       cancelRun()
-      requireIpcSuccess({ success: false, error: 'GENERATION_WORKFLOW_CANCELLED' }, '写入章节剧情要点')
+      requireIpcSuccess({ success: false, error: 'GENERATION_WORKFLOW_CANCELLED' }, ['写入章节剧情要点', 'write the chapter plot notes', '章のあらすじ要点の書き込み'])
     }))
 
     expectInterruptedWithRetry()
@@ -212,7 +212,7 @@ describe('定稿后处理（withRetry）：作者点了取消', () => {
 
   it('作者没有取消、主进程却返回取消码：照常记失败并重试，失败提示与重试入口都在', async () => {
     const executor = vi.fn(async () => {
-      requireIpcSuccess({ success: false, error: 'GENERATION_WORKFLOW_CANCELLED' }, '写入章节剧情要点')
+      requireIpcSuccess({ success: false, error: 'GENERATION_WORKFLOW_CANCELLED' }, ['写入章节剧情要点', 'write the chapter plot notes', '章のあらすじ要点の書き込み'])
     })
     const finished = await runOneStep(postProcess(true, executor))
 
