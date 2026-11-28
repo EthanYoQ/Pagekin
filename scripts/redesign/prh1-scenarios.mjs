@@ -71,7 +71,7 @@ export const PRH1_SCENARIOS = {
     const shown = context.page
     await flow(shown).getByRole('button', { name: /^4\D/u }).first().click()
     await shown.getByRole('button', { name: 'AI review', exact: true }).click()
-    const reason = shown.getByText(/The prompt file has an invalid structure\./u).first()
+    const reason = shown.getByText(/The prompt file "consistency_check\.json" cannot be read or is malformed/u).first()
     await reason.waitFor({ state: 'visible', timeout: 90_000 })
     await shown.waitForTimeout(400)
     const notice = await reason.innerText()
@@ -79,6 +79,27 @@ export const PRH1_SCENARIOS = {
     await context.shoot('prh1-prompt-unreadable-en')
     assert.match(notice, /consistency_check\.json/u, '说明里指出是哪个文件')
     assert.doesNotMatch(page, RAW_PARSER, '界面任何地方都不露解析器原文')
+    return { notice }
+  } },
+
+  // 坏 JSON 在主进程生成准入时先失败；抛出过 IPC 只带码，所以说明指到「提示词模板」，不带文件名（#935）。
+  'prh1-prompt-bad-json-en': { model: true, shell: 'stage', setup: seedStageSample, run: async context => {
+    const dir = join(context.samplePath, '.ai-novel', 'prompts')
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'consistency_check.json'), '{"key": "consistency_check",')
+    await switchToEnglish(context)
+    const shown = context.page
+    await flow(shown).getByRole('button', { name: /^4\D/u }).first().click()
+    await shown.getByRole('button', { name: 'AI review', exact: true }).click()
+    const reason = shown.getByText(/cannot be read or is malformed/u).first()
+    await reason.waitFor({ state: 'visible', timeout: 90_000 })
+    await shown.waitForTimeout(400)
+    const notice = await reason.innerText()
+    const page = await shown.locator('body').innerText()
+    await context.shoot('prh1-prompt-bad-json-en')
+    assert.match(notice, /Prompt templates/u, '说明指到「提示词模板」')
+    assert.doesNotMatch(page, RAW_PARSER, '界面任何地方都不露解析器原文')
+    assert.doesNotMatch(page, /GENERATION_PROMPT_INVALID|PROMPT_FILE_UNREADABLE/u, '不露码')
     return { notice }
   } },
 }

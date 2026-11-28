@@ -8,7 +8,8 @@ import { useLocaleStore } from '../../../../stores/locale-store'
 import { useWorkflowStore, type WorkflowContext, type WorkflowRun } from '../../../../stores/workflow-store'
 import { runFailure } from '../../../../components/run/run-failure'
 import { shown } from '../../../../i18n/__tests__/shown-locale'
-import { knownAppErrorMessage } from '../../../../i18n/app-errors'
+import { failureText, knownAppErrorMessage } from '../../../../i18n/app-errors'
+import { reviewTransportNote } from '../../../generation/prompt-budget-failure'
 import type { GenerationAttemptReceipt } from '../../../generation/generation-harness'
 import type { GenerationTransportDiagnostics } from '../../../../shared/generation-contract'
 
@@ -23,6 +24,10 @@ const timing = { startedAt: 1, elapsedMs: 10, firstResponseMs: 5, lastResponseMs
 const failed = (phase: GenerationTransportDiagnostics['phase'], fields: Partial<GenerationTransportDiagnostics>): GenerationTransportDiagnostics =>
   ({ ...timing, phase, endReason: 'failed', ...fields })
 
+/** 与 electron/llm/__tests__/transport-proxy-failure.test.ts 里连不上代理时的诊断同形：errorCode 记代理，causeCode 记连接被拒。 */
+const PROXY_UNREACHABLE = failed('request', { errorName: 'TypeError', errorCode: 'PROXY_UNREACHABLE', causeCode: 'ECONNREFUSED' })
+const PROXY_TEXT = { 'zh-CN': '连不上「网络代理」里设置的代理。请检查「主机地址」和「端口」，打开代理软件，或关掉「启用代理」。', 'en-US': 'Could not reach the proxy set in Network proxy. Check the Host and Port, start your proxy app, or turn off Use a proxy.' }
+
 /** 审稿按传输诊断给原因，与收据失败码无关。 */
 const BY_DIAGNOSTICS: Array<[string, GenerationTransportDiagnostics, Record<Locale, string>]> = [
   ['读响应流超时', failed('stream', { causeCode: 'UND_ERR_BODY_TIMEOUT' }), { 'zh-CN': '读取响应流超时。上游为何停止响应尚未确认。', 'en-US': 'Reading the response stream timed out. Why the upstream stopped responding is not confirmed.' }],
@@ -35,7 +40,7 @@ const BY_DIAGNOSTICS: Array<[string, GenerationTransportDiagnostics, Record<Loca
   ['套接字断开', failed('stream', { causeCode: 'UND_ERR_SOCKET' }), { 'zh-CN': '响应连接中断。具体原因尚未确认。', 'en-US': 'The response connection was interrupted. The underlying cause is not confirmed.' }],
   ['ECONNRESET', failed('stream', { errorCode: 'ECONNRESET' }), { 'zh-CN': '响应连接中断。具体原因尚未确认。', 'en-US': 'The response connection was interrupted. The underlying cause is not confirmed.' }],
   ['流提前关闭', failed('stream', { causeCode: 'ERR_STREAM_PREMATURE_CLOSE' }), { 'zh-CN': '响应连接中断。具体原因尚未确认。', 'en-US': 'The response connection was interrupted. The underlying cause is not confirmed.' }],
-  ['代理不可达', failed('request', { errorCode: 'PROXY_UNREACHABLE' }), { 'zh-CN': '审稿请求未完成，具体原因未知。', 'en-US': 'The review request did not complete; the specific cause is unknown.' }],
+  ['代理不可达', PROXY_UNREACHABLE, PROXY_TEXT],
   ['HTTP 502', failed('response', { httpStatus: 502 }), { 'zh-CN': '服务返回 HTTP 502，请求未完成。', 'en-US': 'The service returned HTTP 502; the request did not complete.' }],
   ['失败但无码', failed('stream', {}), { 'zh-CN': '审稿请求未完成，具体原因未知。', 'en-US': 'The review request did not complete; the specific cause is unknown.' }],
 ]
@@ -111,4 +116,10 @@ describe('审稿运行因模型连接失败时的失败提示与 master 逐字�
       expect(await reviewFailureReason(code, diagnostics, 'zh-CN', true)).toBe(expected)
     }
   })
+})
+
+it('审稿连不上代理时，日文界面也给代理说明，不露码', () => {
+  const shownText = failureText(shown('ja-JP'), { note: reviewTransportNote(PROXY_UNREACHABLE)! })
+  expect(shownText).toBe(knownAppErrorMessage(shown('ja-JP'), 'PROXY_UNREACHABLE'))
+  expect(shownText).not.toMatch(/PROXY_UNREACHABLE|ECONNREFUSED|fetch failed/u)
 })

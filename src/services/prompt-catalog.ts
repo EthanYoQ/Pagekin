@@ -4,25 +4,23 @@ import { sameProjectSessionContext } from '../shared/project-session-context'
 import { ipc } from './ipc-client'
 import { requireIpcSuccess } from './ipc-result'
 import { currentInterfaceLocale } from '../stores/locale-store'
-import { catalogNote, caughtFailure, failureText, authorError } from '../i18n/app-errors'
-import type { MessageKey } from '../i18n/core'
-import { codeOf, failureOf, note } from '../shared/failure'
+import { catalogNote, caughtFailure, failureText, authorError, IPC_HANDLER_FAILED, isRegisteredErrorCode } from '../i18n/app-errors'
+import { AuthorError, authorOwned, codeOf, failureCode, note, type Failure } from '../shared/failure'
 import type { PromptTemplate } from './prompt-templates'
 import { resolveWritingLanguage, type WritingLanguage } from '../shared/writing-language'
 
 const PROMPT_FILE_UNREADABLE = 'PROMPT_FILE_UNREADABLE'
-const DIAGNOSTIC_KEYS: Readonly<Record<string, MessageKey>> = {
-  PROMPT_TEMPLATE_INVALID: 'error.promptTemplateInvalid',
-  PROMPT_FILENAME_MISMATCH: 'error.promptFilenameMismatch',
-  [PROMPT_FILE_UNREADABLE]: 'error.promptFileUnreadable',
+const diagnosticsFailure = (diagnostics: readonly PromptLoadDiagnostic[]): Failure => {
+  const rejected = diagnostics.find(item => item.failure)?.failure
+  if (rejected) return rejected
+  const file = authorOwned(diagnostics.map(item => item.path.split(/[\\/]/u).at(-1)!).join(', '))
+  return { code: failureCode(diagnostics[0]!.error) ?? PROMPT_FILE_UNREADABLE, note: catalogNote('error.promptFileDamaged', { file }) }
 }
-const diagnosticText = ({ error, failure }: PromptLoadDiagnostic) => {
-  const key = Object.hasOwn(DIAGNOSTIC_KEYS, error) ? DIAGNOSTIC_KEYS[error] : undefined
-  return failureText(currentInterfaceLocale(), failure ?? (key ? { note: catalogNote(key) } : failureOf(error)), { fallback: catalogNote('error.promptFileUnreadable') })
-}
+/** 读取层说得出原因（带说明或登记过的码，如会话已换、租约过期）才留它；说不出的读失败与内容损坏一样，按文件说明。 */
 const diagnosticOf = (error: unknown): Pick<PromptLoadDiagnostic, 'error' | 'failure'> => {
   const failure = caughtFailure(error)
-  return { error: (failure && codeOf(failure)) ?? PROMPT_FILE_UNREADABLE, ...(failure?.note ? { failure } : {}) }
+  const code = failure && codeOf(failure)
+  return { error: code ?? PROMPT_FILE_UNREADABLE, ...(failure && code !== IPC_HANDLER_FAILED && (failure.note || isRegisteredErrorCode(code)) ? { failure } : {}) }
 }
 
 const sessionChangedError = () => authorError(currentInterfaceLocale(), { note: note('项目会话已变化，已拒绝读取项目提示词', 'The book session changed, so project prompts were not read.') })
@@ -54,9 +52,10 @@ export interface PromptLoadReceipt {
   diagnostics: PromptLoadDiagnostic[]
 }
 
-export class PromptLoadDiagnosticsError extends Error {
+export class PromptLoadDiagnosticsError extends AuthorError {
   constructor(readonly diagnostics: readonly PromptLoadDiagnostic[]) {
-    super(diagnostics.map((item) => `${item.path}: ${diagnosticText(item)}`).join('\n'))
+    const failure = diagnosticsFailure(diagnostics)
+    super(failure, failureText(currentInterfaceLocale(), failure))
     this.name = 'PromptLoadDiagnosticsError'
   }
 }
@@ -383,7 +382,7 @@ export const ipcPromptPersistence: PromptPersistence = {
           file.path,
           projectSession.projectPath,
         )
-        requireIpcSuccess(result, '读取项目提示词', catalogNote('error.promptFileUnreadable'))
+        requireIpcSuccess(result, '读取项目提示词', catalogNote('error.promptFileDamaged', { file: authorOwned(file.name) }))
         if (!result.content.trim()) continue
         const parsed = JSON.parse(result.content) as PromptTemplate
         if (!validTemplate(parsed)) throw new Error('PROMPT_TEMPLATE_INVALID')

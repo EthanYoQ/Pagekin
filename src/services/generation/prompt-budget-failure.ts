@@ -149,6 +149,7 @@ const INTERRUPTED = new Set(['UND_ERR_SOCKET', 'ECONNRESET', 'ERR_STREAM_PREMATU
 
 export function reviewTransportNote(diagnostics: GenerationTransportDiagnostics | undefined): AuthorNote | undefined {
   if (diagnostics?.endReason !== 'failed') return undefined
+  if (diagnostics.errorCode === 'PROXY_UNREACHABLE') return catalogNote('error.proxyUnreachable')
   const code = diagnostics.causeCode ?? diagnostics.errorCode ?? ''
   if (code === 'UND_ERR_BODY_TIMEOUT') return note('读取响应流超时。上游为何停止响应尚未确认。', 'Reading the response stream timed out. Why the upstream stopped responding is not confirmed.')
   if (TIMED_OUT.has(code)) return note('等待服务响应超时。具体原因尚未确认。', 'Waiting for the service timed out. The underlying cause is not confirmed.')
