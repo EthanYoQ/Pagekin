@@ -939,6 +939,13 @@ function recordRunOption(runId: string, effectNamespace: string, option: RunOpti
   ) VALUES(?,?,?,?,?,'complete','legacy-checkpoint','')`).run(runId, option.stage, option.batchId, effectNamespace, option.effectKey)
 }
 
+// 导入当前项目的请求接手一个旧运行时只能把写入模式收窄为只补空白，不能反过来放宽（#855）。
+function adoptCoreWriteMode(runId: string, requested: ImportCoreWriteMode): void {
+  if (requested === 'replace' || !hasEffectLedger()) return
+  db().prepare('DELETE FROM import_effect_ledger WHERE run_id=? AND stage=? AND batch_id=?')
+    .run(runId, CORE_REPLACE_LEDGER.stage, CORE_REPLACE_LEDGER.batchId)
+}
+
 function hasEffectLedger(): boolean {
   return Boolean(db().prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='import_effect_ledger'").get())
 }
@@ -1713,6 +1720,7 @@ export class ImportRunRepository {
         db().prepare(`
           UPDATE import_runs SET source_display_json = ?, updated_at = datetime('now') WHERE id = ?
         `).run(JSON.stringify(sourceDisplay), existing.id)
+        adoptCoreWriteMode(existing.id, candidate.coreWriteMode ?? 'fill-empty')
         return this.get(existing.id)!
       }
       if (readRunRow(runId)) throw new Error('IMPORT_RUN_ID_CONFLICT')
@@ -1929,6 +1937,7 @@ export class ImportRunRepository {
       const resumable = matchingResumableRun(run.purpose, run.source_fingerprint, manifestFingerprint)
       if (resumable && resumable.id !== runId) {
         const duplicateChapterNumbers = chapters.map(chapter => chapter.number)
+        adoptCoreWriteMode(resumable.id, readCoreWriteMode(runId))
         discardProvisionalParsingRun(runId)
         return {
           classification: 'resumable' as const,

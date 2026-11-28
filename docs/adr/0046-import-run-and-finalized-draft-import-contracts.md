@@ -30,7 +30,7 @@
 
 ### `src/shared/import-run.ts`
 
-- `ImportCoreWriteMode`：运行创建时冻结（2026-11-28，#855）。replace：参考小说导入对话框新建的项目，设定、文风与每章蓝图整体写入；fill-empty：导入已有的当前项目（参考小说与作者原稿都是），非空字段不动，不同的反推值进 suggestions，已有蓝图的章不调模型、不改动。主进程账本只记非默认的 replace，所以升级前没有这一行的运行续跑时按 fill-empty（维护者 2026-11-28 定：宁可少写，不毁数据）。
+- `ImportCoreWriteMode`：运行创建时冻结（2026-11-28，#855）。replace：参考小说导入对话框新建的项目，设定、文风与每章蓝图整体写入；fill-empty：导入已有的当前项目（参考小说与作者原稿都是），非空字段不动，不同的反推值进 suggestions，已有蓝图的章不调模型、不改动。主进程账本只记非默认的 replace，所以升级前没有这一行的运行续跑时按 fill-empty，导入新项目时进行到一半的也一样（维护者 2026-11-28 定：宁可少写，不毁数据）。冻结后只有一个例外，而且只能收窄：导入当前项目的选择接手同一来源的旧运行时（解析中复用，或解析完成后匹配到可续跑的运行），把它改成 fill-empty；反过来从不放宽。
 - `importCoreWriteModeFor`：导入目标到写入模式的唯一映射。缺失或无法识别的目标按当前项目处理。
 - `IMPORT_STAGE_PLANS`：阶段顺序由运行用途和冻结的反推选项决定；作者原稿的反推放在后处理之后，知识库里已经有定稿正文。
 - 蓝图分批、持久收据与仓库检查点共用的规范身份（原文：Canonical identity shared by blueprint batching, durable receipts, and repository checkpoints.）
