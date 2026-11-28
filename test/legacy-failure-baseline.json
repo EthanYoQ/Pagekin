@@ -61,7 +61,7 @@
     "appErrorMessage": 1
   },
   "src/components/panels/ai-output-failure-presentation.ts": {
-    "knownAppErrorMessage": 3
+    "knownAppErrorMessage": 1
   },
   "src/components/panels/sidebar/sidebar-file-openers.ts": {
     "displayedErrorMessage": 1
