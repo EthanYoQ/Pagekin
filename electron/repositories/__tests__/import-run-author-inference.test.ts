@@ -134,6 +134,34 @@ describe('作者原稿运行的反推阶段', () => {
     expect(ImportRunRepository.getEffectReceipt(RUN_ID, 'author-commit', 'done')).toMatchObject({ state: 'committed' })
   })
 
+  it('总章数、每章字数、故事结构、叙事视角仍是新建项目的默认值时补上反推值', () => {
+    const execution = authorRunAt('global')
+
+    commitGlobal(execution)
+
+    expect(ProjectCoreRepository.get()).toMatchObject({
+      totalChapters: 3, wordsPerChapter: 2400, plotStructure: 'three_act', narrativePov: 'first_person',
+    })
+  })
+
+  it('作者设过的总章数、每章字数、故事结构、叙事视角不动，不同的进建议，总章数不建议', () => {
+    ProjectCoreRepository.update({ totalChapters: 50, wordsPerChapter: 2000, plotStructure: 'freeform', narrativePov: 'multi_pov' })
+    const execution = authorRunAt('global')
+
+    const committed = commitGlobal(execution)
+
+    expect(ProjectCoreRepository.get()).toMatchObject({
+      totalChapters: 50, wordsPerChapter: 2000, plotStructure: 'freeform', narrativePov: 'multi_pov',
+    })
+    const suggestions = (committed.receipt.effectReceipt as { suggestions: Array<{ field: string }> }).suggestions
+    expect(suggestions.filter(item => ['totalChapters', 'wordsPerChapter', 'plotStructure', 'narrativePov'].includes(item.field)))
+      .toEqual([
+        { field: 'wordsPerChapter', current: 2000, inferred: 2400 },
+        { field: 'plotStructure', current: 'freeform', inferred: 'three_act' },
+        { field: 'narrativePov', current: 'multi_pov', inferred: 'first_person' },
+      ])
+  })
+
   it('文风只在为空时写入，已有文风保留并进建议', () => {
     ProjectCoreRepository.update({ writingStyle: '作者的长句风格' })
     const execution = authorRunAt('style')
