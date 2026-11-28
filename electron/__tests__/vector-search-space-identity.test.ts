@@ -33,7 +33,8 @@ describe('向量检索必须带空间身份', () => {
     expect(await addChunks(project, 'doc-a', 'a.txt', ['红帆船靠岸'], [storedVector], undefined, undefined, modelA))
       .toEqual({ success: true, chunkCount: 1 })
 
-    await expect(search(project, NO_TEXT_MATCH, queryVector, 5)).resolves.toEqual([])
+    // @ts-expect-error 查询向量缺空间身份，类型上写不出来。
+    await expect(search(project, NO_TEXT_MATCH, { queryVector }, 5)).resolves.toEqual([])
   })
 
   it('写入和查询都不带身份时，查询向量同样不参与排序', async () => {
@@ -41,7 +42,8 @@ describe('向量检索必须带空间身份', () => {
     expect(await addChunks(project, 'doc-a', 'a.txt', ['红帆船靠岸'], [storedVector]))
       .toEqual({ success: true, chunkCount: 1 })
 
-    await expect(search(project, NO_TEXT_MATCH, queryVector, 5)).resolves.toEqual([])
+    // @ts-expect-error 查询向量缺空间身份，类型上写不出来。
+    await expect(search(project, NO_TEXT_MATCH, { queryVector }, 5)).resolves.toEqual([])
   })
 
   it('身份与当前空间一致时按向量命中', async () => {
@@ -49,7 +51,7 @@ describe('向量检索必须带空间身份', () => {
     expect(await addChunks(project, 'doc-a', 'a.txt', ['红帆船靠岸'], [storedVector], undefined, undefined, modelA))
       .toEqual({ success: true, chunkCount: 1 })
 
-    await expect(search(project, NO_TEXT_MATCH, queryVector, 5, modelA))
+    await expect(search(project, NO_TEXT_MATCH, { queryVector, embeddingSpace: modelA }, 5))
       .resolves.toEqual([expect.objectContaining({ fileName: 'a.txt', text: '红帆船靠岸' })])
   })
 })

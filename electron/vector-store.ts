@@ -83,6 +83,12 @@ export interface EmbeddingSpaceIdentity {
   distanceMetric?: string
 }
 
+/** 查询向量只在生成它的嵌入空间里有意义，所以必须和那个空间的身份一起传。 */
+export interface VectorQuery {
+  queryVector: number[]
+  embeddingSpace: EmbeddingSpaceIdentity & { modelFingerprint: string }
+}
+
 export type EmbeddingSpaceStatus = 'active' | 'building' | 'inactive'
 
 /** 一个可比较的向量集合及其物理表。 */
@@ -1367,14 +1373,10 @@ function activeSpace(registry: EmbeddingSpaceRegistry): EmbeddingSpace | undefin
     : registry.spaces.find(space => space.generation === registry.activeGeneration)
 }
 
-function requestMatchesActiveSpace(
-  space: EmbeddingSpace,
-  queryVector: number[],
-  identity?: EmbeddingSpaceIdentity,
-): boolean {
+function requestMatchesActiveSpace(space: EmbeddingSpace, { queryVector, embeddingSpace }: VectorQuery): boolean {
   if (!vectorIsUsable(queryVector, space.vectorDimension)) return false
-  if (!identity) return true // 保持既有 vector-store 直接调用的兼容性。
-  const requested = normalizedIdentity(identity, queryVector.length)
+  if (!embeddingSpace?.modelFingerprint?.trim()) return false
+  const requested = normalizedIdentity(embeddingSpace, queryVector.length)
   return space.modelFingerprint === requested.modelFingerprint && space.distanceMetric === requested.distanceMetric
 }
 
@@ -1393,20 +1395,18 @@ function excludedCorpusFilter(excludedCorpusKinds: readonly KnowledgeCorpusKind[
 export async function search(
   projectPath: string,
   queryText: string,
-  queryVector?: number[],
+  vector?: VectorQuery,
   topK: number = 5,
-  embeddingSpace?: EmbeddingSpaceIdentity,
   excludedCorpusKinds: readonly KnowledgeCorpusKind[] = [],
 ): Promise<SearchResult[]> {
-  return withKnowledgeSourceGate(getProjectDataRoot(projectPath), () => searchInternal(projectPath, queryText, queryVector, topK, embeddingSpace, excludedCorpusKinds))
+  return withKnowledgeSourceGate(getProjectDataRoot(projectPath), () => searchInternal(projectPath, queryText, vector, topK, excludedCorpusKinds))
 }
 
 async function searchInternal(
   projectPath: string,
   queryText: string,
-  queryVector?: number[],
+  vector?: VectorQuery,
   topK: number = 5,
-  embeddingSpace?: EmbeddingSpaceIdentity,
   excludedCorpusKinds: readonly KnowledgeCorpusKind[] = [],
 ): Promise<SearchResult[]> {
   let documentsTable: lancedb.Table | undefined
@@ -1424,14 +1424,14 @@ async function searchInternal(
       ? staleDocIds.map(id => `\`docId\` != '${id.replace(/'/g, "''")}'`).join(' AND ')
       : undefined
 
-    if (queryVector && vectorIsUsable(queryVector)) {
+    if (vector && vectorIsUsable(vector.queryVector)) {
       try {
         const registry = await loadOrRegisterLegacyRegistry(projectPath, db, tableNames)
         const active = activeSpace(registry)
-        if (active && tableNames.includes(active.tableName) && requestMatchesActiveSpace(active, queryVector, embeddingSpace)) {
+        if (active && tableNames.includes(active.tableName) && requestMatchesActiveSpace(active, vector)) {
           const vectorTable = await db.openTable(active.tableName)
           try {
-          let query = vectorTable.search(queryVector).limit(topK)
+          let query = vectorTable.search(vector.queryVector).limit(topK)
           const vectorFilters: string[] = []
           const corpusFilter = excludedCorpusFilter(excludedCorpusKinds)
           if (corpusFilter && await tableSupportsField(vectorTable, 'corpusKind')) {
