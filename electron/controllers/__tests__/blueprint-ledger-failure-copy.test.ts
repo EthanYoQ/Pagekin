@@ -144,7 +144,8 @@ describe('蓝图与作品台账失败时作者看不到主进程原文', () => {
   it('目录工作流保存蓝图失败，中文提示里没有原文', async () => {
     mocks.blueprints.upsert.mockImplementation(() => { throw sqliteFailure() })
     const error = await saveChapterBlueprint(BLUEPRINT as never, PATH, session, shown('zh-CN')).then(() => undefined, (reason: Error) => reason)
-    expect(error?.message).toBe('保存章节蓝图失败')
+    expect(error?.message).toBe('已有的章节蓝图都还在。这次修改没能写进作品，请再试一次。')
+    expect(error?.message).not.toMatch(RAW)
   })
 
   it('蓝图与作品设定的写失败，说明先写保住了什么', async () => {
@@ -183,10 +184,10 @@ describe('蓝图与作品台账失败的说明与 master 逐字相同', () => {
     for (const [channel, args] of WRITES) expect(await zhShown(channel, args), channel).toBe(STALE)
   })
 
-  it('目录工作流保存蓝图失败，英文提示与 master 相同', async () => {
+  it('目录工作流保存蓝图失败，英文提示用蓝图写失败的目录说明（#939）', async () => {
     mocks.blueprints.upsert.mockImplementation(() => { throw sqliteFailure() })
     const error = await saveChapterBlueprint(BLUEPRINT as never, PATH, session, shown('en-US')).then(() => undefined, (reason: Error) => reason)
-    expect(error?.message).toBe('Could not save the chapter blueprint.')
+    expect(error?.message).toBe('Your existing chapter blueprints are all still there. This change could not be saved to the project. Try again.')
   })
 
   it('读通道照旧抛出已登记的码', async () => {
