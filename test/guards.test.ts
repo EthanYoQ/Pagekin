@@ -282,6 +282,38 @@ describe('失败的码与说明（#844）', () => {
     expect(failureRewrites('electron/x.ts', 'Object.assign(new Error(code), { code })')).toEqual([])
   })
 
+  it('复合赋值和包了一层的左值也算改码或 message', () => {
+    for (const planted of [
+      "error.code += '_X'", "error.code ??= 'X_Y'", 'error.message ||= text', 'error.message &&= text', "error['message'] += text",
+      "(error.code) = 'X_Y'", "(error.code as string) = 'X_Y'", "error.code! = 'X_Y'",
+    ]) expect(failureRewrites('src/x.ts', planted), planted).toHaveLength(1)
+    for (const allowed of ['this.code ??= code', "this['message'] += text", "state['status'] ??= 'done'", 'count += 1']) {
+      expect(failureRewrites('src/x.ts', allowed), allowed).toEqual([])
+    }
+  })
+
+  it('catch 变量本身以值的形式进说明参数也算异常原文，包一层断言或逗号也认得出', () => {
+    for (const argument of [
+      'e', 'e as string', '<string>e', 'e!', 'e satisfies unknown', '(0, e)', '`${e as string}`', '`${e!}`', "'失败：' + e", "ok ? e : '失败'", "e ?? '失败'",
+    ]) {
+      const planted = `try {} catch (e) { authorOwned(${argument}) }`
+      expect(rawTextInNoteArguments('src/x.ts', planted), planted).toHaveLength(1)
+    }
+    for (const argument of ['e.fileName', 'describe(e)', "e === undefined ? '甲' : '乙'", 'files[e.index]']) {
+      const allowed = `try {} catch (e) { authorOwned(${argument}) }`
+      expect(rawTextInNoteArguments('src/x.ts', allowed), allowed).toEqual([])
+    }
+  })
+
+  it('回调参数和 catch 变量同名时，用的是回调参数，不算异常原文', () => {
+    for (const allowed of [
+      'try {} catch (error) { items.map(error => authorOwned(`${error}`)) }',
+      'try {} catch (error) { items.map(function (error) { return authorOwned(error) }) }',
+      'try {} catch (error) { items.map(({ error }) => authorOwned(error)) }',
+    ]) expect(rawTextInNoteArguments('src/x.ts', allowed), allowed).toEqual([])
+    expect(rawTextInNoteArguments('src/x.ts', 'try {} catch (error) { items.map(item => authorOwned(`${item}: ${error}`)) }')).toHaveLength(1)
+  })
+
   it('断言成 AuthorNote、Failure 或作者数据只许在 src/shared/failure.ts 和测试里', () => {
     expect(scanProduction(failureTypeAssertions).flatMap(([, found]) => found)).toEqual([])
     for (const planted of ['value as AuthorNote', 'value as unknown as Failure', '<Failure>value', 'value as Failure | undefined', 'text as AuthorOwned', 'params as NoteParams']) {
