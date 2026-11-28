@@ -98,8 +98,8 @@ const bindsName = (binding: ts.BindingName, name: string): boolean => ts.isIdent
 function isCaughtValue(expression: ts.Expression): boolean {
   if (!ts.isIdentifier(expression)) return false
   const name = expression.text
-  for (let scope: ts.Node | undefined = expression.parent; scope; scope = scope.parent) {
-    if (ts.isFunctionLike(scope) && scope.parameters.some(parameter => bindsName(parameter.name, name))) return false
+  for (let inner: ts.Node = expression, scope = expression.parent; scope; inner = scope, scope = scope.parent) {
+    if (ts.isFunctionLike(scope) && inner !== scope.name && scope.parameters.some(parameter => bindsName(parameter.name, name))) return false
     const caught = ts.isCatchClause(scope) ? scope.variableDeclaration?.name : undefined
     if (caught && ts.isIdentifier(caught) && caught.text === name) return true
   }
