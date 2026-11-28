@@ -31,7 +31,6 @@
   "electron/services/__tests__/webdav-backup-service.test.ts",
   "electron/utils/__tests__/config-utils.test.ts",
   "scripts/__tests__/legacy-qualification-projection.test.ts",
-  "scripts/__tests__/release-win-verify.test.ts",
   "scripts/__tests__/smoke-macos-dmg-acceptance-contract.test.ts",
   "scripts/__tests__/smoke-win-installer.test.ts",
   "scripts/redesign/__tests__/drive-args.test.mjs",

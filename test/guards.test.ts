@@ -157,6 +157,17 @@ describe('测试文件按标识符禁用列目录原语', () => {
     const code = "import fs from 'node:fs'\nimport { it } from 'vitest'\nit('x', () => { fs.readdirSync(process.cwd()) })\n"
     expect(await listingErrors('src/__tests__/new-scan.test.ts', code)).toEqual([expect.stringContaining('repoSourceFiles()')])
   })
+
+  it('不在 baseline 里的测试文件都受这条规则约束，后面的覆盖块没把它冲掉', async () => {
+    const exempt = new Set([REPO_SOURCE_FILES_MODULE, 'test/helpers/temporary-directory.ts', ...BASELINE])
+    const testFiles = ['electron', 'scripts', 'src', 'test'].flatMap(dir => repoSourceFiles(dir))
+      .filter(file => /\.(?:test|spec)\.|\/__tests__\/|^test\//u.test(file) && /\.(?:ts|tsx|mjs)$/u.test(file) && !exempt.has(file))
+    const unguarded: string[] = []
+    for (const file of testFiles) {
+      if ((await listingErrors(file, "import { opendirSync } from 'node:fs'\nopendirSync('.')\n")).length === 0) unguarded.push(file)
+    }
+    expect(unguarded).toEqual([])
+  }, 120_000)
 })
 
 describe('存量 baseline 只减不增', () => {
