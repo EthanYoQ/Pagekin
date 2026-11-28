@@ -131,7 +131,7 @@ describe('知识库向量维度', () => {
       undefined,
       space,
     )).toEqual({ success: true, chunkCount: 1 })
-    await expect(search(projectPath, `${dimension} 维`, vector, 5, space)).resolves.toEqual([
+    await expect(search(projectPath, `${dimension} 维`, { queryVector: vector, embeddingSpace: space }, 5)).resolves.toEqual([
       expect.objectContaining({ fileName: `${dimension}.txt` }),
     ])
     await expect(getEmbeddingSpaces(projectPath)).resolves.toMatchObject({
@@ -445,7 +445,7 @@ describe('知识库向量维度', () => {
         status: 'active',
       })],
     })
-    await expect(search(projectPath, '旧知识库', legacyVector)).resolves.toEqual([
+    await expect(search(projectPath, '旧知识库')).resolves.toEqual([
       expect.objectContaining({ fileName: 'legacy.txt', text: '旧知识库正文' }),
     ])
     await expect(listDocuments(projectPath)).resolves.toEqual([
@@ -538,7 +538,7 @@ describe('知识库向量维度', () => {
     expect(await db.tableNames()).toEqual(beforeTableNames)
     expect(await (await db.openTable('chunks')).countRows()).toBe(beforeChunkCount)
 
-    await expect(search(projectPath, '旧代际', oldVector, 5, oldSpace)).resolves.toEqual([
+    await expect(search(projectPath, '旧代际', { queryVector: oldVector, embeddingSpace: oldSpace }, 5)).resolves.toEqual([
       expect.objectContaining({ fileName: 'old.txt' }),
     ])
   })
@@ -573,7 +573,7 @@ describe('知识库向量维度', () => {
       newSpace,
     )).resolves.toMatchObject({ success: false, error: 'EMBEDDING_SPACE_REINDEX_REQUIRED' })
     expect(await getEmbeddingSpaces(projectPath)).toEqual(before)
-    await expect(search(projectPath, '模型 A', vector, 5, oldSpace)).resolves.toEqual([
+    await expect(search(projectPath, '模型 A', { queryVector: vector, embeddingSpace: oldSpace }, 5)).resolves.toEqual([
       expect.objectContaining({ fileName: 'model-a.txt' }),
     ])
   })
@@ -616,7 +616,7 @@ describe('知识库向量维度', () => {
     expect(await (await getConnection(projectPath)).tableNames()).toEqual(expect.arrayContaining([
       'chunks', oldGeneration.tableName, activeGeneration.tableName,
     ]))
-    await expect(search(projectPath, '第一块', rebuiltVector, 5, rebuiltSpace)).resolves.toEqual(expect.arrayContaining([
+    await expect(search(projectPath, '第一块', { queryVector: rebuiltVector, embeddingSpace: rebuiltSpace }, 5)).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({ fileName: 'chapter.txt', text: '第一块正文' }),
     ]))
   })
@@ -745,7 +745,7 @@ describe('知识库向量维度', () => {
     expect(await (await db.openTable('chunks')).countRows()).toBe(beforeCanonicalRows)
     expect(await (await db.openTable('documents')).countRows()).toBe(beforeDocumentRows)
     expect(await (await db.openTable(activeTable)).countRows()).toBe(beforeVectorRows)
-    await expect(search(projectPath, '旧正文', vector, 5, space)).resolves.toEqual([
+    await expect(search(projectPath, '旧正文', { queryVector: vector, embeddingSpace: space }, 5)).resolves.toEqual([
       expect.objectContaining({ fileName: 'old.txt', text: '旧正文' }),
     ])
   })

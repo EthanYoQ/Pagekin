@@ -734,7 +734,7 @@ describe('Windows installer smoke contract', () => {
         })],
       })
       await expect(getEmbeddingSpaces(projectRoot)).rejects.toThrow('PROJECT_DATA_NOT_READY')
-      await expect(search(projectRoot, '升级夹具知识库', vector, 5, identity)).rejects.toThrow('PROJECT_DATA_NOT_READY')
+      await expect(search(projectRoot, '升级夹具知识库', { queryVector: vector, embeddingSpace: identity }, 5)).rejects.toThrow('PROJECT_DATA_NOT_READY')
       closeConnection(projectRoot)
 
       applyExpectedDraftUnitMigration(projectRoot)
