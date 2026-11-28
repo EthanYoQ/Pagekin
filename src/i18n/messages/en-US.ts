@@ -320,6 +320,8 @@ export const enUS = {
   'error.plotOutlineRangeSplitsEntry': 'This range splits an existing chapter entry, or the batch note at the end of the outline does not match its text, so it would be rejected. Choose other chapters.',
   'error.outlineTargetUnitsInvalid': 'The outline target must be an integer from 1 to {limit}.',
   'error.outlineTargetSaveFailed': 'Could not save the target preference. Your input is retained. Please retry.',
+  'error.blueprintGenerationFailedRecoveryKept': 'Your existing blueprints are unchanged, and the generated text is in the recovery draft. Generation failed. Click Edit recovery draft, or generate again.',
+  'error.blueprintGenerationFailedNothingKept': 'Your existing blueprints are unchanged. Generation failed. Click Generate blueprints to try again.',
   'error.projectCoreWriteFailed': 'Your story settings and architecture were not changed. This change could not be saved to the project. Try again.',
   'error.projectClearFailed': 'Nothing in the project was cleared. Clearing did not finish. Try again.',
   'error.projectClearRestoreFailed': 'Nothing in the project database was cleared, but some chapter text files could not be moved back to the project folder and are in the trash folder of the project data. Move them back to the project folder, then try again.',

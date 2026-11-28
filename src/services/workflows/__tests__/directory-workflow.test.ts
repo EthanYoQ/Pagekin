@@ -528,7 +528,7 @@ describe('directory workflow project context', () => {
     }
 
     expect(failure).toBeInstanceOf(Error)
-    expect((failure as Error).message).toBe('Chapter-blueprint generation failed. Please try again.')
+    expect((failure as Error).message).toBe('Your existing blueprints are unchanged. Generation failed. Click Generate blueprints to try again.')
     expect((failure as Error).message).not.toContain('provider-secret-directory-failure')
   })
 
@@ -559,7 +559,7 @@ describe('directory workflow project context', () => {
     const failure = await workflow.steps[1].executor(workflowStep('生成蓝图'), context, { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() })
       .then(() => new Error('generation did not fail'), (error: unknown) => error)
     expect(isWorkflowCancellation(failure)).toBe(false)
-    expect((failure as Error).message).toBe('章节蓝图生成失败，请重试。')
+    expect((failure as Error).message).toBe('原有蓝图未改动。蓝图生成失败，请点「AI 生成蓝图」重试。')
   })
 
   it.each(['GENERATION_STORAGE_FAILED', 'ROOT_BUDGET_EXHAUSTED'])('取消请求之后蓝图批次以 %s 失败：运行和这一步都记失败并带原码，说明不转出原文', async code => {
@@ -577,8 +577,97 @@ describe('directory workflow project context', () => {
 
     const finished = useWorkflowStore.getState().history[0]
     expectEndedWith(finished, 'failed', code)
-    expect(shownFailure(finished)).toBe('章节蓝图生成失败，请重试。')
+    expect(shownFailure(finished)).toBe('原有蓝图未改动。蓝图生成失败，请点「AI 生成蓝图」重试。')
     expectEndedWith(finished.steps[0], 'failed', code)
+  })
+
+  describe('一章都没提交时的失败说明写明保住了什么（#903）', () => {
+    const runHandle = { projectId: 'p', rootActionId: 'root-903', runId: 'run-903', epoch: 'lease-903' }
+    const readContext = (draft: string) => ({
+      modelId: 'm', handle: runHandle, operation: 'chapter-blueprint-directory',
+      planningContinuation: { sourceHandle: runHandle, remainingRange: { from: 13, to: 16 }, targetUnits: 1000, state: 'ready' },
+      blueprintRecovery: { sourceHandle: runHandle, leaseEpoch: 'lease-903', draft, editRange: { from: 13, to: 16 }, saved: null, writeState: 'ready' },
+      authorInputs: [], selectedDraftIds: [], selectedFinalizedDraftIds: [], selectedBlueprintChapterNumbers: [], composition: null,
+      lastCompositionFinishReason: null, attemptedPurposes: ['chapter-blueprint-directory'],
+    })
+
+    async function failGeneration(locale: 'zh-CN' | 'en-US' | 'ja-JP', options: { draft?: string; opened?: boolean; committed?: boolean; readFails?: boolean } = {}) {
+      const projectA = project(`C:\\novels\\903-${locale}`)
+      const projectSession = { projectId: projectA.id, leaseId: projectA.sessionLease!, projectPath: projectA.path }
+      useProjectStore.setState({ currentProject: projectA })
+      const invoke = stubIpcInvoke(null).mockImplementation(async (channel: string) => {
+        if (channel === 'generation:read-context' && !options.readFails) return readContext(options.draft ?? '')
+        throw new Error('GENERATION_LEDGER_UNREADABLE')
+      })
+      const context: WorkflowContext = { runId: `903-${locale}`, projectPath: projectA.path, projectSession, writingLanguage: 'zh-CN',
+        uiLocale: locale === 'en-US' ? 'en-US' : 'zh-CN', interfaceLocale: shown(locale), data: {}, cancelled: false }
+      const directoryCommand = await import('../commands/directory.command')
+      vi.spyOn(directoryCommand.GenerateDirectoryCommand.prototype, 'execute').mockImplementation(async () => {
+        if (options.opened !== false) context.mainGenerationRunHandle = runHandle
+        if (options.committed) context.data.blueprintCommitReceipt = { startChapter: 13, endChapter: 16 }
+        throw Object.assign(new Error('provider-secret-blueprint-failure'), { code: 'GENERATION_STORAGE_FAILED' })
+      })
+      const workflow = createDirectoryWorkflow({ mode: 'full' }, projectA.path, projectSession, locale === 'en-US' ? 'en-US' : 'zh-CN')
+      const failure = await workflow.steps[1].executor(workflowStep('生成蓝图'), context, { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() })
+        .then(() => new Error('generation did not fail'), (error: unknown) => error)
+      return { failure: failure as Error & { code?: string }, invoke }
+    }
+
+    it('候选已进恢复稿：写明原有蓝图未改动、内容在恢复稿里，并带上稳定错误码', async () => {
+      const { failure } = await failGeneration('zh-CN', { draft: '{"blueprints":[{"chapterNumber":13' })
+      expect(failure.message).toBe('原有蓝图未改动，已生成的内容存入了恢复稿。蓝图生成失败，可点「编辑恢复稿」或重新生成。')
+      expect(failure.message).not.toContain('provider-secret')
+      expect(failure.code).toBe('GENERATION_STORAGE_FAILED')
+    })
+
+    it('英文、日文界面同样写明内容在恢复稿里', async () => {
+      expect((await failGeneration('en-US', { draft: 'candidate' })).failure.message)
+        .toBe('Your existing blueprints are unchanged, and the generated text is in the recovery draft. Generation failed. Click Edit recovery draft, or generate again.')
+      expect((await failGeneration('ja-JP', { draft: 'candidate' })).failure.message)
+        .toBe('既存のブループリントは変更されていません。生成した内容は復元稿にあります。生成に失敗したため、「Edit recovery draft」で編集するか、もう一度生成してください。')
+    })
+
+    it('恢复稿里没有内容：只写原有蓝图未改动、可重试，不提恢复稿', async () => {
+      const { failure } = await failGeneration('zh-CN', { draft: '  ' })
+      expect(failure.message).toBe('原有蓝图未改动。蓝图生成失败，请点「AI 生成蓝图」重试。')
+      expect(failure.code).toBe('GENERATION_STORAGE_FAILED')
+      expect((await failGeneration('en-US')).failure.message)
+        .toBe('Your existing blueprints are unchanged. Generation failed. Click Generate blueprints to try again.')
+      expect((await failGeneration('ja-JP')).failure.message)
+        .toBe('既存のブループリントは変更されていません。生成に失敗しました。「Generate blueprints」からもう一度お試しください。')
+    })
+
+    it('运行没开起来：不读恢复稿，只写原有蓝图未改动', async () => {
+      const { failure, invoke } = await failGeneration('zh-CN', { opened: false })
+      expect(failure.message).toBe('原有蓝图未改动。蓝图生成失败，请点「AI 生成蓝图」重试。')
+      expect(invoke).not.toHaveBeenCalled()
+    })
+
+    it('读恢复稿出错：不声称有恢复稿', async () => {
+      const { failure } = await failGeneration('zh-CN', { readFails: true })
+      expect(failure.message).toBe('原有蓝图未改动。蓝图生成失败，请点「AI 生成蓝图」重试。')
+    })
+
+    it('蓝图已提交后才失败：不说原有蓝图未改动', async () => {
+      const { failure } = await failGeneration('zh-CN', { draft: 'candidate', committed: true })
+      expect(failure.message).not.toMatch(/未改动|恢复稿/u)
+      expect(failure.code).toBe('GENERATION_STORAGE_FAILED')
+    })
+
+    it('已部分提交：原样报出已保存的章节，不改写', async () => {
+      const projectA = project('C:\\novels\\903-partial')
+      const projectSession = { projectId: projectA.id, leaseId: projectA.sessionLease!, projectPath: projectA.path }
+      useProjectStore.setState({ currentProject: projectA })
+      stubIpcInvoke(null)
+      const directoryCommand = await import('../commands/directory.command')
+      const partial = new directoryCommand.DirectoryPartialCommitError({ startChapter: 13, endChapter: 14 } as never, { startChapter: 15, endChapter: 16 },
+        {} as never, { code: 'DIRECTORY_PARTIAL_COMMIT' }, '已保存第 13–14 章完整蓝图；第 15–16 章未完成。原运行的候选与失败原因已保留。')
+      vi.spyOn(directoryCommand.GenerateDirectoryCommand.prototype, 'execute').mockRejectedValue(partial)
+      const workflow = createDirectoryWorkflow({ mode: 'full' }, projectA.path, projectSession, 'zh-CN')
+      await expect(workflow.steps[1].executor(workflowStep('生成蓝图'), { runId: '903-partial', projectPath: projectA.path, projectSession, writingLanguage: 'zh-CN',
+        uiLocale: 'zh-CN', interfaceLocale: shown('zh-CN'), data: {}, cancelled: false }, { log: vi.fn(), setProgress: vi.fn(), appendText: vi.fn() }))
+        .rejects.toBe(partial)
+    })
   })
 
   it('蓝图已提交后作者取消：运行记已取消，已取消的那一步写明蓝图已保存、角色同步可能未完成', async () => {
