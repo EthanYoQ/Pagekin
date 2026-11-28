@@ -167,6 +167,7 @@ export const zhCN = {
   'error.generationFinalizedSourceNotCurrent': '这次依据的前章定稿已被替换，结果没有保存。请重新开始写这一章。',
   'error.generationDraftIncomplete': '模型输出没有正常写完或不够目标字数，正文没有保存。请重试。',
   'error.sourceDraftChanged': '原稿在 AI 处理期间被改动，结果没有保存。请重新打开当前稿后再试。',
+  'error.generationConfigSavedAfterSwitch': 'AI 生成的小说配置已保存。保存时作品被切换了，请重新打开该作品查看。',
   'error.generationSavedWithNewerAuthorDraft': '生成结果已保存，但你在生成期间又改了设定，那些改动作为未保存的草稿留着。请检查后再保存。',
   'error.generationPlotOutlineAuthorSaved': '你已手动保存过这份情节大纲，之前的生成不能再接着写。需要时请重新生成大纲。',
   'error.generationCancelled': '生成已取消。',

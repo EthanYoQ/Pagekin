@@ -165,6 +165,7 @@ export const enUS = {
   'error.generationFinalizedSourceNotCurrent': 'A finalized earlier chapter this request relied on was replaced, so the result was not saved. Start writing this chapter again.',
   'error.generationDraftIncomplete': 'The model output did not finish or fell short of the target length, so the prose was not saved. Try again.',
   'error.sourceDraftChanged': 'The source draft changed while AI was working on it, so the result was not saved. Reopen the current draft and try again.',
+  'error.generationConfigSavedAfterSwitch': 'The AI-generated novel configuration was saved. The work was switched while saving; reopen it to see the result.',
   'error.generationSavedWithNewerAuthorDraft': 'The generated result was saved, but you edited the settings while it ran. Those edits are kept as an unsaved draft. Review them, then save.',
   'error.generationPlotOutlineAuthorSaved': 'You saved this plot outline by hand, so the earlier generation cannot continue it. Generate a new outline if you need one.',
   'error.generationCancelled': 'Generation was cancelled.',

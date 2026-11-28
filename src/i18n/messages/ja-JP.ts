@@ -167,6 +167,7 @@ export const jaJP = {
   'error.generationFinalizedSourceNotCurrent': 'このリクエストが参照していた定稿済みの前の章が置き換えられたため、結果は保存されませんでした。この章の執筆をやり直してください。',
   'error.generationDraftIncomplete': 'モデルの出力が終わらなかったか、目標の長さに届かなかったため、本文は保存されませんでした。もう一度お試しください。',
   'error.sourceDraftChanged': 'AI が作業している間に元の草稿が変更されたため、結果は保存されませんでした。現在の草稿を開き直してから、もう一度お試しください。',
+  'error.generationConfigSavedAfterSwitch': 'AIが生成した小説設定は保存されました。保存中に作品が切り替わったため、作品を開き直して確認してください。',
   'error.generationSavedWithNewerAuthorDraft': '生成結果は保存されましたが、実行中に設定が編集されました。その編集は未保存の下書きとして残っています。確認してから保存してください。',
   'error.generationPlotOutlineAuthorSaved': 'このプロットのアウトラインは手動で保存されたため、以前の生成では続きを作れません。必要であれば、新しいアウトラインを生成してください。',
   'error.generationCancelled': '生成はキャンセルされました。',

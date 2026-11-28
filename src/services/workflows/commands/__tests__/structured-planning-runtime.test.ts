@@ -278,7 +278,7 @@ it.each([false, true])('synopsis restart uses only acknowledged composition (ava
     await expect(operation).resolves.toBe(composeVisibleContinuation(durableCandidate, addition))
     expect(formalWrites).toHaveLength(1)
   } else {
-    await expect(operation).rejects.toThrow('中断检查点内容过短')
+    await expect(operation).rejects.toThrow('上次中断时保存的内容太短')
     expect(f.invoke.mock.calls.filter(([channel]) => channel === 'generation:execute')).toHaveLength(requestCount)
     expect(formalWrites).toEqual([])
   }
