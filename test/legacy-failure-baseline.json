@@ -197,9 +197,6 @@
   "electron/controllers/app-data-controller.ts": {
     "authorOwned": 3
   },
-  "electron/controllers/import-controller.ts": {
-    "knownAppErrorMessage": 1
-  },
   "electron/controllers/import-run-failure.ts": {
     "knownAppErrorMessage": 1
   },

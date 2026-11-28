@@ -15,10 +15,8 @@ import {
 import { ImportSourceIdentityRepository } from '../repositories/import-source-identity-repository'
 import { loadApplicationImportSourceSecret } from '../services/import-source-identity-secret'
 import { mainText } from '../i18n'
-import { importErrorLocale, importRunLocale } from './import-run-failure'
 import { readFailureNote } from './external-file-read-failure'
-import { knownAppErrorMessage, registeredErrorCode, wireNote } from '../../src/i18n/app-errors'
-import { translate } from '../../src/i18n/core'
+import { registeredErrorCode, wireNote } from '../../src/i18n/app-errors'
 import type { MessageKey } from '../../src/i18n/messages/en-US'
 import type { FailureCode, NoteParams, WireFailure } from '../../src/shared/failure'
 import {
@@ -34,7 +32,6 @@ import type {
   ImportNovelFileSelectionRequest,
   ImportPurpose,
   ImportRunChapterInput,
-  ImportRunLocale,
   ImportSourceFileIdentity,
 } from '../../src/shared/import-run'
 import type { ProjectSessionContext } from '../../src/shared/ipc-channels'
@@ -94,10 +91,6 @@ function text(zhCNText: string, enUSText: string): string {
   return mainText(app.getLocale(), zhCNText, enUSText)
 }
 
-function importText(locale: ImportRunLocale | undefined, zhCNText: string, enUSText: string): string {
-  return locale === 'en-US' ? enUSText : locale === 'zh-CN' ? zhCNText : text(zhCNText, enUSText)
-}
-
 // 解析所选文件的路径在安全文件层之前，系统拒绝时 Node 只给错误号。
 function selectedFileIdentity(fileIdentity: ImportFileIdentityProvider, filePath: string): ImportSourceFileIdentity {
   try {
@@ -137,18 +130,6 @@ function selectionCopy(error: unknown, limits: ImportResourceLimits): SelectionC
   if (readFailure) return readFailure
   if (code === 'IMPORT_CHAPTER_COUNT_EXCEEDED') return { key: 'error.importChapterCountExceeded', params: { max: limits.maxChapters } }
   return Object.hasOwn(FIXED_SELECTION_COPY, code) ? { key: FIXED_SELECTION_COPY[code] } : undefined
-}
-
-function importSelectionErrorMessage(
-  error: unknown,
-  locale: ImportRunLocale | undefined,
-  limits: ImportResourceLimits,
-): string {
-  const copy = selectionCopy(error, limits)
-  // 导入运行与检查里作者能照做的码（#474 B1），例如文件检查过期、待确认的导入太多、补选的文件不一致。
-  const known = copy ? undefined : knownAppErrorMessage(importErrorLocale(importRunLocale(undefined, locale)), error instanceof Error ? error.message : '')
-  const { key, params } = copy ?? { key: 'error.externalFileUnreadable' }
-  return known ?? importText(locale, translate('zh-CN', key, params), translate('en-US', key, params))
 }
 
 function importSelectionFailure(error: unknown, limits: ImportResourceLimits): WireFailure {
@@ -531,11 +512,9 @@ export function registerImportController(
               emptySourceFound = true
               if (parsingRun && opaqueSourceId) {
                 assertFrozenProject()
-                ImportRunRepository.failParsedSource(
-                  parsingRun.id,
-                  opaqueSourceId,
-                  importText(responseLocale, '所选来源文件为空', 'Selected source file is empty'),
-                )
+                ImportRunRepository.failParsedSource(parsingRun.id, opaqueSourceId, {
+                  code: 'IMPORT_SOURCE_SELECTION_FAILED', note: wireNote('error.importSelectionEmpty'),
+                })
               }
               continue
             }
@@ -558,15 +537,9 @@ export function registerImportController(
             titleOnlySourceFound = true
             if (parsingRun && opaqueSourceId) {
               assertFrozenProject()
-              ImportRunRepository.failParsedSource(
-                parsingRun.id,
-                opaqueSourceId,
-                importText(
-                  responseLocale,
-                  '所选来源文件只有章节标题，没有可导入的正文',
-                  'The selected source file contains chapter headings but no body text',
-                ),
-              )
+              ImportRunRepository.failParsedSource(parsingRun.id, opaqueSourceId, {
+                code: 'IMPORT_SOURCE_SELECTION_FAILED', note: wireNote('error.importSelectionTitleOnly'),
+              })
             }
             continue
           }
@@ -613,11 +586,7 @@ export function registerImportController(
           if (projectStillCurrent && parsingRun && opaqueSourceId
             && ImportRunRepository.parsedSourceStatus(parsingRun.id, opaqueSourceId) !== 'completed') {
             assertFrozenProject()
-            ImportRunRepository.failParsedSource(
-              parsingRun.id,
-              opaqueSourceId,
-              importSelectionErrorMessage(error, responseLocale, limits),
-            )
+            ImportRunRepository.failParsedSource(parsingRun.id, opaqueSourceId, importSelectionFailure(error, limits))
           }
           throw error
         } finally {

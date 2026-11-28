@@ -58,6 +58,8 @@ const UNEXPLAINED_FAILURE_KEYS = {
   NO_EVENT_SOURCES: 'error.unregisteredCode',
   SOURCE_LIMIT_EXCEEDED: 'error.unregisteredCode',
   SOURCE_INPUT_TOO_LARGE: 'error.unregisteredCode',
+  // 导入运行记下的失败没有可存的登记码时用它（#942），作者看到的是说不清原因那句。
+  IMPORT_RUN_FAILED: 'error.unregisteredCode',
 } as const
 
 /**
@@ -578,6 +580,7 @@ function readCode(error: unknown): KnownErrorCode | undefined {
 
 /** 主进程的 IPC 入口（electron/ipc/handle.ts）把没登记的失败换成这个码。 */
 export const IPC_HANDLER_FAILED = 'IPC_HANDLER_FAILED' satisfies KnownErrorCode
+const IMPORT_RUN_FAILED = 'IMPORT_RUN_FAILED' satisfies KnownErrorCode
 
 export const registeredErrorCode: (error: unknown) => string | undefined = readCode
 
@@ -866,6 +869,24 @@ export function publicWireFailure(value: unknown): WireFailure {
   const note = value.note === undefined ? undefined : wireNoteOf(value.note)
   if (note === value.note && Object.keys(value).every(field => field === 'code' || field === 'note')) return value as unknown as WireFailure
   return { code: value.code, ...(note ? { note } : {}) }
+}
+
+/** 导入运行存下的失败（#942）：只留登记码和目录键，显示时按当时的界面语言说明。没登记的码换成通用码；不是失败形状的返回 undefined。 */
+export function importFailureRecord(value: unknown): WireFailure | undefined {
+  if (!isRecord(value) || !failureCode(value.code)) return undefined
+  const note = wireNoteOf(value.note)
+  return { code: isKnownCode(value.code) ? value.code : IMPORT_RUN_FAILED, ...(note ? { note } : {}) }
+}
+
+/**
+ * 渲染端交给主进程存下的导入失败：句子不交，只交码和目录键。
+ * 外层常是只有中英两句的阶段说明（如「蓝图推演失败」），存不下，所以沿 because 取最外层的目录键说明。
+ */
+export function importFailureRecordOf(failure: Failure | undefined): WireFailure {
+  let keyed = failure
+  while (keyed && keyed.note?.key === undefined) keyed = keyed.because
+  const note = keyed?.note && { key: keyed.note.key, ...(keyed.note.params ? { params: keyed.note.params } : {}) }
+  return importFailureRecord({ code: (failure && codeOf(failure)) ?? IMPORT_RUN_FAILED, note }) ?? { code: IMPORT_RUN_FAILED }
 }
 
 /** 渲染端入口不信任过 IPC 的形状：码和目录键在这里再认一次。 */

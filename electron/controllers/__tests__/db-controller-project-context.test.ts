@@ -595,25 +595,23 @@ describe('database controller project context guard', () => {
     expect(mocks.importRunFinalizeParsing).not.toHaveBeenCalled()
   })
 
-  describe('import run failures shown in the import dialog and run card (#474)', () => {
-    it('stores a readable failure reason instead of the IPC wrapper or a bare code', async () => {
-      mocks.importRunGet.mockReturnValue({ locale: 'en-US' })
-      const execution = { owner: 'renderer', epoch: 1, expiresAt: 1 }
-      await handler('db:import-run-fail')(
-        {}, 'run', 'knowledge',
-        "Error invoking remote method 'db:import-run-effect-receipt-get': Error: IMPORT_RUN_EXECUTION_STALE",
-        execution, 'C:/projects/A',
-      )
-      expect(mocks.importRunFail).toHaveBeenLastCalledWith('run', 'knowledge', expect.not.stringMatching(/IPC|remote method|IMPORT_RUN_/), execution)
-      const reason = mocks.importRunFail.mock.lastCall?.[2] as string
-      expect(reason).toMatch(/^This import was taken over by another window/)
+  describe('导入运行的失败记录只存码与目录键（#942）', () => {
+    const execution = { owner: 'renderer', epoch: 1, expiresAt: 1 }
+    const fail = (failure: unknown) => handler('db:import-run-fail')({}, 'run', 'knowledge', failure, execution, 'C:/projects/A')
 
-      await handler('db:import-run-fail')(
-        {}, 'run', 'knowledge',
-        "Error invoking remote method 'kb:import-reference-text': Error: Chapter 3 could not be written.",
-        execution, 'C:/projects/A',
-      )
-      expect(mocks.importRunFail).toHaveBeenLastCalledWith('run', 'knowledge', 'Chapter 3 could not be written.', execution)
+    it('登记码与目录键原样存下', async () => {
+      const record = { code: 'IMPORT_RUN_FAILED', note: { key: 'error.importReferenceChapterNotWritten', params: { number: 3 } } }
+      await fail(record)
+      expect(mocks.importRunFail).toHaveBeenLastCalledWith('run', 'knowledge', record, execution)
+    })
+
+    it.each([
+      ['没登记的码', { code: 'PRIVATE_DIAGNOSTIC_CODE' }, { code: 'IMPORT_RUN_FAILED' }],
+      ['目录里没有的键', { code: 'IMPORT_INSPECTION_LIMIT', note: { key: 'Chapter 3 could not be written.' } }, { code: 'IMPORT_INSPECTION_LIMIT' }],
+      ['旧渲染端交来的句子', "Error invoking remote method 'kb:import-reference-text': Error: Chapter 3 could not be written.", { code: 'IMPORT_RUN_FAILED' }],
+    ])('%s不进记录', async (_case, failure, stored) => {
+      await fail(failure)
+      expect(mocks.importRunFail).toHaveBeenLastCalledWith('run', 'knowledge', stored, execution)
     })
   })
 

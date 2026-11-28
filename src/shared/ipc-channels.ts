@@ -16,7 +16,7 @@ import type { CloudBackupChannels } from './cloud-backup'
 import type { ProjectOverview } from './project-overview'
 import type { ModelStage, StageModelIds } from './model-stage-routing'
 import type { KnowledgeSearchHit } from './knowledge-ranking'
-import type { Failure } from './failure'
+import type { Failure, WireFailure } from './failure'
 import type { InterfaceLocale } from '../i18n/types'
 import type { StartupChannels } from './startup-contract'
 import type {
@@ -932,7 +932,7 @@ export interface DatabaseChannels {
     return: { success: boolean; run?: ImportRunSnapshot; failure?: Failure }
   }
   'db:import-run-fail': {
-    args: [runId: string, stage: ImportRunStage, errorMessage: string, execution: ImportRunExecutionLease, expectedProjectPath: string]
+    args: [runId: string, stage: ImportRunStage, failure: WireFailure, execution: ImportRunExecutionLease, expectedProjectPath: string]
     return: { success: boolean; run?: ImportRunSnapshot; failure?: Failure }
   }
   'db:import-run-complete': { args: [runId: string, execution: ImportRunExecutionLease, expectedProjectPath: string]; return: { success: boolean; run?: ImportRunSnapshot; failure?: Failure } }

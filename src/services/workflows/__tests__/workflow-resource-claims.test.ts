@@ -72,7 +72,6 @@ function createImportRun(purpose: ImportPurpose, totalChapters = 1): ImportRunSn
     stage: purpose === 'author-manuscript' ? 'author-commit' : 'knowledge',
     status: 'running',
     completedBatches: {},
-    lastError: '',
     resumable: true,
     cancelRequested: false,
     totalChapters,

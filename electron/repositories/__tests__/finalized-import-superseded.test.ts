@@ -84,7 +84,7 @@ describe('作者原稿导入与被替换的定稿', () => {
     }, execution)
     ImportRunRepository.commitEffectReceipt(runId, 'author-commit', 'done', execution)
     ImportRunRepository.advanceStage(runId, 'author-commit', 'author-publish', execution)
-    ImportRunRepository.fail(runId, 'author-publish', 'publication unavailable', execution)
+    ImportRunRepository.fail(runId, 'author-publish', { code: 'IMPORT_RUN_FAILED' }, execution)
 
     replaceChapter(1, '第一章：作者回退后重新定稿。')
 

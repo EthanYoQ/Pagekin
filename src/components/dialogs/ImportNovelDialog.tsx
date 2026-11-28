@@ -26,7 +26,7 @@ import { Input } from '../ui/Input'
 import { Label } from '../ui/Label'
 import { Check } from '../ui/Check'
 import { currentInterfaceLocale, useLocaleStore } from '../../stores/locale-store'
-import { authorError, caughtFailure, displayedErrorMessage, failureText, resultFailure } from '../../i18n/app-errors'
+import { authorError, caughtFailure, displayedErrorMessage, failureText, resultFailure, wireFailure } from '../../i18n/app-errors'
 import { errorLocaleForRun } from '../../i18n/core'
 import type { Locale } from '../../i18n/types'
 import { note } from '../../shared/failure'
@@ -97,8 +97,8 @@ export default function ImportNovelDialog({ open, onClose }: ImportNovelDialogPr
   const resumableRun = resumableRuns.find(run => run.id === selectedResumableRunId)
     ?? resumableRuns[0]
     ?? null
-  // last_error 不可信（可能是报错原文，取消的运行也会残留旧原因），只按状态显示通用说明。
-  const resumableFailure = resumableRun?.status === 'failed' ? failureText(currentInterfaceLocale(), undefined) : ''
+  // 取消的运行也会残留上次的原因，只在失败时显示。存下的是码与目录键（#942），按当前界面语言说明；旧记录没有原因，显示通用说明。
+  const resumableFailure = resumableRun?.status === 'failed' ? failureText(currentInterfaceLocale(), wireFailure(resumableRun.lastFailure)) : ''
   const resumableRunIsActive = resumableRun
     ? activeWorkflows.some(workflow => workflow.id === resumableRun.id)
     : false

@@ -23,7 +23,7 @@ function snapshotFor(locale: Locale): ImportRunSnapshot {
     id: 'import-run-1', purpose: 'reference', rootRunId: 'import-run-1', effectNamespace: 'import:reference:import-run-1',
     sourceDisplay: [{ displayName: 'reference.txt', mediaType: 'text/plain', size: 20 }],
     locale, stage: 'knowledge', status: 'running', completedBatches: {},
-    lastError: '', resumable: true, cancelRequested: false, totalChapters: 2,
+    resumable: true, cancelRequested: false, totalChapters: 2,
     totalContentSize: 20, manifestChapterCount: 2, manifestContentSize: 20,
     manifestWordCount: 20, completedChapters: 0,
     createdAt: '2026-01-01', updatedAt: '2026-01-01',

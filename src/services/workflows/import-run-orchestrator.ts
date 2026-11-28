@@ -20,10 +20,11 @@ import {
 } from '../../shared/import-run'
 import type { StepCallbacks } from '../../stores/workflow-store'
 import type { FinalizedDraftImportDraftReceipt, FinalizedDraftImportReceipt } from '../../shared/finalized-draft-import'
-import { authorError, errorCodeOf, importStopFailure } from '../../i18n/app-errors'
+import { authorError, catalogNote, errorCodeOf, importFailureRecordOf, importStopFailure, reasonOf } from '../../i18n/app-errors'
 import { localize } from '../../i18n/core'
+import type { MessageKey } from '../../i18n/messages/en-US'
 import type { ErrorDisplayLocale } from '../../i18n/types'
-import { note, type AuthorError, type Literal, type NoteParams } from '../../shared/failure'
+import { note, type AuthorError, type NoteParams, type WireFailure } from '../../shared/failure'
 import { isWorkflowCancellation, WorkflowCancelledError } from './workflow-cancellation'
 
 export const IMPORT_CHAPTER_PAGE_SIZE = 100
@@ -130,7 +131,7 @@ export interface ImportRunOrchestratorDependencies {
     nextStage: ImportRunStage,
     execution: ImportRunExecutionLease,
   ) => Promise<ImportRunSnapshot>
-  fail: (runId: string, stage: ImportRunStage, error: string, execution: ImportRunExecutionLease) => Promise<ImportRunSnapshot>
+  fail: (runId: string, stage: ImportRunStage, failure: WireFailure, execution: ImportRunExecutionLease) => Promise<ImportRunSnapshot>
   cancelAtBoundary: (runId: string, execution: ImportRunExecutionLease) => Promise<ImportRunSnapshot>
   complete: (runId: string, execution: ImportRunExecutionLease) => Promise<ImportRunSnapshot>
 }
@@ -164,19 +165,12 @@ function stopIfCancelled(context: ImportRunExecutionContext, locale: ImportRunLo
   }
 }
 
-const RECORD_NEXT_ZH = '请在导入对话框里继续这次导入；如果仍然出现，请重新导入并把这段说明反馈给我们。'
-const RECORD_NEXT_EN = ' Resume the import from the import dialog; if this keeps happening, start the import again and send us this message.'
+/** 收据或检查点与持久化记录对不上的目录键：每句都接上继续或重新导入的办法。 */
+export type ImportRecordKey = Extract<MessageKey, `error.importRecord${string}`>
 
 /** 收据或检查点与持久化记录对不上：作者无法自行修复，只能继续或重新导入。 */
-export function importRecordError<const Z extends string, const E extends string>(
-  locale: ErrorDisplayLocale,
-  zh: Literal<Z>,
-  en: Literal<E>,
-  params?: NoteParams,
-): AuthorError {
-  // 字面量拼接常量仍是字面量，但 Literal 对泛型模板类型推不出来，这里只能断言。
-  const full = note(`${zh}${RECORD_NEXT_ZH}` as Literal<`${Z}${typeof RECORD_NEXT_ZH}`>, `${en}${RECORD_NEXT_EN}` as Literal<`${E}${typeof RECORD_NEXT_EN}`>, params)
-  return authorError(locale, { note: full })
+export function importRecordError(locale: ErrorDisplayLocale, key: ImportRecordKey, params?: NoteParams): AuthorError {
+  return authorError(locale, { note: catalogNote(key, params) })
 }
 
 function splitContiguousBatches(
@@ -342,7 +336,7 @@ export class ImportRunOrchestrator {
         }
         stopIfCancelled(context, run.locale)
       } else {
-        // 生成开始或发送前就被预算、阻断拒绝时报错只有裸码，在这里换成导入的说明，存进运行并抛出同一句；码只进诊断日志。
+        // 生成开始或发送前就被预算、阻断拒绝时报错只有裸码，在这里换成导入的说明，存进运行并抛出；码只进诊断日志。
         // 只改写生成阶段（global、style、blueprints）：非生成阶段抛出的码保留原报错。
         const code = IMPORT_GENERATION_STAGES.has(requestedStage) ? errorCodeOf(error instanceof Error ? error.message : error) : undefined
         const stopped = code ? importStopFailure(code, false, run.purpose) : undefined
@@ -350,12 +344,7 @@ export class ImportRunOrchestrator {
         const failure = stopped ? authorError(this.dependencies.interfaceLocale, stopped) : error
         try {
           execution.current = await this.dependencies.renewExecution(runId, execution.current)
-          await this.dependencies.fail(
-            runId,
-            requestedStage,
-            failure instanceof Error ? failure.message : String(failure),
-            execution.current,
-          )
+          await this.dependencies.fail(runId, requestedStage, importFailureRecordOf(reasonOf(failure)), execution.current)
         } catch (leaseError) {
           execution.lost = leaseError
           throw failure
@@ -469,8 +458,7 @@ export class ImportRunOrchestrator {
     if (!committedReceipt || committedReceipt.state !== 'committed') {
       throw importRecordError(
         this.dependencies.interfaceLocale,
-        '这一步生成的结果没有保存下来。',
-        'The result generated in this step was not saved.',
+        'error.importRecordStepUnsaved',
       )
     }
     return { run, execution: execution.current }
@@ -486,8 +474,7 @@ export class ImportRunOrchestrator {
     if (!existing) {
       throw importRecordError(
         this.dependencies.interfaceLocale,
-        '已完成的导入批次缺少保存记录，无法按原结果恢复。',
-        'A completed import batch is missing its saved record, so its result cannot be restored.',
+        'error.importRecordBatchMissing',
       )
     }
     execution.current = await this.dependencies.renewExecution(run.id, execution.current)
@@ -647,8 +634,7 @@ export class ImportRunOrchestrator {
     if (!receipt) {
       throw importRecordError(
         this.dependencies.interfaceLocale,
-        '读不到已保存的作者原稿记录。',
-        'The saved author-manuscript record could not be read.',
+        'error.importRecordAuthorUnreadable',
       )
     }
     const draftsByChapter = new Map(receipt.drafts.map(draft => [draft.chapterNumber, draft]))
@@ -664,8 +650,7 @@ export class ImportRunOrchestrator {
           if (!draft) {
             throw importRecordError(
               this.dependencies.interfaceLocale,
-              '已保存的作者原稿记录里缺少第 {number} 章。',
-              'The saved author-manuscript record is missing Chapter {number}.', { number: chapter.number },
+              'error.importRecordAuthorChapterMissing', { number: chapter.number },
             )
           }
           execution.current = await this.dependencies.renewExecution(run.id, execution.current)

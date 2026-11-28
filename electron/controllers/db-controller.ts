@@ -1,5 +1,5 @@
 import type { IpcMainInvokeEvent } from 'electron'
-import { IPC_HANDLER_FAILED, registeredErrorCode, wireNote } from '../../src/i18n/app-errors'
+import { IPC_HANDLER_FAILED, importFailureRecord, registeredErrorCode, wireNote } from '../../src/i18n/app-errors'
 import { failureCode, type WireFailure } from '../../src/shared/failure'
 import { isProjectSessionContext } from '../../src/shared/project-session-context'
 import { handle } from '../ipc/handle'
@@ -42,7 +42,7 @@ import type { FinalizedDraftImportRequest } from '../../src/shared/finalized-dra
 import { ImportGlobalFactsRepository } from '../repositories/import-global-facts-repository'
 import type { ImportGlobalFactsRequest } from '../../src/shared/import-global-facts'
 import { ImportRunRepository } from '../repositories/import-run-repository'
-import { importRunLocale, persistedImportRunFailure } from './import-run-failure'
+import { importRunFailureOf } from './import-run-failure'
 import type {
   ImportRunExecutionLease,
   ImportRunPrepareEffectReceiptRequest,
@@ -347,11 +347,7 @@ export function registerDatabaseController() {
       try {
         ImportRunRepository.commitParsedSource(parsingRun.id, sourceId, chapters)
       } catch (error) {
-        ImportRunRepository.failParsedSource(
-          parsingRun.id,
-          sourceId,
-          persistedImportRunFailure(error instanceof Error ? error.message : String(error), request.locale),
-        )
+        ImportRunRepository.failParsedSource(parsingRun.id, sourceId, importRunFailureOf(error))
         throw error
       }
     }
@@ -519,15 +515,13 @@ export function registerDatabaseController() {
     _event,
     runId: string,
     stage: ImportRunStage,
-    errorMessage: string,
+    failure: unknown,
     execution: ImportRunExecutionLease,
     expectedProjectPath: string,
   ) => {
     assertRequiredExpectedProjectPath(getCurrentProjectPath(), expectedProjectPath)
-    const reason = typeof errorMessage === 'string'
-      ? persistedImportRunFailure(errorMessage, () => importRunLocale(runId))
-      : errorMessage
-    return { success: true, run: ImportRunRepository.fail(runId, stage, reason, execution) }
+    const record = importFailureRecord(failure) ?? { code: 'IMPORT_RUN_FAILED' }
+    return { success: true, run: ImportRunRepository.fail(runId, stage, record, execution) }
   })
 
   importRuns.handle('db:import-run-complete', async (

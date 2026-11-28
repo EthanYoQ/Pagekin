@@ -1,4 +1,4 @@
-import type { Failure } from './failure'
+import type { Failure, WireFailure } from './failure'
 export type ImportRunLocale = 'zh-CN' | 'en-US'
 export type ImportPurpose = 'reference' | 'author-manuscript'
 export type ImportCoreWriteMode = 'replace' | 'fill-empty'
@@ -306,7 +306,8 @@ export interface ImportRunSnapshot {
   stage: ImportRunStage
   status: ImportRunStatus
   completedBatches: Partial<Record<ImportRunStage, string[]>>
-  lastError: string
+  /** 上次失败的码与目录键（#942）。没有失败、旧记录存的是句子时都没有这一项。 */
+  lastFailure?: WireFailure
   resumable: boolean
   cancelRequested: boolean
   totalChapters: number

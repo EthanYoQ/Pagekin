@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { MainGenerationRunHandle } from '../../src/services/generation/generation-runtime'
 import { countDraftUnits } from '../../src/shared/draft-units'
+import { failureCode, type WireFailure, type WireNote } from '../../src/shared/failure'
 
 import {
   AUTHOR_IMPORT_PREVIEW_STALE,
@@ -239,6 +240,19 @@ function parseJson<T>(source: string, fallback: T): T {
   } catch {
     return fallback
   }
+}
+
+/** last_error 存失败的码与目录键（#942）。旧行存的是句子，读出来当作没有原因，句子不出主进程。 */
+function failureColumn(failure: WireFailure): string {
+  return JSON.stringify({ code: failure.code, ...(failure.note ? { note: failure.note } : {}) })
+}
+
+function storedFailure(column: string): WireFailure | undefined {
+  const value = parseJson<unknown>(column, undefined)
+  const code = isRecord(value) ? failureCode(value.code) : undefined
+  if (!isRecord(value) || !code) return undefined
+  const note = isRecord(value.note) && typeof value.note.key === 'string' ? value.note as unknown as WireNote : undefined
+  return { code, ...(note ? { note } : {}) }
 }
 
 function canonicalize(value: unknown): unknown {
@@ -714,6 +728,7 @@ function persistedProgress(row: ImportRunRow): {
 
 function rowToSnapshot(row: ImportRunRow): ImportRunSnapshot {
   const progress = persistedProgress(row)
+  const lastFailure = storedFailure(row.last_error)
   return {
     id: row.id,
     purpose: row.purpose,
@@ -730,7 +745,7 @@ function rowToSnapshot(row: ImportRunRow): ImportRunSnapshot {
     stage: row.stage,
     status: row.status,
     completedBatches: completedBatches(row),
-    lastError: row.last_error,
+    ...(lastFailure ? { lastFailure } : {}),
     resumable: row.resumable === 1,
     cancelRequested: row.cancel_requested === 1,
     totalChapters: row.total_chapters,
@@ -1386,9 +1401,6 @@ function fenceUncommittedAuthorRun(run: ImportRunRow, now = Date.now()): void {
   if (run.status === 'running' && run.execution_owner && run.lease_expires_at > now) {
     throw new Error('IMPORT_RUN_AUTHOR_PREVIOUS_RUNNING')
   }
-  const guidance = run.locale === 'en-US'
-    ? 'Author manuscript authority changed. Confirm the latest preview to create a new import run.'
-    : '作者原稿权威状态已变化，请根据最新预览重新确认导入'
   const fenced = db().prepare(`
     UPDATE import_runs
     SET resumable = 0, cancel_requested = 0, last_error = ?,
@@ -1402,7 +1414,7 @@ function fenceUncommittedAuthorRun(run: ImportRunRow, now = Date.now()): void {
         WHERE run_id = import_runs.id
           AND kind = 'author-finalized-batch' AND state = 'committed'
       )
-  `).run(guidance, run.id, now)
+  `).run(failureColumn({ code: 'IMPORT_RUN_AUTHOR_STATE_CHANGED' }), run.id, now)
   if (fenced.changes !== 1) {
     throw new Error('IMPORT_RUN_AUTHOR_STATE_CHANGED')
   }
@@ -1809,8 +1821,7 @@ export class ImportRunRepository {
     })()
   }
 
-  static failParsedSource(runId: string, sourceId: string, error: string): ImportRunSnapshot {
-    if (typeof error !== 'string' || !error.trim()) throw new Error('IMPORT_RUN_FAILURE_REASON_INVALID')
+  static failParsedSource(runId: string, sourceId: string, failure: WireFailure): ImportRunSnapshot {
     return db().transaction(() => {
       const run = readRunRow(runId)
       if (!run || run.stage !== 'parsing' || !['ready', 'failed'].includes(run.status)) {
@@ -1820,12 +1831,12 @@ export class ImportRunRepository {
         UPDATE import_run_sources
         SET status = 'failed', last_error = ?, updated_at = datetime('now')
         WHERE run_id = ? AND source_id = ? AND status <> 'completed'
-      `).run(error.slice(0, 2_000), runId, sourceId)
+      `).run(failureColumn(failure), runId, sourceId)
       if (changed.changes !== 1) throw new Error('IMPORT_RUN_PARSING_CLOSED')
       db().prepare(`
         UPDATE import_runs SET status = 'failed', last_error = ?, resumable = 1,
           updated_at = datetime('now') WHERE id = ?
-      `).run(error.slice(0, 2_000), runId)
+      `).run(failureColumn(failure), runId)
       return this.get(runId)!
     })()
   }
@@ -2585,7 +2596,7 @@ export class ImportRunRepository {
       if (readRunRow(normalizedNextId)) throw new Error('IMPORT_RUN_ID_CONFLICT')
       const fenced = db().prepare(`
         UPDATE import_runs
-        SET resumable = 0, cancel_requested = 0, last_error = 'Restarted by user',
+        SET resumable = 0, cancel_requested = 0,
             execution_owner = '', execution_epoch = execution_epoch + 1, lease_expires_at = 0,
             updated_at = datetime('now')
         WHERE id = ? AND execution_epoch = ?
@@ -2714,17 +2725,16 @@ export class ImportRunRepository {
     })()
   }
 
-  static fail(runId: string, stage: ImportRunStage, error: string, execution: ImportRunExecutionLease): ImportRunSnapshot {
+  static fail(runId: string, stage: ImportRunStage, failure: WireFailure, execution: ImportRunExecutionLease): ImportRunSnapshot {
     return db().transaction(() => {
       const row = assertExecution(runId, execution)
       if (row.status !== 'running' || row.stage !== stage) throw new Error('IMPORT_RUN_STAGE_MISMATCH')
-      if (typeof error !== 'string') throw new Error('IMPORT_RUN_FAILURE_REASON_INVALID')
       const result = db().prepare(`
         UPDATE import_runs
         SET status = 'failed', last_error = ?, resumable = 1,
             execution_owner = '', execution_epoch = execution_epoch + 1, lease_expires_at = 0,
             updated_at = datetime('now') WHERE id = ? AND stage = ? AND status = 'running'
-      `).run(error.slice(0, 2_000), runId, stage)
+      `).run(failureColumn(failure), runId, stage)
       if (result.changes === 0) throw new Error('IMPORT_RUN_STATE_CONFLICT')
       return this.get(runId)!
     })()
