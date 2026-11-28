@@ -276,7 +276,7 @@ function productionDependencies(
       context.data.importRunPurpose = run.purpose
       const { AnalyzeWritingStyleCommand } = await import('./commands/analyze-style.command')
       const style = await new AnalyzeWritingStyleCommand(
-        { chapters: chapters.map(importedChapter), fillEmpty: run.purpose === 'author-manuscript' },
+        { chapters: chapters.map(importedChapter), fillEmpty: run.coreWriteMode === 'fill-empty' },
         undefined,
         async (writingStyle, generationRunHandle) => {
           const saved = await commit({ writingStyle, ...(generationRunHandle ? { generationRunHandle } : {}) }) as { writingStyle: string }
@@ -469,23 +469,24 @@ export function createImportWorkflow(params: ImportWorkflowParams): WorkflowDefi
       if (!result.success) throw authorError(context.interfaceLocale, resultFailure(result) ?? { note: note('无法保存导入取消请求', 'Could not persist the import cancellation request.') })
     },
   }
+  const fillEmptyInferenceSteps = [
+    importStep(params.run, params.executionOwner, 'global',
+      ['反推设定、架构与角色', 'Infer settings, architecture, and characters'],
+      ['只补空白的设定与架构，已有内容不动；不同的反推结果留作建议，角色以提议保存', 'Fill only empty settings and architecture; differing results become suggestions and characters become proposals.']),
+    importStep(params.run, params.executionOwner, 'style',
+      ['反推文风', 'Infer writing style'],
+      ['文风为空才写入，已有文风留作建议', 'Write the style only when it is empty; otherwise keep it as a suggestion.']),
+    importStep(params.run, params.executionOwner, 'blueprints',
+      ['为没有蓝图的章反推蓝图', 'Infer blueprints for chapters without one'],
+      ['已有蓝图的章不调用模型、不改动', 'Chapters that already have a blueprint are left untouched.']),
+  ]
   if (params.run.purpose === 'author-manuscript') {
     const authorChapterNumbers = normalizeAuthorChapterNumbers(
       params.run,
       params.authorChapterNumbers,
     )
     const inference = params.run.authorInference === true
-    const inferenceSteps = inference ? [
-      importStep(params.run, params.executionOwner, 'global',
-        ['反推设定、架构与角色', 'Infer settings, architecture, and characters'],
-        ['只补空白的设定与架构，已有内容不动；不同的反推结果留作建议，角色以提议保存', 'Fill only empty settings and architecture; differing results become suggestions and characters become proposals.']),
-      importStep(params.run, params.executionOwner, 'style',
-        ['反推文风', 'Infer writing style'],
-        ['文风为空才写入，已有文风留作建议', 'Write the style only when it is empty; otherwise keep it as a suggestion.']),
-      importStep(params.run, params.executionOwner, 'blueprints',
-        ['为没有蓝图的章反推蓝图', 'Infer blueprints for chapters without one'],
-        ['已有蓝图的章不调用模型、不改动', 'Chapters that already have a blueprint are left untouched.']),
-    ] : []
+    const inferenceSteps = inference ? fillEmptyInferenceSteps : []
     return {
       runId: params.run.id,
       type: 'novel_import',
@@ -529,6 +530,7 @@ export function createImportWorkflow(params: ImportWorkflowParams): WorkflowDefi
       },
     }
   }
+  const replace = params.run.coreWriteMode === 'replace'
   return {
     runId: params.run.id,
     type: 'novel_import',
@@ -551,15 +553,17 @@ export function createImportWorkflow(params: ImportWorkflowParams): WorkflowDefi
       importStep(params.run, params.executionOwner, 'knowledge',
         ['导入参照文本与构建知识库', 'Import reference text and build the knowledge base'],
         [`按有界批次导入 ${count} 章参照文本，不写入草稿或正文`, `Import ${chapterCountEn} of reference text in bounded batches without creating drafts or manuscript text`]),
-      importStep(params.run, params.executionOwner, 'global',
-        ['AI 推演全局配置与架构', 'AI infers global configuration and architecture'],
-        ['从有界样本推演小说配置、故事架构与角色卡', 'Infer the novel configuration, architecture, and character cards from bounded samples.']),
-      importStep(params.run, params.executionOwner, 'style',
-        ['AI 拆解文风与仿写指南', 'AI analyzes writing style and imitation guidance'],
-        ['从有界样本提取文风与仿写约束', 'Extract a style profile and imitation guidance from bounded samples.']),
-      importStep(params.run, params.executionOwner, 'blueprints',
-        ['AI 分批推演章节蓝图', 'AI infers chapter blueprints in batches'],
-        [`以最多 5 章一批生成 ${count} 章蓝图`, `Infer ${chapterCountEn} of blueprints in batches of at most five.`]),
+      ...(replace ? [
+        importStep(params.run, params.executionOwner, 'global',
+          ['AI 推演全局配置与架构', 'AI infers global configuration and architecture'],
+          ['从有界样本推演小说配置、故事架构与角色卡', 'Infer the novel configuration, architecture, and character cards from bounded samples.']),
+        importStep(params.run, params.executionOwner, 'style',
+          ['AI 拆解文风与仿写指南', 'AI analyzes writing style and imitation guidance'],
+          ['从有界样本提取文风与仿写约束', 'Extract a style profile and imitation guidance from bounded samples.']),
+        importStep(params.run, params.executionOwner, 'blueprints',
+          ['AI 分批推演章节蓝图', 'AI infers chapter blueprints in batches'],
+          [`以最多 5 章一批生成 ${count} 章蓝图`, `Infer ${chapterCountEn} of blueprints in batches of at most five.`]),
+      ] : fillEmptyInferenceSteps),
       importStep(params.run, params.executionOwner, 'refresh',
         ['刷新项目状态', 'Refresh project state'],
         ['刷新项目树、角色卡与蓝图', 'Refresh the project tree, character cards, and blueprints.']),
@@ -568,7 +572,7 @@ export function createImportWorkflow(params: ImportWorkflowParams): WorkflowDefi
       mode: 'silent',
       message: textForLocale(
         params.run.locale,
-        '小说拆解与仿写准备完成，全部结构化数据已生成，可以开始续写。',
+        replace ? '小说拆解与仿写准备完成，全部结构化数据已生成，可以开始续写。' : '小说拆解与仿写准备完成，可以开始续写。',
         'Novel analysis and style study is ready. You can start writing.',
       ),
     },

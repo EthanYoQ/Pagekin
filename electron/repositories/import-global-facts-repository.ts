@@ -2,10 +2,10 @@ import { createHash } from 'node:crypto'
 
 import type {
   ImportGlobalFactsCore,
-  ImportGlobalFactsMode,
   ImportGlobalFactsReceipt,
   ImportGlobalFactsRequest,
 } from '../../src/shared/import-global-facts'
+import type { ImportCoreWriteMode } from '../../src/shared/import-run'
 import { IMPORT_FILL_FIELDS, planImportFill } from '../../src/shared/import-fill-empty'
 import { getProjectDb, getCurrentProjectPath } from '../database'
 import { CharacterRosterRepository } from './character-roster-repository'
@@ -158,7 +158,7 @@ export class ImportGlobalFactsRepository {
     return stored
   }
 
-  static commit(candidate: ImportGlobalFactsRequest, mode: ImportGlobalFactsMode = 'replace'): ImportGlobalFactsReceipt {
+  static commit(candidate: ImportGlobalFactsRequest, mode: ImportCoreWriteMode = 'replace'): ImportGlobalFactsReceipt {
     const db = getProjectDb()
     if (!db) throw new Error('PROJECT_NOT_OPEN')
     ensureLedger()

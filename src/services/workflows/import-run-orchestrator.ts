@@ -115,7 +115,7 @@ export interface ImportRunOrchestratorDependencies {
     draft: FinalizedDraftImportDraftReceipt,
     run: ImportRunSnapshot,
   ) => Promise<void>
-  /** 作者原稿蓝图补空：当前已有蓝图的章号。 */
+  /** 蓝图只补空白时：当前已有蓝图的章号。 */
   listBlueprintChapterNumbers?: () => Promise<ReadonlySet<number>>
   isAuthorDraftReplaced: (draft: FinalizedDraftImportDraftReceipt) => Promise<boolean>
   refresh: (run: ImportRunSnapshot) => Promise<void>
@@ -147,9 +147,9 @@ function nextStage(run: ImportStagePlanRun, stage: ImportRunStage): ImportRunSta
   return importStagesFor(run)[stageIndex(run, stage) + 1]!
 }
 
-function requiredAuthorDependency<T>(value: T | undefined, name: string): T {
-  // i18n-exempt: 生产依赖（import-workflow.ts 的 productionDependencies）总会提供作者原稿的四个依赖，缺了是接线错误
-  if (!value) throw new Error(`Author-manuscript import dependency is unavailable: ${name}.`)
+function requiredDependency<T>(value: T | undefined, name: string): T {
+  // i18n-exempt: 生产依赖（import-workflow.ts 的 productionDependencies）总会提供这些可选依赖，缺了是接线错误
+  if (!value) throw new Error(`Import dependency is unavailable: ${name}.`)
   return value
 }
 
@@ -542,10 +542,10 @@ export class ImportRunOrchestrator {
     await this.dependencies.advanceStage(run.id, 'style', nextStage(run, 'style'), execution.current)
   }
 
-  /** 作者原稿只为还没有蓝图的章反推；参考小说每章都反推。 */
+  /** 只补空白的运行只为还没有蓝图的章反推；整体写入的运行每章都反推。 */
   private async blueprintChapterFilter(run: ImportRunSnapshot): Promise<(chapter: ImportRunChapterSnapshot) => boolean> {
-    if (run.purpose === 'reference') return () => true
-    const existing = await requiredAuthorDependency(
+    if (run.coreWriteMode === 'replace') return () => true
+    const existing = await requiredDependency(
       this.dependencies.listBlueprintChapterNumbers,
       'listBlueprintChapterNumbers',
     )()
@@ -611,7 +611,7 @@ export class ImportRunOrchestrator {
     let run = initialRun
     if (!run.completedBatches['author-commit']?.includes('done')) {
       stopIfCancelled(context, run.locale)
-      const commitAuthorManuscript = requiredAuthorDependency(
+      const commitAuthorManuscript = requiredDependency(
         this.dependencies.commitAuthorManuscript,
         'commitAuthorManuscript',
       )
@@ -642,13 +642,13 @@ export class ImportRunOrchestrator {
     stage: 'author-publish' | 'author-postprocess',
   ): Promise<void> {
     let run = initialRun
-    const getReceipt = requiredAuthorDependency(
+    const getReceipt = requiredDependency(
       this.dependencies.getAuthorCommitReceipt,
       'getAuthorCommitReceipt',
     )
     const projectChapter = stage === 'author-publish'
-      ? requiredAuthorDependency(this.dependencies.publishAuthorChapter, 'publishAuthorChapter')
-      : requiredAuthorDependency(this.dependencies.postprocessAuthorChapter, 'postprocessAuthorChapter')
+      ? requiredDependency(this.dependencies.publishAuthorChapter, 'publishAuthorChapter')
+      : requiredDependency(this.dependencies.postprocessAuthorChapter, 'postprocessAuthorChapter')
     const receipt = await getReceipt(run.id)
     if (!receipt) {
       throw importRecordError(

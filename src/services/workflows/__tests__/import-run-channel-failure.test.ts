@@ -20,6 +20,7 @@ const execution = { owner: 'test-import-executor', epoch: 1, expiresAt: Number.M
 function snapshotFor(locale: Locale, stage: ImportRunSnapshot['stage']): ImportRunSnapshot {
   return {
     id: 'import-run-1', purpose: 'reference', rootRunId: 'import-run-1', effectNamespace: 'import:reference:import-run-1',
+    coreWriteMode: 'replace',
     sourceDisplay: [{ displayName: 'reference.txt', mediaType: 'text/plain', size: 20 }],
     locale, stage, status: 'running', completedBatches: {},
     lastError: '', resumable: true, cancelRequested: false, totalChapters: 1,
