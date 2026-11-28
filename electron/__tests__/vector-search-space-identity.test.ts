@@ -8,7 +8,6 @@ import { removeDirectoryWithWindowsRetry } from '../utils/remove-directory'
 const modelA = { modelFingerprint: 'openai|https://a.example|emb-a', distanceMetric: 'l2' }
 const storedVector = Array.from({ length: 8 }, (_, i) => i / 8)
 const queryVector = Array.from({ length: 8 }, (_, i) => (8 - i) / 8)
-// 查询词与正文没有全文交集：命中只可能来自向量检索。
 const NO_TEXT_MATCH = 'zzzz'
 
 describe('向量检索必须带空间身份', () => {
@@ -33,7 +32,7 @@ describe('向量检索必须带空间身份', () => {
     expect(await addChunks(project, 'doc-a', 'a.txt', ['红帆船靠岸'], [storedVector], undefined, undefined, modelA))
       .toEqual({ success: true, chunkCount: 1 })
 
-    // @ts-expect-error 查询向量缺空间身份，类型上写不出来。
+    // @ts-expect-error
     await expect(search(project, NO_TEXT_MATCH, { queryVector }, 5)).resolves.toEqual([])
   })
 
@@ -42,7 +41,7 @@ describe('向量检索必须带空间身份', () => {
     expect(await addChunks(project, 'doc-a', 'a.txt', ['红帆船靠岸'], [storedVector]))
       .toEqual({ success: true, chunkCount: 1 })
 
-    // @ts-expect-error 查询向量缺空间身份，类型上写不出来。
+    // @ts-expect-error
     await expect(search(project, NO_TEXT_MATCH, { queryVector }, 5)).resolves.toEqual([])
   })
 
