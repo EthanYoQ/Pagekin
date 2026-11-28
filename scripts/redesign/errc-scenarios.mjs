@@ -41,7 +41,7 @@ export const ERRC_SCENARIOS = {
     await settle(page)
     await shoot('errc-blueprint-generation-failure-en')
     assert.equal(observed.lang, 'en-US')
-    assert.equal(observed.stepNotice, 'Chapter-blueprint generation failed. Please try again.')
+    assert.equal(observed.stepNotice, 'Your existing blueprints are unchanged, and the generated text is in the recovery draft. Generation failed. Click Edit recovery draft, or generate again.')
     assert.doesNotMatch(observed.sheet, /code=|reason=|finishReason|[A-Z]+_[A-Z_]+/u, '运行侧页不带 code=、reason= 和裸码')
     return observed
   } },
