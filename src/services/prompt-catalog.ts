@@ -10,7 +10,6 @@ import type { PromptTemplate } from './prompt-templates'
 import { resolveWritingLanguage, type WritingLanguage } from '../shared/writing-language'
 
 const PROMPT_FILE_UNREADABLE = 'PROMPT_FILE_UNREADABLE'
-/** 读取层自己拒绝的（会话已换、读不出）照它的说明；其余是文件内容坏了，说明写出文件名和处理办法。 */
 const diagnosticsFailure = (diagnostics: readonly PromptLoadDiagnostic[]): Failure => {
   const rejected = diagnostics.find(item => item.failure)?.failure
   if (rejected) return rejected

@@ -295,7 +295,7 @@ const ERROR_KEYS = {
   GENERATION_REVIEW_REVISION_EMPTY: 'error.generationRevisionUnchanged',
   GENERATION_REVIEW_REVISION_NOOP: 'error.generationRevisionUnchanged',
   GENERATION_SKILL_MISSING: 'error.generationSkillUnavailable',
-  // 生成准入读到改坏的自定义提示词（外部改坏或键名与文件名对不上）；抛出过 IPC 只带码，说不出文件名。
+  // 抛出过 IPC 只带码，说不出是哪个文件，所以说明只指到「提示词模板」页。
   GENERATION_PROMPT_INVALID: 'error.generationPromptInvalid',
   GENERATION_SKILL_INCOMPATIBLE: 'error.generationSkillUnavailable',
   GENERATION_SKILL_BUNDLE_DAMAGED: 'error.generationSkillBundleDamaged',
