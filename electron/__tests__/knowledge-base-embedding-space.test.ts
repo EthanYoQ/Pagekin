@@ -292,7 +292,7 @@ describe('知识库嵌入空间回填', () => {
       spaces: [expect.objectContaining({ ...identity, vectorDimension: 1536, status: 'active' })],
     })
     expect(await (await db.openTable('chunks')).version()).toBe(canonicalVersionBefore)
-    await expect(search(projectPath, '待回填', vector, 5, identity)).resolves.toEqual([
+    await expect(search(projectPath, '待回填', { queryVector: vector, embeddingSpace: identity }, 5)).resolves.toEqual([
       expect.objectContaining({ fileName: 'fts.txt', text: '待回填的全文正文' }),
     ])
   })
@@ -339,7 +339,7 @@ describe('知识库嵌入空间回填', () => {
     expect(retired).toMatchObject({ vectorDimension: 768, status: 'inactive' })
     expect(await (await db.openTable(oldSpace!.tableName)).countRows()).toBe(oldCount)
     expect(await (await db.openTable(active!.tableName)).countRows()).toBe(2)
-    await expect(search(projectPath, '第一段旧正文', vector1536, 5, identity)).resolves.toEqual(expect.arrayContaining([
+    await expect(search(projectPath, '第一段旧正文', { queryVector: vector1536, embeddingSpace: identity }, 5)).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({ fileName: 'old.txt', text: '第一段旧正文' }),
     ]))
   })
@@ -381,7 +381,7 @@ describe('知识库嵌入空间回填', () => {
 
     expect(await getEmbeddingSpaces(projectPath)).toEqual(beforeRegistry)
     expect(await db.tableNames()).toEqual(beforeTables)
-    await expect(search(projectPath, '第一段旧正文', vector768, 5, identity)).resolves.toEqual(expect.arrayContaining([
+    await expect(search(projectPath, '第一段旧正文', { queryVector: vector768, embeddingSpace: identity }, 5)).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({ fileName: 'old.txt', text: '第一段旧正文' }),
     ]))
   })
@@ -463,7 +463,7 @@ describe('知识库嵌入空间回填', () => {
       modelName: 'model-b',
     })).resolves.toMatchObject({ success: false, error: 'EMBEDDING_SPACE_REINDEX_REQUIRED' })
 
-    await expect(search(projectPath, '同名旧文档', oldVector, 5, oldSpace)).resolves.toEqual([
+    await expect(search(projectPath, '同名旧文档', { queryVector: oldVector, embeddingSpace: oldSpace }, 5)).resolves.toEqual([
       expect.objectContaining({ fileName: 'same-name.txt', text: '同名旧文档必须保留' }),
     ])
   })
@@ -597,7 +597,7 @@ describe('知识库嵌入空间回填', () => {
     const active = rebuilt.spaces.find(space => space.generation === rebuilt.activeGeneration)
     expect(active).toMatchObject({ ...space, vectorDimension: 768, status: 'active' })
     expect(active?.generation).not.toBe(before.activeGeneration)
-    await expect(search(projectPath, '文档 B', vector, 5, space)).resolves.toEqual(expect.arrayContaining([
+    await expect(search(projectPath, '文档 B', { queryVector: vector, embeddingSpace: space }, 5)).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({ fileName: 'b.txt', text: '文档 B 的 FTS-only 新正文' }),
     ]))
   })

@@ -131,7 +131,7 @@ describe('knowledge search does not depend on a full-text index', () => {
     await addLegacyTextIndex(projectPath)
     expect((await addChunks(projectPath, 'doc-2', CHAPTER_2, [BELL_TOWER], [[0, 1, 0]], undefined, { chapterNumber: 2 }, space)).success).toBe(true)
 
-    const nearest = await search(projectPath, '', [0, 1, 0], 5, space)
+    const nearest = await search(projectPath, '', { queryVector: [0, 1, 0], embeddingSpace: space }, 5)
     expect(nearest.map(result => result.text)).toEqual([BELL_TOWER, LIGHTHOUSE])
     expect(nearest[0].score).toBe(1)
   })
