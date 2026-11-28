@@ -258,7 +258,6 @@ export async function getBlueprintCount(
   }
 }
 
-/** 与蓝图页的恢复稿卡片同一判定，另要求恢复稿里有内容；读不出就不提恢复稿。 */
 async function uncommittedFailureNote(context: WorkflowContext): Promise<AuthorNote> {
   const handle = context.mainGenerationRunHandle
   const recovery = handle
